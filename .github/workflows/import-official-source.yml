@@ -1,6 +1,11 @@
 name: Import pinned source and build official v1
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - BUILD_OFFICIAL_V1.txt
+      - .github/workflows/import-official-source.yml
   workflow_dispatch:
     inputs:
       source_branch:
