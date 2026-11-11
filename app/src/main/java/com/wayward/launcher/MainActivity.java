@@ -137,7 +137,7 @@ public final class MainActivity extends Activity {
         GameProfile(String i,String u,String n){id=i;uri=u;label=n;}
     }
     private int dp(float n){return Math.round(n*getResources().getDisplayMetrics().density);}
-private void applySystemBarInsets(View target){
+    private void applySystemBarInsets(View target){
         if (Build.VERSION.SDK_INT < 35) return;
         final int baseLeft=target.getPaddingLeft();
         final int baseTop=target.getPaddingTop();
