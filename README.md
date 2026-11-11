@@ -39,6 +39,6 @@ CI는 업로드된 P12의 크기(2,858 bytes), P12 비밀번호, 개인키-인�
 - 기준 경로: android-external-folder-launcher/
 
 ## 검증 상태
-`.github/workflows/android-validation.yml`은 PR 생성/갱신 및 `main`, `work/**` 브랜치 push 시 자동 실행됩니다. Actions secrets가 모두 등록된 경우 PKCS#12를 임시 JKS로 변환해 Release APK에 서명하고, APK 인증서 SHA-1이 등록된 Android OAuth 지문과 일치하는지 확인합니다. 해당 워크플로에는 Node 문법 검사, 공식 런처 범위 검사, Google OAuth 브리지 계약 테스트, Gradle 8.9 Debug/Release APK 빌드, Android 15 에뮬레이터 시작 검사를 추가했습니다.
+`.github/workflows/android-validation.yml`은 PR 생성/갱신 및 `main`, `work/**` 브랜치 push 시 자동 실행됩니다. Actions secrets가 모두 등록된 경우 PKCS#12를 임시 JKS로 변환해 Release APK에 서명하고, APK 인증서 SHA-1이 등록된 Android OAuth 지문과 일치하는지 확인합니다. 해당 워크플로에는 Node 문법 검사, 공식 런처 범위 검사, Google OAuth 브리지 계약 테스트, Gradle 8.9 Debug/Release APK 빌드, Android 15 에뮬레이터 시작 검사는 각 ADB 명령의 결과를 파일로 기록하고 단일 검사 명령으로 앱 프로세스와 crash 로그를 확인합니다.
 
 이 워크플로 파일은 작업 브랜치에 반영되어 있습니다. 실제 CI 성공 결과는 아직 확인되지 않았습니다. 또한 Android 15 실기기에서의 Google 계정 승인 및 CloudSave 실제 저장·불러오기는 별도 검증이 남아 있습니다. 해당 검증 전에는 APK를 정식 배포 완료본으로 표시하지 않습니다.
