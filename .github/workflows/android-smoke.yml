@@ -1,0 +1,56 @@
+name: Official launcher Android smoke test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - RUN_ANDROID_SMOKE.txt
+      - .github/workflows/android-smoke.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout official working branch
+        uses: actions/checkout@v4
+        with:
+          ref: work/official-v1-bootstrap-20261111
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build official debug APK
+        run: gradle :app:assembleDebug
+
+      - name: Install and launch on Android 15 emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb shell am force-stop com.wayward.launcher.official.debug
+            adb shell am start -W -n com.wayward.launcher.official.debug/com.wayward.launcher.MainActivity
+            sleep 4
+            adb shell pidof com.wayward.launcher.official.debug
+            adb logcat -d -s AndroidRuntime:E
