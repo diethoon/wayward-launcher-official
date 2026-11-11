@@ -1,4 +1,4 @@
-name: Import pinned source and build official v1
+name: Build official launcher v1
 
 on:
   push:
@@ -9,60 +9,27 @@ on:
   workflow_dispatch:
     inputs:
       source_branch:
-        description: Official working branch to populate and build
+        description: Official source branch to build
         required: true
         default: work/official-v1-bootstrap-20261111
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: official-v1-bootstrap
+  group: official-v1-build
   cancel-in-progress: true
 
 jobs:
-  import-and-build:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout official working branch
+      - name: Checkout isolated official source
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.source_branch || 'work/official-v1-bootstrap-20261111' }}
-          fetch-depth: 0
-
-      - name: Checkout pinned development source
-        uses: actions/checkout@v4
-        with:
-          repository: diethoon/wayward
-          ref: 9c52b690229808c9f6b188fcf55c073468b81341
-          path: source
-          persist-credentials: false
-
-      - name: Import and minimize official launcher
-        run: |
-          if [ ! -f app/build.gradle ]; then
-            cp -a source/android-external-folder-launcher/. .
-            python3 scripts/prepare-official.py
-          fi
-          rm -rf source
-          test -f app/src/main/java/com/wayward/launcher/MainActivity.java
-          grep -q "applicationId 'com.wayward.launcher.official'" app/build.gradle
-          grep -q "versionName '1.0.0'" app/build.gradle
-          ! grep -q 'ImageGenService' app/src/main/AndroidManifest.xml
-          ! grep -q 'ImageProviderActivity' app/src/main/AndroidManifest.xml
-
-      - name: Commit imported official source
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: import pinned official launcher v1 source [skip ci]"
-            git push origin HEAD:${{ inputs.source_branch || 'work/official-v1-bootstrap-20261111' }}
-          else
-            echo "Official source already imported; no commit needed."
-          fi
+          fetch-depth: 1
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -80,6 +47,12 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Reuse stable test signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: wayward-launcher-official-debug-keystore-v1
+
       - name: Prepare optional release signing keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -91,7 +64,7 @@ jobs:
             echo "No release keystore secret configured; Release APK will remain unsigned."
           fi
 
-      - name: Verify and build APKs
+      - name: Build official APKs
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -99,14 +72,17 @@ jobs:
         run: |
           gradle --version
           gradle :app:assembleDebug :app:assembleRelease
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs app/build/outputs/apk/debug/app-debug.apk
           if [ -f app/build/outputs/apk/release/app-release.apk ]; then
             "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose app/build/outputs/apk/release/app-release.apk
             "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk
           else
-            echo "Release build succeeded but is unsigned; no release keystore secrets are configured."
+            echo "Release build is unsigned; configure the four ANDROID_KEYSTORE_* repository secrets for a signed release."
           fi
 
-      - name: Upload test and release APKs
+      - name: Upload debug and release APKs
         uses: actions/upload-artifact@v4
         with:
           name: wayward-launcher-official-1.0.0-build
