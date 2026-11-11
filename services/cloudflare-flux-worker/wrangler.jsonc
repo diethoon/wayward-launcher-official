@@ -2,7 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "wayward-launcher-official",
   "main": "src/index.js",
-  "compatibility_date": "2026-11-12",
+  "compatibility_date": "2026-11-11",
   "workers_dev": true,
   "ai": {
     "binding": "AI"
