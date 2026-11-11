@@ -104,5 +104,5 @@ assert.ok(manifest.includes('android:roundIcon="@mipmap/ic_launcher_round"'),
 const iconGenerator = fs.readFileSync('scripts/generate_launcher_icons.py', 'utf8');
 assert.ok(iconGenerator.includes('2f23c94d7aea3091bb3bf394131f550422fd61d1'),
   'launcher icon generation must be pinned to the uploaded source image');
-assert.ok(iconGenerator.includes('CROP = (0.12, 0.065, 0.88, 0.83)'),
-  'launcher icon crop must frame the central character from just above the head to the knees');
+assert.ok(iconGenerator.includes('CROP = (0.2537, 0.0675, 0.7463, 0.5605)'),
+  'launcher icon crop must focus on the character face and upper chest');
