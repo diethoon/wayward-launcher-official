@@ -259,4 +259,3 @@ jobs:
             echo
             cat "$dist_dir/SHA256SUMS.txt"
           } >> "$GITHUB_STEP_SUMMARY"
-
