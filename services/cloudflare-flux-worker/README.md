@@ -9,11 +9,11 @@ Cloudflare Worker endpoint for Wayward Launcher / WML image generation.
 ## Cloudflare Workers Builds setup
 
 1. Connect the `diethoon/wayward-launcher-official` GitHub repository.
-2. Select production branch `setup/cloudflare-flux-worker-20261112`.
+2. Set the production branch to `setup/cloudflare-flux-worker-20261112`. The Worker source files are not present on `main`.
 3. Set root directory to `services/cloudflare-flux-worker`.
 4. Leave Build command empty (this project has no separate compile step).
 5. Set Deploy command to `npx wrangler deploy`.
-6. Keep the Worker name as `wayward-flux-image-api`, matching `wrangler.jsonc`.
+6. The Worker name is `wayward-launcher-official`, matching the existing Cloudflare Worker.
 7. The included `wrangler.jsonc` declares the Workers AI binding as `env.AI`.
 
 ## Required runtime secret
