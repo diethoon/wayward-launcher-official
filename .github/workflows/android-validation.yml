@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   android:
-    name: Android 15 / Google Drive bridge checks
+    name: Android build and OAuth bridge checks
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -84,6 +84,33 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: gradle --no-daemon --stacktrace clean assembleDebug assembleRelease
+
+      - name: Enable KVM for Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Android 15 emulator startup smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: |
+            set -euo pipefail
+            adb install app/build/outputs/apk/debug/app-debug.apk
+            adb shell am start -W -n com.wayward.launcher.official.debug/com.wayward.launcher.MainActivity
+            sleep 5
+            app_pid="$(adb shell pidof -s com.wayward.launcher.official.debug | tr -d '\\r')"
+            test -n "$app_pid"
+            if adb logcat -d -s AndroidRuntime:E | grep -q "FATAL EXCEPTION"; then
+              adb logcat -d -s AndroidRuntime:E
+              exit 1
+            fi
+            echo "Android 15 emulator launched the official launcher process (pid $app_pid)."
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4
