@@ -28,7 +28,7 @@ GitHub Actions에서 서명된 Release APK를 만들려면 저장소 Actions sec
 - `ANDROID_KEYSTORE_BASE64`: release PKCS#12 파일의 Base64 전체 내용
 - `ANDROID_KEYSTORE_PASSWORD`: PKCS#12 저장소 암호
 - `ANDROID_KEY_ALIAS`: `wayward-release`
-- `ANDROID_KEY_PASSWORD`: 개인키 암호
+- `ANDROID_KEY_PASSWORD`: PKCS#12 안의 개인키 암호. OpenSSL 내보내기 때 별도 키 암호를 지정하지 않았다면 `ANDROID_KEYSTORE_PASSWORD`와 같은 값을 사용합니다. PEM 원본 파일을 만들 때 사용한 암호와는 구분합니다.
 
 키 파일과 암호는 저장소 파일이나 코드에 넣지 않습니다. 네 개의 secret 중 하나라도 없으면 CI는 Debug APK와 unsigned Release APK를 생성합니다.
 
