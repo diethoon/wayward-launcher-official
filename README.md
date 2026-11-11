@@ -12,5 +12,5 @@
 공식 소스는 작업 브랜치에서 검증 중이며, 빌드·Android 실행·Google Drive 저장/불러오기 검증을 마친 뒤에만 main으로 병합합니다. Release 서명 키가 설정되지 않은 빌드는 unsigned 시험 산출물이며 정식 배포본이 아닙니다.
 
 ## CI
-- Import/build: .github/workflows/import-official-source.yml
+- Build official v1: .github/workflows/import-official-source.yml
 - Android smoke: .github/workflows/android-smoke.yml
