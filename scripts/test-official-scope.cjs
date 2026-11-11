@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const main = fs.readFileSync('app/src/main/java/com/wayward/launcher/MainActivity.java', 'utf8');
+const gameSession = fs.readFileSync('app/src/main/java/com/wayward/launcher/GameSessionActivity.java', 'utf8');
 const application = fs.readFileSync('app/src/main/java/com/wayward/launcher/LauncherApplication.java', 'utf8');
 const manifest = fs.readFileSync('app/src/main/AndroidManifest.xml', 'utf8');
 const gradle = fs.readFileSync('app/build.gradle', 'utf8');
@@ -18,6 +19,32 @@ assert.match(home, /＋ 폴더/, 'home must expose folder registration');
 assert.match(home, /내 게임/, 'home must expose the registered game list');
 assert.match(home, /여러 게임을 독립 세션으로 실행/, 'home must describe independent sessions');
 assert.doesNotMatch(home, /ZIP|ImageGen|이미지 생성|이미지 서비스/, 'home must not expose unfinished features');
+
+const launcherActivityLine = manifest.split("\n").find(line =>
+  line.includes('<activity android:name=".MainActivity"')) || '';
+const gameSessionActivityLine = manifest.split("\n").find(line =>
+  line.includes('<activity android:name=".GameSessionActivity"')) || '';
+assert.ok(launcherActivityLine, 'the launcher entry Activity must be registered');
+assert.ok(!launcherActivityLine.includes('documentLaunchMode'),
+  'the launcher home must not create document tasks');
+assert.ok(manifest.includes('android:documentLaunchMode="intoExisting"'),
+  'independent document-task behavior must belong only to game sessions');
+assert.ok(gameSessionActivityLine.includes('android:exported="false"'),
+  'game document Activity must not be externally launchable');
+assert.ok(gameSession.includes('extends MainActivity'),
+  'game sessions must reuse the existing session implementation without duplicating launcher logic');
+assert.ok(main.includes('public class MainActivity extends Activity'),
+  'the launcher implementation must be extensible by the dedicated session Activity');
+assert.ok(main.includes('new Intent(this,GameSessionActivity.class)'),
+  'profile launches must target the dedicated game session Activity');
+assert.ok(main.includes('if(sessionId==null){\n            showHome();'),
+  'the folder-selection home screen must initialize only for the launcher task');
+assert.ok(main.includes('root=new FrameLayout(this);') &&
+  main.includes('openProfileSession(sessionId);'),
+  'a game document task must initialize its own WebView root without constructing the home UI');
+assert.ok(main.includes('if(this instanceof GameSessionActivity){') &&
+  main.includes('moveTaskToBack(true);'),
+  'leaving a game session must background that document task and reveal the single launcher task');
 assert.match(home, /applySystemBarInsets\(root\)/, 'home and game root must apply safe system-bar insets');
 assert.match(main, /private void applySystemBarInsets\(View target\)/, 'system-bar inset handler must exist');
 assert.match(main, /Build\.VERSION\.SDK_INT < 35/, 'inset padding must be limited to Android 15+ edge-to-edge devices');
@@ -31,8 +58,16 @@ assert.doesNotMatch(main, /ImageGen|imageGen|ImageProvider|ComfyEndpoint|comfyUr
   'official launcher must not retain dormant image-generation server code');
 assert.match(main, /tree\.prewarmImageDirectories\(\)/,
   'game launch must start image-directory metadata prefetch before WebView loading');
-assert.match(main, /directoryCount < 64/,
-  'image metadata prefetch must have a strict directory bound');
+assert.match(main, /MAX_IMAGE_PREFETCH_DIRECTORIES = 256/,
+  'image metadata prefetch must have a bounded directory budget');
+assert.match(main, /directoryCount < MAX_IMAGE_PREFETCH_DIRECTORIES/,
+  'image metadata prefetch must enforce its directory bound');
+assert.match(main, /MAX_IMAGE_PREFETCH_DEPTH = 6/,
+  'image metadata prefetch must cover deeply nested portrait and thumbnail paths');
+assert.match(main, /childCount < MAX_IMAGE_PREFETCH_CHILDREN/,
+  'image metadata prefetch must enforce its child-entry bound');
+assert.match(main, /imageDirectoryPriority\(left\.name\)/,
+  'thumbnail and portrait directories must receive traversal priority');
 assert.doesNotMatch(diagnostics, /DiagnosticsUploader|uploadPending|readPending|acknowledge|https?:\/\//,
   'launcher diagnostics must remain local-only without a remote uploader');
 
@@ -88,4 +123,13 @@ for (const source of [
 }
 assert.equal(fs.existsSync('app/src/main/res/xml/network_security_config.xml'), false,
   'obsolete loopback cleartext server policy must be removed');
-console.log('Official v1 scope and image-cache checks passed');
+
+assert.ok(manifest.includes('android:icon="@mipmap/ic_launcher"'),
+  'launcher must use the generated custom app icon');
+assert.ok(manifest.includes('android:roundIcon="@mipmap/ic_launcher_round"'),
+  'round launcher icon must be registered');
+const iconGenerator = fs.readFileSync('scripts/generate_launcher_icons.py', 'utf8');
+assert.ok(iconGenerator.includes('2f23c94d7aea3091bb3bf394131f550422fd61d1'),
+  'launcher icon generation must be pinned to the uploaded source image');
+assert.ok(iconGenerator.includes('CROP = (0.2537, 0.0675, 0.7463, 0.5605)'),
+  'launcher icon crop must focus on the character face and upper chest');

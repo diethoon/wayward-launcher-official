@@ -54,6 +54,8 @@ jobs:
 
       - name: Test official launcher scope
         run: node scripts/test-official-scope.cjs
+      - name: Test Android launcher and game task separation
+        run: node scripts/test-android-task-separation.cjs
 
       - name: Test Google OAuth bridge contract
         run: node scripts/test-google-auth-bridge.cjs
@@ -148,6 +150,16 @@ jobs:
             echo "Release signing secrets are incomplete; the Release APK will be unsigned. Debug APK build and tests still run." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      - name: Set up Python 3.12 for icon generation
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Generate custom launcher icon assets
+        run: |
+          python -m pip install --disable-pip-version-check --quiet Pillow==11.3.0
+          python scripts/generate_launcher_icons.py
+
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v6
         with:
@@ -207,3 +219,55 @@ jobs:
             app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
+
+  publish-direct-apks:
+    name: Publish direct APK download files
+    if: github.event_name == 'push' && github.ref == 'refs/heads/work/official-image-prefetch-depth-20261112'
+    needs: android
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download validated APK artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: wayward-launcher-official-apks
+          path: ${{ runner.temp }}/validated-apks
+
+      - name: Publish APK files to dedicated download branch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source_dir="${RUNNER_TEMP}/validated-apks"
+          release_apk="$(find "$source_dir" -type f -name 'app-release.apk' -print -quit)"
+          debug_apk="$(find "$source_dir" -type f -name 'app-debug.apk' -print -quit)"
+          test -n "$release_apk" && test -s "$release_apk"
+          test -n "$debug_apk" && test -s "$debug_apk"
+
+          dist_dir="${RUNNER_TEMP}/wayward-apk-dist"
+          mkdir -p "$dist_dir"
+          cp "$release_apk" "$dist_dir/Wayward-Launcher-1.0.0-Release.apk"
+          cp "$debug_apk" "$dist_dir/Wayward-Launcher-1.0.0-Debug.apk"
+          (
+            cd "$dist_dir"
+            sha256sum ./*.apk > SHA256SUMS.txt
+          )
+
+          git -C "$dist_dir" init -b main
+          git -C "$dist_dir" config user.name "github-actions[bot]"
+          git -C "$dist_dir" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$dist_dir" add .
+          git -C "$dist_dir" commit -m "Publish verified Wayward Launcher 1.0.0 APKs"
+          git -C "$dist_dir" remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git -C "$dist_dir" push --force origin HEAD:refs/heads/apk-official-1.0.0-r3
+
+          {
+            echo "## Direct APK downloads"
+            echo
+            echo "- Release: https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/apk-official-1.0.0-r3/Wayward-Launcher-1.0.0-Release.apk"
+            echo "- Debug: https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/apk-official-1.0.0-r3/Wayward-Launcher-1.0.0-Debug.apk"
+            echo
+            cat "$dist_dir/SHA256SUMS.txt"
+          } >> "$GITHUB_STEP_SUMMARY"
