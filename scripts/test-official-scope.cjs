@@ -31,7 +31,9 @@ assert.match(main, /startGoogleDriveAuth\(String nonce\)/, 'native Drive authori
 assert.match(main, /takePendingStateForNonce\(String nonce\)/, 'nonce-scoped one-time result handoff must exist');
 assert.match(main, /clearGoogleAccessToken\(String token\)/, 'invalid native Drive tokens must be clearable');
 assert.match(gradle, /play-services-auth:21\.6\.0/, 'Google Identity Services dependency must be pinned');
-assert.match(gradle, /storeType\s+['"]PKCS12['"]/, 'release signing must use the PKCS#12 keystore format');
+assert.match(gradle, /storeType\s+['"]JKS['"]/, 'CI must normalize the PKCS#12 upload key to a Java keystore before Gradle signing');
+assert.match(gradle, /keyPassword\s+System\.getenv\('ANDROID_KEYSTORE_PASSWORD'\)/, 'converted JKS key and store must use the P12 import password');
+assert.doesNotMatch(gradle, /ANDROID_KEY_PASSWORD/, 'release signing must not depend on a separately mis-entered key password');
 
 const sessionStart = main.indexOf('private void openProfileSession(String id)');
 const sessionEnd = main.indexOf('private void removeProfile(String id)', sessionStart);

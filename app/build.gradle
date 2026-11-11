@@ -3,8 +3,7 @@ plugins { id 'com.android.application' }
 def releaseSigningReady = [
     System.getenv('ANDROID_KEYSTORE_PATH'),
     System.getenv('ANDROID_KEYSTORE_PASSWORD'),
-    System.getenv('ANDROID_KEY_ALIAS'),
-    System.getenv('ANDROID_KEY_PASSWORD')
+    System.getenv('ANDROID_KEY_ALIAS')
 ].every { value -> value != null && !value.trim().isEmpty() }
 android {
     namespace 'com.wayward.launcher'
@@ -26,10 +25,10 @@ android {
         release {
             if (releaseSigningReady) {
                 storeFile file(System.getenv('ANDROID_KEYSTORE_PATH'))
-                storeType 'PKCS12'
+                storeType 'JKS'
                 storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
                 keyAlias System.getenv('ANDROID_KEY_ALIAS')
-                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+                keyPassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
             }
         }
     }

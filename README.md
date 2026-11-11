@@ -26,11 +26,12 @@ Android 런처 안에서는 기존 CloudSave 0.4.4의 Vercel 팝업 URL을 네�
 GitHub Actions에서 서명된 Release APK를 만들려면 저장소 Actions secrets에 다음 값을 등록합니다.
 
 - `ANDROID_KEYSTORE_BASE64`: release PKCS#12 파일의 Base64 전체 내용
-- `ANDROID_KEYSTORE_PASSWORD`: PKCS#12 저장소 암호
+- `ANDROID_KEYSTORE_PASSWORD`: PKCS#12를 열 때 사용하는 내보내기 암호
 - `ANDROID_KEY_ALIAS`: `wayward-release`
-- `ANDROID_KEY_PASSWORD`: PKCS#12 안의 개인키 암호. OpenSSL 내보내기 때 별도 키 암호를 지정하지 않았다면 `ANDROID_KEYSTORE_PASSWORD`와 같은 값을 사용합니다. PEM 원본 파일을 만들 때 사용한 암호와는 구분합니다.
 
-키 파일과 암호는 저장소 파일이나 코드에 넣지 않습니다. 네 개의 secret 중 하나라도 없으면 CI는 Debug APK와 unsigned Release APK를 생성합니다.
+CI는 원본 P12를 임시 JKS로 변환한 뒤 서명합니다. 표준 OpenSSL PKCS#12 내보내기에서는 P12 내보내기 암호가 개인키 보호에도 사용되므로, PEM 원본 파일을 만들 때 사용한 암호가 아니라 **P12 내보내기 암호**를 등록합니다. 별도 `ANDROID_KEY_PASSWORD` secret은 더 이상 사용하지 않습니다. 기존에 등록했다면 삭제할 필요 없이 그대로 두어도 됩니다.
+
+키 파일과 암호는 저장소 파일이나 코드에 넣지 않습니다. 세 secret 중 하나라도 없으면 CI는 Debug APK와 unsigned Release APK를 생성합니다.
 
 ## 기준
 - 개발 저장소: https://github.com/diethoon/wayward
@@ -38,6 +39,6 @@ GitHub Actions에서 서명된 Release APK를 만들려면 저장소 Actions sec
 - 기준 경로: android-external-folder-launcher/
 
 ## 검증 상태
-`.github/workflows/android-validation.yml`은 PR 생성/갱신 및 `main`, `work/**` 브랜치 push 시 자동 실행됩니다. Actions secrets가 모두 등록된 경우 Release APK에 동일한 PKCS#12 키를 사용해 서명합니다. 해당 워크플로에는 Node 문법 검사, 공식 런처 범위 검사, Google OAuth 브리지 계약 테스트, Gradle 8.9 Debug/Release APK 빌드, Android 15 에뮬레이터 시작 검사를 추가했습니다.
+`.github/workflows/android-validation.yml`은 PR 생성/갱신 및 `main`, `work/**` 브랜치 push 시 자동 실행됩니다. Actions secrets가 모두 등록된 경우 PKCS#12를 임시 JKS로 변환해 Release APK에 서명하고, APK 인증서 SHA-1이 등록된 Android OAuth 지문과 일치하는지 확인합니다. 해당 워크플로에는 Node 문법 검사, 공식 런처 범위 검사, Google OAuth 브리지 계약 테스트, Gradle 8.9 Debug/Release APK 빌드, Android 15 에뮬레이터 시작 검사를 추가했습니다.
 
 이 워크플로 파일은 작업 브랜치에 반영되어 있습니다. 실제 CI 성공 결과는 아직 확인되지 않았습니다. 또한 Android 15 실기기에서의 Google 계정 승인 및 CloudSave 실제 저장·불러오기는 별도 검증이 남아 있습니다. 해당 검증 전에는 APK를 정식 배포 완료본으로 표시하지 않습니다.

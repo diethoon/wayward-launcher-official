@@ -64,17 +64,47 @@ jobs:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          if [[ -n "$KEYSTORE_BASE64" && -n "$KEYSTORE_PASSWORD" && -n "$KEY_ALIAS" && -n "$KEY_PASSWORD" ]]; then
+          if [[ -n "$KEYSTORE_BASE64" && -n "$KEYSTORE_PASSWORD" && -n "$KEY_ALIAS" ]]; then
             mkdir -p "$RUNNER_TEMP/wayward-release"
             printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/wayward-release/release.p12"
             test -s "$RUNNER_TEMP/wayward-release/release.p12"
             chmod 600 "$RUNNER_TEMP/wayward-release/release.p12"
-            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/wayward-release/release.p12" >> "$GITHUB_ENV"
-            echo "Release signing secrets found; the Release APK will be signed." >> "$GITHUB_STEP_SUMMARY"
+
+            # Standard OpenSSL PKCS#12 exports use the export password for both
+            # the container and private key. Convert to JKS for Gradle signing.
+            keytool -importkeystore -noprompt \
+              -srckeystore "$RUNNER_TEMP/wayward-release/release.p12" \
+              -srcstoretype PKCS12 \
+              -srcstorepass "$KEYSTORE_PASSWORD" \
+              -srcalias "$KEY_ALIAS" \
+              -srckeypass "$KEYSTORE_PASSWORD" \
+              -destkeystore "$RUNNER_TEMP/wayward-release/release.jks" \
+              -deststoretype JKS \
+              -deststorepass "$KEYSTORE_PASSWORD" \
+              -destkeypass "$KEYSTORE_PASSWORD" \
+              -destalias "$KEY_ALIAS"
+
+            cert_info="$(keytool -list -v \
+              -keystore "$RUNNER_TEMP/wayward-release/release.jks" \
+              -storetype JKS \
+              -storepass "$KEYSTORE_PASSWORD" \
+              -alias "$KEY_ALIAS")"
+            actual_sha1="$(printf '%s\n' "$cert_info" | awk '/SHA1:/ {print $2; exit}' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+            expected_sha1="D9BE7443EB247D27C958CC4250D7F5D1E078F740"
+            if [[ "$actual_sha1" != "$expected_sha1" ]]; then
+              echo "Release keystore certificate SHA-1 does not match the registered Android OAuth client." >&2
+              echo "Expected: $expected_sha1; actual: ${actual_sha1:-missing}" >&2
+              exit 1
+            fi
+
+            chmod 600 "$RUNNER_TEMP/wayward-release/release.jks"
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/wayward-release/release.jks" >> "$GITHUB_ENV"
+            echo "RELEASE_SIGNING_CONFIGURED=true" >> "$GITHUB_ENV"
+            echo "Release key imported to JKS; certificate SHA-1 verified: $expected_sha1" >> "$GITHUB_STEP_SUMMARY"
           else
+            echo "RELEASE_SIGNING_CONFIGURED=false" >> "$GITHUB_ENV"
             echo "Release signing secrets are incomplete; the Release APK will be unsigned. Debug APK build and tests still run." >> "$GITHUB_STEP_SUMMARY"
           fi
 
@@ -88,8 +118,21 @@ jobs:
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: gradle --no-daemon --stacktrace clean assembleDebug assembleRelease
+
+      - name: Verify signed Release APK identity
+        if: env.RELEASE_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_apk="app/build/outputs/apk/release/app-release.apk"
+          test -s "$release_apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$release_apk" > "$RUNNER_TEMP/release-signing.txt"
+          cat "$RUNNER_TEMP/release-signing.txt"
+          actual_sha1="$(awk -F': ' '/Signer #1 certificate SHA-1 digest:/ {gsub(/:/, "", $2); gsub(/[[:space:]]/, "", $2); print toupper($2); exit}' "$RUNNER_TEMP/release-signing.txt")"
+          expected_sha1="D9BE7443EB247D27C958CC4250D7F5D1E078F740"
+          test "$actual_sha1" = "$expected_sha1"
+          echo "Release APK signature matches the registered Android OAuth SHA-1." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Enable KVM for Android emulator
         run: |
@@ -107,12 +150,23 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
             set -euo pipefail
-            adb install app/build/outputs/apk/debug/app-debug.apk
-            adb shell am start -W -n com.wayward.launcher.official.debug/com.wayward.launcher.MainActivity
-            sleep 5
-            app_pid="$(adb shell pidof -s com.wayward.launcher.official.debug | tr -d '\r')"
-            test -n "$app_pid"
-            crash_log="$(adb logcat -d -s AndroidRuntime:E)"
+            adb wait-for-device
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            start_output="$(adb shell am start -W -n com.wayward.launcher.official.debug/com.wayward.launcher.MainActivity 2>&1)" || {
+              printf '%s\n' "$start_output"
+              adb logcat -d -s AndroidRuntime:E || true
+              exit 1
+            }
+            printf '%s\n' "$start_output"
+            sleep 8
+            app_pid="$(adb shell pidof -s com.wayward.launcher.official.debug 2>/dev/null | tr -d '\r' || true)"
+            crash_log="$(adb logcat -d -s AndroidRuntime:E 2>&1 || true)"
+            if [[ -z "$app_pid" ]]; then
+              echo "Launcher process was not running after Activity start."
+              adb shell dumpsys activity activities | grep -E 'mResumedActivity|ResumedActivity' || true
+              printf '%s\n' "$crash_log"
+              exit 1
+            fi
             if printf '%s' "$crash_log" | grep -q "Process: com.wayward.launcher.official.debug"; then
               printf '%s\n' "$crash_log"
               exit 1
