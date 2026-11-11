@@ -60,6 +60,9 @@ jobs:
       - name: Test Google OAuth bridge contract
         run: node scripts/test-google-auth-bridge.cjs
 
+      - name: Test Android WebView file chooser request-code isolation
+        run: node --test tests/web-file-chooser-contract.test.mjs
+
       - name: Prepare optional release keystore
         shell: bash
         env:
