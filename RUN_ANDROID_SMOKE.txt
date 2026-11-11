@@ -3,3 +3,4 @@ Native Google Identity Services bridge build and emulator startup verification.
 Use apksigner to extract the debug certificate fingerprint.
 Run Android smoke after minimal launcher cleanup.
 Run smoke test on pruned official v1 source.
+Smoke test Google Identity Services 21.6.0 build.
