@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "wayward-flux-image-api",
+  "name": "wayward-launcher-official",
   "main": "src/index.js",
   "compatibility_date": "2026-11-12",
   "workers_dev": true,
