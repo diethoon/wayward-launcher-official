@@ -1,4 +1,11 @@
 plugins { id 'com.android.application' }
+
+def releaseSigningReady = [
+    System.getenv('ANDROID_KEYSTORE_PATH'),
+    System.getenv('ANDROID_KEYSTORE_PASSWORD'),
+    System.getenv('ANDROID_KEY_ALIAS'),
+    System.getenv('ANDROID_KEY_PASSWORD')
+].every { value -> value != null && !value.trim().isEmpty() }
 android {
     namespace 'com.wayward.launcher'
     compileSdk 35
@@ -15,9 +22,22 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    signingConfigs {
+        release {
+            if (releaseSigningReady) {
+                storeFile file(System.getenv('ANDROID_KEYSTORE_PATH'))
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
         debug { applicationIdSuffix '.debug'; versionNameSuffix '-debug' }
-        release { minifyEnabled false }
+        release {
+            minifyEnabled false
+            if (releaseSigningReady) signingConfig signingConfigs.release
+        }
     }
 }
 dependencies {
