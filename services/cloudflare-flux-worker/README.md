@@ -10,11 +10,11 @@ Cloudflare Worker endpoint for Wayward Launcher / WML image generation.
 
 1. Connect the `diethoon/wayward-launcher-official` GitHub repository.
 2. Set the production branch to `setup/cloudflare-flux-worker-20261112`. The Worker source files are not present on `main`.
-3. Set root directory to `services/cloudflare-flux-worker`.
-4. Leave Build command empty (this project has no separate compile step).
-5. Set Deploy command to `npx wrangler deploy`.
+3. Set root directory to the repository root (`/`).
+4. Leave Build command empty.
+5. Set Deploy command to `npx wrangler deploy --config services/cloudflare-flux-worker/wrangler.jsonc`.
 6. The Worker name is `wayward-launcher-official`, matching the existing Cloudflare Worker.
-7. The included `wrangler.jsonc` declares the Workers AI binding as `env.AI`.
+7. The Wrangler config declares the Workers AI binding as `env.AI`.
 
 ## Required runtime secret
 
@@ -26,24 +26,14 @@ Before enabling generation, open the Worker in Cloudflare:
 4. Enter a long random value generated and stored privately.
 5. Save and deploy the updated Worker.
 
-The `/generate` endpoint deliberately returns `503` until `API_KEY` is configured. It then requires `Authorization: Bearer <API_KEY>`. Do not put the Cloudflare account API token in the launcher; this Worker key is a separate credential.
+The `/generate` endpoint returns `503` until `API_KEY` is configured. It then requires `Authorization: Bearer <API_KEY>`. Do not put the Cloudflare account API token in the launcher; this Worker key is a separate credential.
 
 ## API
 
-- `GET /` — health and model metadata (does not generate an image).
+- `GET /` — health and model metadata.
 - `POST /generate` — returns raw JPEG bytes.
 
-Example request:
-
-```http
-POST /generate
-Content-Type: application/json
-Authorization: Bearer YOUR_API_KEY
-
-{"prompt":"A cozy fantasy village at sunset"}
-```
-
-A successful response is `200 image/jpeg`. Errors are JSON.
+A successful generation response is `200 image/jpeg`. Errors are JSON.
 
 ## Local development
 
@@ -55,5 +45,5 @@ npx wrangler dev
 ## Security notes
 
 - Never commit Cloudflare account API tokens or the `API_KEY` value.
-- The `API_KEY` must be configured as a Worker secret, not a plaintext build variable.
+- Store `API_KEY` as a Worker secret, not a plaintext build variable.
 - Add Cloudflare rate limiting / abuse controls before distributing the endpoint broadly.
