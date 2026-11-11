@@ -41,9 +41,11 @@ jobs:
 
       - name: Import and minimize official launcher
         run: |
-          cp -a source/android-external-folder-launcher/. .
+          if [ ! -f app/build.gradle ]; then
+            cp -a source/android-external-folder-launcher/. .
+            python3 scripts/prepare-official.py
+          fi
           rm -rf source
-          python3 scripts/prepare-official.py
           test -f app/src/main/java/com/wayward/launcher/MainActivity.java
           grep -q "applicationId 'com.wayward.launcher.official'" app/build.gradle
           grep -q "versionName '1.0.0'" app/build.gradle
@@ -55,8 +57,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "chore: import pinned official launcher v1 source [skip ci]"
-          git push origin HEAD:${{ inputs.source_branch || 'work/official-v1-bootstrap-20261111' }}
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: import pinned official launcher v1 source [skip ci]"
+            git push origin HEAD:${{ inputs.source_branch || 'work/official-v1-bootstrap-20261111' }}
+          else
+            echo "Official source already imported; no commit needed."
+          fi
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -66,6 +72,8 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
