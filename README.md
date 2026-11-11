@@ -10,7 +10,7 @@
 - 게임 세션 종료 후 런처로 복귀
 - Android 네이티브 Google Identity Services를 통한 Drive App Data 권한 요청
 
-ZIP 모드 관리, ImageGen/ComfyUI/NovelAI/FLUX, 원격 진단 업로드는 최초 UI 및 실행 경로에서 제외했습니다. 관련 개발 소스가 남아 있더라도 공식 1.0.0에서 활성화하거나 지원한다고 간주하지 않습니다.
+ZIP 모드 관리 UI는 최초 배포 범위에서 제외합니다. ImageGen/ComfyUI/NovelAI/FLUX 서버와 공급자 코드, 원격 진단 업로더는 공식 1.0.0 소스에서 제거했습니다. 런처 진단 기록은 기기 내부에만 저장하며 외부 서버로 전송하지 않습니다.
 
 ## Google Drive CloudSave
 Android 런처 안에서는 기존 CloudSave 0.4.4의 Vercel 팝업 URL을 네이티브 Google Identity Services AuthorizationClient로 중계합니다. 요청 범위는 Drive App Data(drive.appdata)이며, 결과 토큰은 JS에 전달하기 위한 프로세스 메모리의 nonce별 일회성 결과로만 보관합니다. 게임 모드의 기존 암호화·저장/불러오기 로직은 수정하지 않습니다.

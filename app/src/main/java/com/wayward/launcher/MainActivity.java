@@ -10,8 +10,6 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Build;
 import android.os.Environment;
-import android.os.Handler;
-import android.os.Looper;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
@@ -25,7 +23,6 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -43,9 +40,9 @@ import com.google.android.gms.common.api.Scope;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.SequenceInputStream;
 import java.io.OutputStream;
@@ -67,7 +64,7 @@ import java.util.regex.Pattern;
 public final class MainActivity extends Activity {
     private static final int PICK_TREE=4101, PICK_MOD_ZIP=4102, REQUEST_GOOGLE_AUTH=4103;
     private static final String PREFS="wayward_launcher";
-    private static final String KEY_TREE="game_tree_uri", KEY_PROFILES="game_profiles", KEY_ZIP_REV="zip_mod_revision", KEY_COMFY_URL="comfy_server_url";
+    private static final String KEY_TREE="game_tree_uri", KEY_PROFILES="game_profiles", KEY_ZIP_REV="zip_mod_revision";
     private static final String KO="Wayward_WML_ko.html", EN="Wayward_WML.html";
     private static final Pattern ID=Pattern.compile("^[a-z0-9][a-z0-9._-]*$");
     private static final Set<String> RUNNING_SESSIONS=Collections.synchronizedSet(new HashSet<>());
@@ -78,8 +75,16 @@ public final class MainActivity extends Activity {
     private static final Map<String, WeakReference<MainActivity>> SESSION_ACTIVITIES =
             new ConcurrentHashMap<>();
     private static volatile String LAST_ACTIVE_SESSION_ID = "";
-    private static final String EXTRA_OPEN_IMAGE_STUDIO_SETTINGS =
-            "com.wayward.launcher.OPEN_IMAGE_STUDIO_SETTINGS";
+    private static final java.util.concurrent.ThreadPoolExecutor IMAGE_DIRECTORY_PREFETCH =
+            new java.util.concurrent.ThreadPoolExecutor(1, 1, 30L,
+                    java.util.concurrent.TimeUnit.SECONDS,
+                    new java.util.concurrent.ArrayBlockingQueue<>(8),
+                    runnable -> {
+                        Thread thread = new Thread(runnable, "wayward-image-directory-prefetch");
+                        thread.setDaemon(true);
+                        return thread;
+                    },
+                    new java.util.concurrent.ThreadPoolExecutor.DiscardPolicy());
     private static final Pattern MOD_ID=Pattern.compile("(?:\\bid\\s*:\\s*|[\\\"']id[\\\"']\\s*:\\s*)[\\\"']([a-z0-9][a-z0-9._-]*)[\\\"']");
     private Uri treeUri;
     private SafTree tree;
@@ -90,16 +95,7 @@ public final class MainActivity extends Activity {
     private long loadedZipRevision=-1;
     private FrameLayout root;
     private LinearLayout home, profileList, zipModList;
-    private TextView status, folderText, profileSummary, zipSummary, imageGenStatus;
-    private EditText comfyUrlInput;
-    private String imageGenSessionMessage = "";
-    private boolean imageStudioSessionDetected = false;
-    private boolean pendingOpenImageStudioSettings = false;
-    private static volatile boolean imageGenCopying = false;
-    private static volatile boolean manualImageGenPreparing = false;
-    private final Handler imageGenHandler = new Handler(Looper.getMainLooper());
-    private final List<Runnable> imageGenReadyCallbacks = new ArrayList<>();
-    private Runnable imageGenPollRunnable;
+    private TextView status, folderText, profileSummary, zipSummary;
     private WebView web;
     private WebFileChooser webFileChooser;
 
@@ -415,6 +411,7 @@ public final class MainActivity extends Activity {
             if(web!=null)destroyWeb();
             activeProfileId=p.id;treeUri=Uri.parse(p.uri);tree=new SafTree(treeUri);
             String file=gameFile();if(file==null){DiagnosticsLogger.event(this,"ERROR","launcher","game_html_not_found",null);status("선택한 폴더에서 Wayward HTML을 찾지 못했습니다: "+p.label);return;}
+            tree.prewarmImageDirectories();
             setTitle("Wayward · "+p.label);
             RUNNING_SESSIONS.add(p.id);
             if(home!=null)home.setVisibility(View.GONE);
@@ -658,8 +655,6 @@ public final class MainActivity extends Activity {
                         }
                         return folderHandler.serveGamePath(path.substring(6));
                     }
-                    if(path != null && path.startsWith("/images/__wayward_generated__/"))
-                        return serveGeneratedImageRequest(path, imageDiagnostics);
                     if(FolderHandler.isImageRequestPath(path))return serveImageRequest(folderHandler,path,imageDiagnostics);
                 }
                 if("art.sintention.com".equalsIgnoreCase(u.getHost())){
@@ -793,442 +788,6 @@ public final class MainActivity extends Activity {
     }
 
 
-    /**
-     * Serves ImageGen's app-private cache under the HTTPS game origin.
-     * The managed Bun server is HTTP loopback-only, so its /images URL cannot
-     * be used directly by this HTTPS WebView (mixed content is disabled).
-     */
-    private WebResourceResponse serveGeneratedImageRequest(
-            String requestPath, java.util.concurrent.atomic.AtomicInteger samples) {
-        final String prefix = "/images/__wayward_generated__/";
-        if (requestPath == null || !requestPath.startsWith(prefix)) {
-            return generatedImageError(404, "Not Found", requestPath);
-        }
-        try {
-            String relative = FolderHandler.normal(requestPath.substring(prefix.length()));
-            if (relative == null) return generatedImageError(400, "Bad Request", requestPath);
-
-            String mime = FolderHandler.mime(relative);
-            if (!("image/png".equals(mime) || "image/jpeg".equals(mime)
-                    || "image/webp".equals(mime) || "image/gif".equals(mime)
-                    || "image/avif".equals(mime))) {
-                return generatedImageError(415, "Unsupported Media Type", requestPath);
-            }
-
-            File root = new File(getFilesDir(), "imagegen/images").getCanonicalFile();
-            File image = new File(root, relative).getCanonicalFile();
-            String rootPrefix = root.getPath() + File.separator;
-            if (!image.getPath().startsWith(rootPrefix)) {
-                return generatedImageError(403, "Forbidden", requestPath);
-            }
-            if (!image.isFile()) return generatedImageError(404, "Not Found", requestPath);
-            long length = image.length();
-            if (length <= 0 || length > 25L * 1024L * 1024L) {
-                return generatedImageError(413, "Content Too Large", requestPath);
-            }
-
-            java.util.HashMap<String, String> headers = new java.util.HashMap<>();
-            headers.put("Cache-Control", "no-store");
-            headers.put("X-Content-Type-Options", "nosniff");
-            return new WebResourceResponse(mime, null, 200, "OK", headers, new java.io.FileInputStream(image));
-        } catch (java.io.FileNotFoundException error) {
-            return generatedImageError(404, "Not Found", requestPath);
-        } catch (Exception error) {
-            return generatedImageError(500, "Read Error", requestPath);
-        }
-    }
-
-    private WebResourceResponse generatedImageError(int status, String reason, String requestPath) {
-        try {
-            JSONObject diagnostic = new JSONObject();
-            diagnostic.put("srcKind", "generated_image");
-            diagnostic.put("responseStatus", status);
-            ImagePipelineDiagnostics.addSanitizedPath(diagnostic, requestPath);
-            ImagePipelineDiagnostics.record(this, "webview_generated_image_resource_error", diagnostic);
-        } catch (Exception ignored) {}
-        byte[] body = "Generated image unavailable".getBytes(StandardCharsets.UTF_8);
-        java.util.HashMap<String, String> headers = new java.util.HashMap<>();
-        headers.put("Cache-Control", "no-store");
-        headers.put("X-Content-Type-Options", "nosniff");
-        return new WebResourceResponse("text/plain", "UTF-8", status, reason, headers,
-                new ByteArrayInputStream(body));
-    }
-
-    private void installImageGenDocumentStartScript(String origin) {
-        if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            if (imageGenStatus != null) imageGenStatus.setText("이 Android System WebView는 이미지 서버 연결 스크립트를 지원하지 않습니다. WebView 업데이트가 필요합니다.");
-            return;
-        }
-        try {
-            for (String assetName : new String[] {"imagegen-proxy.js", "image-provider-bridge.js", "imagegen-studio-bridge.js"}) {
-                try (InputStream in = getAssets().open(assetName)) {
-                    ByteArrayOutputStream out = new ByteArrayOutputStream();
-                    byte[] buffer = new byte[8192];
-                    int count;
-                    while ((count = in.read(buffer)) >= 0) {
-                        if (count > 0) out.write(buffer, 0, count);
-                        if (out.size() > 64 * 1024) throw new IllegalStateException(assetName + " 파일이 너무 큽니다.");
-                    }
-                    String source = new String(out.toByteArray(), StandardCharsets.UTF_8);
-                    WebViewCompat.addDocumentStartJavaScript(
-                            web, source, Collections.singleton(origin));
-                }
-            }
-        } catch (Exception e) {
-            if (imageGenStatus != null) imageGenStatus.setText("이미지 생성 연결 스크립트를 준비하지 못했습니다: " + msg(e));
-        }
-    }
-
-    private static final Object IMAGEGEN_LOCK = new Object();
-
-    private File imageGenBackendRoot() {
-        return new File(getFilesDir(), "imagegen/backend");
-    }
-
-    private String imageStudioModId(SafTree sessionTree) throws Exception {
-        if (sessionTree != null) {
-            String folderMod = sessionTree.imageStudioModId();
-            if ("imagestudio".equals(folderMod)) return folderMod;
-        }
-        // ZIP-installed WML mods are served by the same overlay used by the
-        // WebView. Detect the adapter there as well; never extract the ZIP.
-        if (zipMods == null) return null;
-        try (InputStream script = zipMods.open("wml/mods/imagestudio/mod.js")) {
-            if (script == null) return null;
-            byte[] bytes = new byte[65536];
-            int used = 0;
-            while (used < bytes.length) {
-                int count = script.read(bytes, used, bytes.length - used);
-                if (count < 0) break;
-                if (count == 0) continue;
-                used += count;
-            }
-            String source = new String(bytes, 0, used, StandardCharsets.UTF_8);
-            int defineAt = source.indexOf("WML.define");
-            if (defineAt < 0) return null;
-            Matcher matcher = MOD_ID.matcher(source.substring(defineAt));
-            return matcher.find() && "imagestudio".equals(matcher.group(1))
-                    ? "imagestudio" : null;
-        }
-    }
-
-    private boolean ensureImageGenBackend(SafTree sessionTree) throws Exception {
-        // The WML mod is only the in-game adapter. The server implementation is
-        // shipped in the launcher APK and never copied from the selected game.
-        if (!"imagestudio".equals(imageStudioModId(sessionTree))) return false;
-        File backend = ImageGenBackendInstaller.install(this, imageGenBackendRoot());
-        return hasImageGenProject(backend);
-    }
-
-    private boolean hasImageGenProject(File backend) {
-        File nested = new File(backend, "wayward-imagegen");
-        File project = new File(nested, "src/cli.ts").isFile() ? nested : backend;
-        return new File(project, "package.json").isFile() && new File(project, "src/cli.ts").isFile();
-    }
-
-    private void ensureImageGenServer(SafTree sessionTree, Runnable afterReady) {
-        if (afterReady != null) imageGenReadyCallbacks.add(afterReady);
-        if (sessionTree == null) {
-            imageGenSessionMessage = "현재 게임 세션의 폴더를 확인할 수 없어 이미지 서버 자동 시작을 건너뛰었습니다.";
-            finishImageGenCallbacks();
-            refreshImageGenStatus();
-            return;
-        }
-
-        if (manualImageGenPreparing) {
-            imageGenSessionMessage = "이미지 생성 서버 준비가 진행 중입니다. 준비가 끝난 뒤 현재 세션을 다시 여세요.";
-            refreshImageGenStatus();
-            finishImageGenCallbacks();
-            return;
-        }
-        if (imageGenCopying) {
-            waitForImageGenReady();
-            return;
-        }
-
-        final String providerMode;
-        final String providerProfileId;
-        final String providerId;
-        final String version;
-        try {
-            String detected = imageStudioModId(sessionTree);
-            imageStudioSessionDetected = "imagestudio".equals(detected);
-            if (detected == null) {
-                imageGenSessionMessage = "현재 세션의 WML Image Studio 모드가 없어 이미지 서버를 시작하지 않았습니다.";
-                refreshImageGenStatus();
-                finishImageGenCallbacks();
-                return;
-            }
-            String selectedMode = "novelai";
-            String selectedProfile = "";
-            String selectedProvider = "";
-            if (activeProfileId != null && activeProfileId.matches("[a-f0-9]{32}")) {
-                ImageProviderStore.Snapshot providers = new ImageProviderStore(this).load();
-                String defaultId = providers.defaults.get(activeProfileId);
-                ImageProviderStore.Provider selected = ImageProviderStore.find(providers, defaultId);
-                if (selected != null && selected.enabled && selected.allowInGame) {
-                    selectedMode = "launcher";
-                    selectedProfile = activeProfileId;
-                    selectedProvider = selected.id;
-                }
-            }
-            providerMode = selectedMode;
-            providerProfileId = selectedProfile;
-            providerId = selectedProvider;
-            version = "launcher-imagegen:" + ImageGenBackendInstaller.VERSION + ":" + providerMode
-                    + ("launcher".equals(providerMode) ? ":" + providerProfileId + ":" + providerId : "");
-        } catch (Exception e) {
-            imageGenSessionMessage = "현재 세션의 Image Studio / 이미지 서비스 확인 실패: " + msg(e);
-            refreshImageGenStatus();
-            finishImageGenCallbacks();
-            return;
-        }
-
-        ImageGenStatusStore.State shared = ImageGenStatusStore.read(getFilesDir());
-        if (shared.isAvailable() || shared.isStarting()) {
-            if (!sameImageGenVersion(shared.backendVersion, version)) {
-                imageGenSessionMessage = "현재 세션 Image Studio 버전(" + version + ")이 실행 중 서버 버전("
-                        + safeVersion(shared.backendVersion) + ")과 달라 공유하지 않았습니다. 실행 중인 서버를 중지한 뒤 세션을 다시 열어 주세요.";
-                refreshImageGenStatus();
-                finishImageGenCallbacks();
-                return;
-            }
-            imageGenSessionMessage = "현재 세션의 Image Studio " + version + "을 공통 이미지 서버에 연결합니다.";
-            waitForImageGenReady();
-            return;
-        }
-
-        synchronized (IMAGEGEN_LOCK) {
-            shared = ImageGenStatusStore.read(getFilesDir());
-            if (shared.isAvailable() || shared.isStarting()) {
-                if (!sameImageGenVersion(shared.backendVersion, version)) {
-                    imageGenSessionMessage = "다른 세션에서 다른 Image Studio 버전의 서버가 실행 중입니다. 현재 서버를 중지한 뒤 다시 시도해 주세요.";
-                    refreshImageGenStatus();
-                    finishImageGenCallbacks();
-                    return;
-                }
-                waitForImageGenReady();
-                return;
-            }
-            if (imageGenCopying) {
-                waitForImageGenReady();
-                return;
-            }
-            imageGenCopying = true;
-        }
-
-        imageGenSessionMessage = "현재 세션의 Image Studio 백엔드를 확인하고 런처 서버에 연결하는 중입니다…";
-        refreshImageGenStatus();
-        new Thread(() -> {
-            String problem = null;
-            File backend = imageGenBackendRoot();
-            try {
-                synchronized (IMAGEGEN_LOCK) {
-                    if (!ensureImageGenBackend(sessionTree)) {
-                        throw new IllegalStateException("현재 런처 APK에 포함된 ImageGen 서버 자산을 찾지 못했습니다.");
-                    }
-                }
-                writeImageGenRuntimeConfig(backend, providerMode, "", providerProfileId, providerId);
-            } catch (Throwable error) {
-                problem = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
-            }
-            final String failure = problem;
-            runOnUiThread(() -> {
-                imageGenCopying = false;
-                if (failure != null) {
-                    imageGenSessionMessage = "Image Studio 백엔드 준비 실패: " + failure;
-                    refreshImageGenStatus();
-                    finishImageGenCallbacks();
-                    return;
-                }
-                startImageGenService(backend, version, providerMode, "", providerProfileId, providerId);
-                waitForImageGenReady();
-            });
-        }, "wayward-imagegen-session-prepare").start();
-    }
-
-    private static boolean sameImageGenVersion(String running, String requested) {
-        if(running==null||requested==null||running.isEmpty()||requested.isEmpty())return false;
-        // The engine mode and, for native providers, profile provider ID are
-        // part of the identity so sessions cannot silently share another profile's service.
-        return running.equals(requested);
-    }
-
-    private static String safeVersion(String version) {
-        return version == null || version.isEmpty() ? "알 수 없음" : version;
-    }
-
-    private void waitForImageGenReady() {
-        if (imageGenReadyCallbacks.isEmpty() || imageGenPollRunnable != null) return;
-        final long deadline = System.currentTimeMillis() + 18L * 60L * 1000L;
-        imageGenPollRunnable = new Runnable() {
-            @Override public void run() {
-                ImageGenStatusStore.State state = ImageGenStatusStore.read(getFilesDir());
-                boolean finished = state.isReady() || state.isAvailable()
-                        || (!state.isStarting() && !imageGenCopying)
-                        || System.currentTimeMillis() >= deadline;
-                if (finished) {
-                    imageGenPollRunnable = null;
-                    finishImageGenCallbacks();
-                    refreshImageGenStatus();
-                } else {
-                    imageGenHandler.postDelayed(this, 500);
-                }
-            }
-        };
-        imageGenHandler.post(imageGenPollRunnable);
-    }
-
-    private void finishImageGenCallbacks() {
-        if (imageGenPollRunnable != null) {
-            imageGenHandler.removeCallbacks(imageGenPollRunnable);
-            imageGenPollRunnable = null;
-        }
-        List<Runnable> callbacks = new ArrayList<>(imageGenReadyCallbacks);
-        imageGenReadyCallbacks.clear();
-        for (Runnable callback : callbacks) {
-            try { callback.run(); } catch (Exception ignored) {}
-        }
-    }
-
-    private void startLauncherProviderServer(){
-        if(activeProfileId==null||!activeProfileId.matches("[a-f0-9]{32}")){
-            Toast.makeText(this,"게임 프로필을 먼저 열어 주세요.",Toast.LENGTH_LONG).show();
-            return;
-        }
-        try{
-            ImageProviderStore.Snapshot snapshot=new ImageProviderStore(this).load();
-            String providerId=snapshot.defaults.get(activeProfileId);
-            ImageProviderStore.Provider provider=ImageProviderStore.find(snapshot,providerId);
-            if(provider==null||!provider.enabled||!provider.allowInGame){
-                Toast.makeText(this,"이 게임 프로필의 기본 이미지 서비스를 지정하고 '게임에서 사용 허용'을 켜 주세요.",Toast.LENGTH_LONG).show();
-                return;
-            }
-            startOrSwitchManagedImageGenServer("launcher","");
-        }catch(Exception error){
-            imageGenSessionMessage="등록 이미지 서비스 확인 실패: "+msg(error);
-            refreshImageGenStatus();
-            Toast.makeText(this,imageGenSessionMessage,Toast.LENGTH_LONG).show();
-        }
-    }
-
-    private void startNovelAiServer(){
-        startOrSwitchManagedImageGenServer("novelai","");
-    }
-
-    private void startComfyConnectionServer(){
-        try{
-            String url=ComfyEndpoint.normalizeOptional(comfyUrlInput==null?"":comfyUrlInput.getText().toString());
-            startOrSwitchManagedImageGenServer("comfy",url);
-        }catch(IllegalArgumentException error){
-            imageGenSessionMessage="ComfyUI 주소 확인: "+msg(error);
-            refreshImageGenStatus();
-            Toast.makeText(this,imageGenSessionMessage,Toast.LENGTH_LONG).show();
-        }
-    }
-
-    private void startOrSwitchManagedImageGenServer(String mode,String endpoint){
-        ImageGenStatusStore.State running=ImageGenStatusStore.read(getFilesDir());
-        String storedEndpoint=getSharedPreferences(PREFS,MODE_PRIVATE).getString(KEY_COMFY_URL,"");
-        boolean endpointChanged="comfy".equals(mode)&&!endpoint.equals(storedEndpoint==null?"":storedEndpoint);
-        boolean sameMode=!"launcher".equals(mode)&&running.backendVersion!=null&&running.backendVersion.endsWith(":"+mode);
-        if(running.isStarting()){
-            imageGenSessionMessage="이미 이미지 서버를 시작하고 있습니다. 준비가 끝난 뒤 다시 시도해 주세요.";
-            refreshImageGenStatus();
-            return;
-        }
-        if(running.isAvailable()&&sameMode&&!endpointChanged){
-            imageGenSessionMessage=running.isReady()
-                    ? "런처 내장 "+("comfy".equals(mode)?"ComfyUI 중계":"NovelAI")+" 서버가 이미 실행 중입니다."
-                    : (running.message.isEmpty() ? "이미지 서버 응답은 확인됐지만 공급자 설정이 아직 준비되지 않았습니다." : running.message);
-            refreshImageGenStatus();
-            Toast.makeText(this,imageGenSessionMessage,Toast.LENGTH_SHORT).show();
-            return;
-        }
-        if("comfy".equals(mode)){
-            getSharedPreferences(PREFS,MODE_PRIVATE).edit().putString(KEY_COMFY_URL,endpoint).apply();
-        }
-        if(running.isAvailable()){
-            imageGenSessionMessage="서버 설정 변경을 적용하기 위해 내장 이미지 서버를 재시작합니다…";
-            refreshImageGenStatus();
-            stopImageGenServer();
-            waitForImageGenStopThenStart(mode,endpoint,0);
-            return;
-        }
-        startManagedImageGenServer(mode,endpoint);
-    }
-
-    private void waitForImageGenStopThenStart(String mode,String endpoint,int attempt){
-        ImageGenStatusStore.State state=ImageGenStatusStore.read(getFilesDir());
-        if(!state.isAvailable()&&!state.isStarting()){
-            startManagedImageGenServer(mode,endpoint);
-            return;
-        }
-        if(attempt>=20){
-            imageGenSessionMessage="기존 이미지 서버가 아직 종료되지 않았습니다. 중지 버튼으로 종료한 뒤 다시 실행해 주세요.";
-            refreshImageGenStatus();
-            return;
-        }
-        imageGenHandler.postDelayed(()->waitForImageGenStopThenStart(mode,endpoint,attempt+1),250);
-    }
-
-    private void openImageGenPanel(){
-        if (web == null || tree == null) {
-            MainActivity session = findActiveSessionActivity();
-            if (session != null && session != this) {
-                String sessionId = session.activeProfileId;
-                // The owner Activity is already alive in this process. Invoke its
-                // settings action directly, then bring its document task forward.
-                // Relying only on NEW_DOCUMENT/onNewIntent can reorder the task without
-                // delivering the UI action on some Android document-task stacks.
-                try {
-                    session.openImageGenPanel();
-                    Intent route = new Intent(this, MainActivity.class);
-                    route.setData(Uri.parse("wayward://session/" + Uri.encode(sessionId)));
-                    route.addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-                    startActivity(route);
-                    DiagnosticsLogger.event(this,"INFO","imagegen","session_settings_routed",null);
-                    return;
-                } catch (Throwable error) {
-                    DiagnosticsLogger.error(this,"imagegen","session_settings_route_failed",error);
-                }
-            }
-            Toast.makeText(this,"게임 세션을 먼저 실행해 Image Studio 모드를 불러와 주세요.",Toast.LENGTH_LONG).show();
-            return;
-        }
-        Runnable openSettings = () -> {
-            ImageGenStatusStore.State state = ImageGenStatusStore.read(getFilesDir());
-            if (!state.isAvailable()) {
-                String detail = state.message == null || state.message.isEmpty()
-                        ? "이미지 서버 응답을 확인하지 못했습니다." : state.message;
-                Toast.makeText(this,detail,Toast.LENGTH_LONG).show();
-                return;
-            }
-            if (home != null) home.setVisibility(View.GONE);
-            web.setVisibility(View.VISIBLE);
-            web.bringToFront();
-            web.postDelayed(() -> {
-                if (web == null) return;
-                web.evaluateJavascript(
-                        "(async()=>{const bridge=window.WaywardLauncherImageStudio;"
-                        + "if(!bridge)return 'launcher_bridge_missing';"
-                        + "const result=await bridge.openGenerationSettings();"
-                        + "return result&&result.ok?'opened':(result&&result.reason)||'open_failed';})()",
-                        value -> {
-                            if (value == null || !value.contains("opened")) {
-                                String reason = value == null ? "unknown" : value;
-                                Toast.makeText(this,"Image Studio 설정 화면을 열지 못했습니다: "+reason,Toast.LENGTH_LONG).show();
-                            }
-                        });
-            }, 100L);
-        };
-        // A verified active session can reuse the running service without a
-        // second SAF scan. Otherwise retain the normal detection/startup flow.
-        ImageGenStatusStore.State existing = ImageGenStatusStore.read(getFilesDir());
-        if (imageStudioSessionDetected && existing.isAvailable()) openSettings.run();
-        else ensureImageGenServer(tree, openSettings);
-    }
-
     private void registerSessionActivity() {
         String id = activeProfileId;
         if (id == null || !id.matches("[a-f0-9]{32}") || web == null || tree == null) return;
@@ -1266,245 +825,6 @@ public final class MainActivity extends Activity {
             }
         }
         if (LAST_ACTIVE_SESSION_ID.isEmpty()) findActiveSessionActivity();
-    }
-
-    private void startManagedImageGenServer(String mode,String comfyUrl){
-        if (!"novelai".equals(mode) && !"comfy".equals(mode) && !"launcher".equals(mode)) {
-            imageGenSessionMessage = "지원하지 않는 이미지 생성 서버 모드입니다.";
-            refreshImageGenStatus();
-            return;
-        }
-        synchronized(IMAGEGEN_LOCK){
-            ImageGenStatusStore.State running=ImageGenStatusStore.read(getFilesDir());
-            if(running.isAvailable()||running.isStarting()){
-                imageGenSessionMessage=running.isReady()
-                        ? "이미 런처 내장 이미지 서버가 실행 중입니다. ComfyUI 주소를 바꾸려면 주소를 입력한 뒤 연결 버튼을 누르세요."
-                        : (running.message.isEmpty() ? "이미지 서버 응답은 확인됐지만 공급자 설정이 아직 준비되지 않았습니다." : running.message);
-                refreshImageGenStatus();
-                Toast.makeText(this,imageGenSessionMessage,Toast.LENGTH_LONG).show();
-                return;
-            }
-            if(imageGenCopying||manualImageGenPreparing){
-                imageGenSessionMessage="내장 이미지 서버를 준비하고 있습니다. 준비가 끝난 뒤 다시 시도해 주세요.";
-                refreshImageGenStatus();
-                Toast.makeText(this,imageGenSessionMessage,Toast.LENGTH_LONG).show();
-                return;
-            }
-            manualImageGenPreparing=true;
-        }
-
-        final File backend=imageGenBackendRoot();
-        final String requestedUrl=comfyUrl==null?"":comfyUrl.trim();
-        final String launcherProfileId="launcher".equals(mode)?activeProfileId:"";
-        final String launcherProviderId;
-        try{
-            if("launcher".equals(mode)){
-                if(launcherProfileId==null||!launcherProfileId.matches("[a-f0-9]{32}"))throw new IllegalStateException("현재 게임 프로필이 없습니다.");
-                ImageProviderStore.Snapshot providers=new ImageProviderStore(this).load();
-                launcherProviderId=providers.defaults.get(launcherProfileId);
-                ImageProviderStore.Provider selected=ImageProviderStore.find(providers,launcherProviderId);
-                if(selected==null||!selected.enabled||!selected.allowInGame)throw new IllegalStateException("기본 이미지 서비스가 없거나 게임 사용이 허용되지 않았습니다.");
-            }else launcherProviderId="";
-        }catch(Exception error){
-            manualImageGenPreparing=false;
-            imageGenSessionMessage="등록 이미지 서비스 확인 실패: "+msg(error);
-            refreshImageGenStatus();
-            Toast.makeText(this,imageGenSessionMessage,Toast.LENGTH_LONG).show();
-            return;
-        }
-        imageGenSessionMessage=("novelai".equals(mode)?"NovelAI":"launcher".equals(mode)?"등록 이미지 서비스":"ComfyUI 연결")+" 런처 내장 서버를 준비하고 있습니다…";
-        refreshImageGenStatus();
-        new Thread(()->{
-            String failure=null;
-            try{
-                ImageGenBackendInstaller.install(this,backend);
-                // Server availability is independent of provider credentials.
-                // NovelAI credentials are supplied only to the NovelAI runtime;
-                // Cloudflare FLUX uses its own ImageProviderStore provider record.
-                writeImageGenRuntimeConfig(backend,mode,requestedUrl,launcherProfileId,launcherProviderId);
-            }catch(Throwable error){
-                failure=error.getMessage()==null?error.getClass().getSimpleName():error.getMessage();
-            }
-            final String problem=failure;
-            runOnUiThread(()->{
-                if(problem!=null){
-                    manualImageGenPreparing=false;
-                    imageGenSessionMessage="내장 이미지 서버 준비 실패: "+problem;
-                    try { ImageGenStatusStore.write(getFilesDir(),false,false,imageGenSessionMessage,""); }
-                    catch (Exception ignored) {}
-                    refreshImageGenStatus();
-                    Toast.makeText(this,imageGenSessionMessage,Toast.LENGTH_LONG).show();
-                    return;
-                }
-                String launchVersion="launcher-imagegen:"+ImageGenBackendInstaller.VERSION+":"+mode
-                        +("launcher".equals(mode)?":"+launcherProfileId+":"+launcherProviderId:"");
-                try {
-                    ImageGenStatusStore.write(getFilesDir(),false,true,"런처 내장 ImageGen 서버 시작 중…",launchVersion);
-                } catch (Exception error) {
-                    manualImageGenPreparing=false;
-                    imageGenSessionMessage="이미지 서버 상태를 저장하지 못했습니다: "+msg(error);
-                    refreshImageGenStatus();
-                    return;
-                }
-                imageGenReadyCallbacks.add(()->{
-                    ImageGenStatusStore.State state=ImageGenStatusStore.read(getFilesDir());
-                    if(!state.isReady())imageGenSessionMessage=state.message;
-                    refreshImageGenStatus();
-                });
-                startImageGenService(backend,launchVersion,mode,requestedUrl,launcherProfileId,launcherProviderId);
-                manualImageGenPreparing=false;
-                refreshImageGenStatus();
-                waitForImageGenReady();
-            });
-        },"wayward-imagegen-bundled-prepare").start();
-    }
-
-    private void writeImageGenRuntimeConfig(File backend,String mode,String comfyUrl,
-                                             String launcherProfileId,String launcherProviderId)throws Exception{
-        File project=new File(backend,"wayward-imagegen");
-        if(!new File(project,"src/cli.ts").isFile())throw new IllegalStateException("내장 wayward-imagegen/src/cli.ts가 없습니다.");
-        JSONObject config=new JSONObject();
-        config.put("host","127.0.0.1");
-        config.put("port",8189);
-        config.put("imagesDir",new File(getFilesDir(),"imagegen/images").getAbsolutePath());
-        config.put("stateDir",new File(getFilesDir(),"imagegen/state").getAbsolutePath());
-        config.put("comfyUrl",comfyUrl==null||comfyUrl.isEmpty()?"http://127.0.0.1:8188":comfyUrl);
-        config.put("imageProvider","launcher".equals(mode)?"launcher":"novelai".equals(mode)?"nai":"sdxl");
-        config.put("launcherProviderUrl","launcher".equals(mode)?"http://127.0.0.1:8190/generate":"");
-        config.put("launcherProfileId",launcherProfileId==null?"":launcherProfileId);
-        config.put("launcherProviderId",launcherProviderId==null?"":launcherProviderId);
-        config.put("launcherProviderSignature","launcher".equals(mode)?launcherProfileId+":"+launcherProviderId:"");
-        config.put("launcherProviderToken","");
-        config.put("naiModel","nai-diffusion-4-5-full");
-        // Android has no bundled sharp binary; PNG is the supported no-dependency path.
-        config.put("webp",false);
-        config.put("requireWebp",false);
-        File images=new File(getFilesDir(),"imagegen/images");
-        File state=new File(getFilesDir(),"imagegen/state");
-        if(!images.isDirectory()&&!images.mkdirs()&&!images.isDirectory())throw new IllegalStateException("이미지 저장 폴더를 만들지 못했습니다.");
-        if(!state.isDirectory()&&!state.mkdirs()&&!state.isDirectory())throw new IllegalStateException("이미지 상태 폴더를 만들지 못했습니다.");
-        synchronizeImageGenProviderSetting(state,mode);
-        File output=new File(project,"wayward-imagegen.config.json");
-        File temporary=new File(project,"wayward-imagegen.config.json.tmp");
-        try(FileOutputStream stream=new FileOutputStream(temporary)){
-            stream.write(config.toString().getBytes(StandardCharsets.UTF_8));
-            stream.flush();
-            stream.getFD().sync();
-        }
-        try{
-            java.nio.file.Files.move(temporary.toPath(),output.toPath(),
-                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
-        }catch(java.nio.file.AtomicMoveNotSupportedException error){
-            java.nio.file.Files.move(temporary.toPath(),output.toPath(),
-                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
-
-    private void synchronizeImageGenProviderSetting(File stateDirectory,String mode)throws Exception{
-        File settingsFile=new File(stateDirectory,"anima-settings.json");
-        if(!settingsFile.isFile())return;
-        if(settingsFile.length()<=0||settingsFile.length()>2*1024*1024)throw new IllegalStateException("기존 Image Studio 설정 파일 크기가 올바르지 않습니다.");
-        byte[] bytes=java.nio.file.Files.readAllBytes(settingsFile.toPath());
-        org.json.JSONObject settings=new org.json.JSONObject(new String(bytes,StandardCharsets.UTF_8));
-        String provider="launcher".equals(mode)?"launcher":"novelai".equals(mode)?"nai":"sdxl";
-        settings.put("imageProvider",provider);
-        // Credentials are supplied by Android Keystore, never persisted here.
-        settings.put("naiToken","");
-        File temporary=new File(stateDirectory,"anima-settings.json.tmp");
-        try(FileOutputStream output=new FileOutputStream(temporary,false)){
-            output.write((settings.toString()+"\n").getBytes(StandardCharsets.UTF_8));
-            output.flush();
-            output.getFD().sync();
-        }
-        try{
-            java.nio.file.Files.move(temporary.toPath(),settingsFile.toPath(),
-                    java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        }catch(java.nio.file.AtomicMoveNotSupportedException error){
-            java.nio.file.Files.move(temporary.toPath(),settingsFile.toPath(),
-                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        }finally{
-            if(temporary.exists())temporary.delete();
-        }
-    }
-
-    private void startImageGenService(File backend, String version) {
-        startImageGenService(backend,version,"default","");
-    }
-
-    private void startImageGenService(File backend,String version,String launchMode,String comfyUrl){
-        startImageGenService(backend,version,launchMode,comfyUrl,"","");
-    }
-
-    private void startImageGenService(File backend,String version,String launchMode,String comfyUrl,
-                                      String launcherProfileId,String launcherProviderId){
-        Intent intent = new Intent(this, ImageGenService.class);
-        intent.setAction(ImageGenService.ACTION_START);
-        intent.putExtra(ImageGenService.EXTRA_BACKEND_ROOT, backend.getAbsolutePath());
-        intent.putExtra(ImageGenService.EXTRA_BACKEND_VERSION, version);
-        intent.putExtra(ImageGenService.EXTRA_LAUNCH_MODE, launchMode);
-        intent.putExtra(ImageGenService.EXTRA_COMFY_URL, comfyUrl==null?"":comfyUrl);
-        intent.putExtra(ImageGenService.EXTRA_LAUNCHER_PROFILE_ID, launcherProfileId==null?"":launcherProfileId);
-        intent.putExtra(ImageGenService.EXTRA_LAUNCHER_PROVIDER_ID, launcherProviderId==null?"":launcherProviderId);
-        try {
-            if (android.os.Build.VERSION.SDK_INT >= 26) startForegroundService(intent);
-            else startService(intent);
-            imageGenSessionMessage = "Wayward ImageGen " + version + " 서버 시작 요청을 전달했습니다.";
-            refreshImageGenStatus();
-        } catch (Throwable error) {
-            DiagnosticsLogger.error(this,"imagegen","service_start_request_failed",error);
-            String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
-            imageGenSessionMessage = "이미지 서버 시작 요청 실패: " + message;
-            try {
-                ImageGenStatusStore.write(getFilesDir(), false, false, imageGenSessionMessage, version);
-            } catch (Exception ignored) {}
-            refreshImageGenStatus();
-            finishImageGenCallbacks();
-        }
-    }
-
-    private void stopImageGenServer() {
-        DiagnosticsLogger.event(this,"INFO","imagegen","stop_requested",null);
-        Intent intent = new Intent(this, ImageGenService.class).setAction(ImageGenService.ACTION_STOP);
-        try {
-            startService(intent);
-        } catch (Exception ignored) {
-            stopService(new Intent(this, ImageGenService.class));
-        }
-        imageGenSessionMessage = "이미지 생성 서버 중지 요청을 보냈습니다.";
-        if (imageGenStatus != null) imageGenStatus.setText(imageGenSessionMessage);
-    }
-
-    private void refreshImageGenStatus() {
-        if (imageGenStatus == null) return;
-        ImageGenStatusStore.State state = ImageGenStatusStore.read(getFilesDir());
-        if (state.isReady()) {
-            boolean comfy = state.backendVersion != null && state.backendVersion.endsWith(":comfy");
-            String endpoint = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_COMFY_URL, "");
-            if (comfy && (endpoint == null || endpoint.trim().isEmpty())) {
-                imageGenStatus.setText("로컬 ComfyUI 중계 서버 실행됨 · PC 주소 미설정 · 연결 대기 중 · 127.0.0.1:8189");
-            } else {
-                imageGenStatus.setText("런처 내장 ImageGen " + ImageGenBackendInstaller.VERSION + " 실행 중 · 127.0.0.1:8189");
-            }
-        }
-        else if (state.isAvailable()) imageGenStatus.setText(state.message.isEmpty()
-                ? "이미지 서버 응답 확인됨 · 공급자 설정을 확인해 주세요." : state.message);
-        else if (state.isStarting()) imageGenStatus.setText(state.message.isEmpty() ? "이미지 생성 서버 시작 중…" : state.message);
-        else if (imageGenCopying || manualImageGenPreparing) imageGenStatus.setText("이미지 생성 백엔드 준비 중…");
-        else if (state.ready && !state.isFresh()) imageGenStatus.setText("이미지 생성 서비스 heartbeat가 끊겼습니다. 현재 세션을 다시 열면 서버를 재시작합니다.");
-        else if (!state.message.isEmpty()) imageGenStatus.setText(state.message);
-        else if (imageGenSessionMessage != null && !imageGenSessionMessage.isEmpty()) imageGenStatus.setText(imageGenSessionMessage);
-        else imageGenStatus.setText("서버가 실행되지 않았습니다.");
-    }
-
-    private static void deleteFileTree(File file) {
-        if (file == null || !file.exists()) return;
-        if (file.isDirectory()) {
-            File[] children = file.listFiles();
-            if (children != null) for (File child : children) deleteFileTree(child);
-        }
-        file.delete();
     }
 
     private void showHomePanel(){runOnUiThread(()->{if(web!=null)web.setVisibility(View.GONE);if(home!=null)home.setVisibility(View.VISIBLE);refreshStatus();});}
@@ -1728,6 +1048,53 @@ public final class MainActivity extends Activity {
             recordImageOpenTiming(p,resolveMs,accessMs,opened,n.size);
             return opened==null?null:opened.stream;
         }
+        void prewarmImageDirectories() {
+            try {
+                IMAGE_DIRECTORY_PREFETCH.execute(() -> {
+                    int directoryCount = 0;
+                    int childCount = 0;
+                    try {
+                        Node images = findIgnoreCase(rootId, "images");
+                        if (images == null || !images.dir || images.id == null) return;
+
+                        java.util.ArrayDeque<String> pending = new java.util.ArrayDeque<>();
+                        java.util.Map<String, Integer> depths = new java.util.HashMap<>();
+                        java.util.Set<String> seen = new java.util.HashSet<>();
+                        pending.addLast(images.id);
+                        depths.put(images.id, 0);
+                        seen.add(images.id);
+
+                        while (!pending.isEmpty() && directoryCount < 64) {
+                            String id = pending.removeFirst();
+                            int depth = depths.remove(id);
+                            java.util.Map<String, Node> children = childIndex(id);
+                            directoryCount++;
+                            childCount += children.size();
+                            if (depth >= 2) continue;
+
+                            for (Node child : children.values()) {
+                                if (!child.dir || child.id == null || child.id.isEmpty()
+                                        || !seen.add(child.id)) continue;
+                                if (directoryCount + pending.size() >= 64) break;
+                                pending.addLast(child.id);
+                                depths.put(child.id, depth + 1);
+                            }
+                        }
+
+                        JSONObject details = new JSONObject();
+                        details.put("directoryCount", directoryCount);
+                        details.put("childCount", childCount);
+                        ImagePipelineDiagnostics.record(MainActivity.this,
+                                "saf_image_directory_prefetch_completed", details);
+                    } catch (Exception error) {
+                        DiagnosticsLogger.error(MainActivity.this, "image",
+                                "saf_image_directory_prefetch_failed", error);
+                    }
+                });
+            } catch (RuntimeException ignored) {
+                // Metadata prefetch is opportunistic and must never gate image delivery.
+            }
+        }
         private Node resolveImage(String path)throws Exception{
             String p=FolderHandler.normal(path);if(p==null)return null;
             String parent=rootId;Node n=null;String[] parts=p.split("/");
@@ -1768,16 +1135,6 @@ public final class MainActivity extends Activity {
                 details.put("directoryChildCount",childCount);
             }catch(Exception ignored){}
             ImagePipelineDiagnostics.record(MainActivity.this,"saf_directory_query_timing",details);
-        }
-
-        String imageStudioModId() throws Exception {
-            // The game folder supplies only the WML adapter marker.
-            // The actual server is always installed from the launcher APK.
-            Node modDirectory = resolve("wml/mods/imagestudio");
-            if (modDirectory == null || !modDirectory.dir) return null;
-            Node modScript = find(modDirectory.id, "mod.js");
-            if (modScript == null || modScript.dir || !"imagestudio".equals(declared(modScript))) return null;
-            return "imagestudio";
         }
 
         List<String> listModIds()throws Exception{
