@@ -31,8 +31,16 @@ assert.doesNotMatch(main, /ImageGen|imageGen|ImageProvider|ComfyEndpoint|comfyUr
   'official launcher must not retain dormant image-generation server code');
 assert.match(main, /tree\.prewarmImageDirectories\(\)/,
   'game launch must start image-directory metadata prefetch before WebView loading');
-assert.match(main, /directoryCount < 64/,
-  'image metadata prefetch must have a strict directory bound');
+assert.match(main, /MAX_IMAGE_PREFETCH_DIRECTORIES = 256/,
+  'image metadata prefetch must have a bounded directory budget');
+assert.match(main, /directoryCount < MAX_IMAGE_PREFETCH_DIRECTORIES/,
+  'image metadata prefetch must enforce its directory bound');
+assert.match(main, /MAX_IMAGE_PREFETCH_DEPTH = 6/,
+  'image metadata prefetch must cover deeply nested portrait and thumbnail paths');
+assert.match(main, /childCount < MAX_IMAGE_PREFETCH_CHILDREN/,
+  'image metadata prefetch must enforce its child-entry bound');
+assert.match(main, /imageDirectoryPriority\(left\.name\)/,
+  'thumbnail and portrait directories must receive traversal priority');
 assert.doesNotMatch(diagnostics, /DiagnosticsUploader|uploadPending|readPending|acknowledge|https?:\/\//,
   'launcher diagnostics must remain local-only without a remote uploader');
 
@@ -88,4 +96,3 @@ for (const source of [
 }
 assert.equal(fs.existsSync('app/src/main/res/xml/network_security_config.xml'), false,
   'obsolete loopback cleartext server policy must be removed');
-console.log('Official v1 scope and image-cache checks passed');
