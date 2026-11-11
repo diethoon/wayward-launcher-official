@@ -16,5 +16,8 @@ ZIP 모드 관리, ImageGen/ComfyUI/NovelAI/FLUX, 원격 진단 업로드는 최
 - 기준 커밋: 9c52b690229808c9f6b188fcf55c073468b81341
 - 기준 경로: android-external-folder-launcher/
 
+## Google Drive CloudSave
+현재 개발본의 OAuth는 팝업의 window.opener/postMessage 반환 방식입니다. Android 외부 브라우저에서는 opener가 없어 현재 상태로 호환되지 않습니다. 모바일용 안전한 1회성 인증 전달 경로가 구현·실기기 검증되기 전에는 Google Drive 연결을 지원한다고 표시하지 않습니다.
+
 ## 검증 상태
-공식 빌드와 실제 Android 다중 세션 테스트가 통과하기 전까지 APK는 시험 산출물이며 정식 배포본이 아닙니다.
+현재 CI에서 Debug APK와 unsigned Release APK 빌드가 성공했습니다. Android 실기기/에뮬레이터의 다중 세션 동작과 Google Drive OAuth는 아직 미검증이므로 APK는 시험 산출물이며 정식 배포본이 아닙니다.
