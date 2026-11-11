@@ -104,7 +104,7 @@ jobs:
             adb install app/build/outputs/apk/debug/app-debug.apk
             adb shell am start -W -n com.wayward.launcher.official.debug/com.wayward.launcher.MainActivity
             sleep 5
-            app_pid="$(adb shell pidof -s com.wayward.launcher.official.debug | tr -d '\\r')"
+            app_pid="$(adb shell pidof -s com.wayward.launcher.official.debug | tr -d '\r')"
             test -n "$app_pid"
             if adb logcat -d -s AndroidRuntime:E | grep -q "FATAL EXCEPTION"; then
               adb logcat -d -s AndroidRuntime:E
