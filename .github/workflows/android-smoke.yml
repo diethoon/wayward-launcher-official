@@ -44,6 +44,9 @@ jobs:
 
       - name: Verify native OAuth bridge JavaScript
         run: node --check app/src/main/assets/wayward-google-auth-bridge.js
+        # The next step checks event.origin/source/nonce and native result handoff.
+      - name: Test native OAuth popup compatibility bridge
+        run: node scripts/test-google-auth-bridge.cjs
 
       - name: Build official debug APK
         run: gradle :app:assembleDebug
