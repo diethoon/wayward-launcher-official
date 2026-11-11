@@ -71,3 +71,8 @@ text = text.replace(old, new, 1)
 text = text.replace('게임과 앱 전용 ZIP 모드 및 이미지 캐시를 새로 읽습니다.', '게임 파일을 다시 읽습니다.')
 text = text.replace('return "0.3.2";', 'return "1.0.0";')
 main.write_text(text, encoding="utf-8")
+
+application = Path("app/src/main/java/com/wayward/launcher/LauncherApplication.java")
+text = application.read_text(encoding="utf-8")
+text = text.replace("            DiagnosticsUploader.uploadPending(this);\\n", "")
+application.write_text(text, encoding="utf-8")
