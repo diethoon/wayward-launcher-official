@@ -107,8 +107,9 @@ jobs:
             sleep 5
             app_pid="$(adb shell pidof -s com.wayward.launcher.official.debug | tr -d '\r')"
             test -n "$app_pid"
-            if adb logcat -d -s AndroidRuntime:E | grep -q "FATAL EXCEPTION"; then
-              adb logcat -d -s AndroidRuntime:E
+            crash_log="$(adb logcat -d -s AndroidRuntime:E)"
+            if printf '%s' "$crash_log" | grep -q "Process: com.wayward.launcher.official.debug"; then
+              printf '%s\n' "$crash_log"
               exit 1
             fi
             echo "Android 15 emulator launched the official launcher process (pid $app_pid)."
