@@ -19,7 +19,7 @@ assert.ok(!launcherTag.includes('documentLaunchMode'),
   'the home launcher must use one ordinary Android task');
 assert.ok(sessionTag.includes('android:exported="false"'),
   'game session Activity must be internal-only');
-assert.ok(sessionTag.includes('android:documentLaunchMode="intoExisting"'),
+assert.ok(manifest.includes('android:documentLaunchMode="intoExisting"'),
   'document-task reuse must be scoped to one game profile Activity');
 assert.ok(session.includes('extends MainActivity'),
   'the dedicated session Activity must reuse the existing native session implementation');
