@@ -54,6 +54,8 @@ jobs:
 
       - name: Test official launcher scope
         run: node scripts/test-official-scope.cjs
+      - name: Test Android launcher and game task separation
+        run: node scripts/test-android-task-separation.cjs
 
       - name: Test Google OAuth bridge contract
         run: node scripts/test-google-auth-bridge.cjs
