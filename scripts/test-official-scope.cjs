@@ -31,5 +31,18 @@ assert.match(main, /startGoogleDriveAuth\(String nonce\)/, 'native Drive authori
 assert.match(main, /takePendingStateForNonce\(String nonce\)/, 'nonce-scoped one-time result handoff must exist');
 assert.match(main, /clearGoogleAccessToken\(String token\)/, 'invalid native Drive tokens must be clearable');
 assert.match(gradle, /play-services-auth:21\.6\.0/, 'Google Identity Services dependency must be pinned');
+assert.match(gradle, /storeType\s+['"]PKCS12['"]/, 'release signing must use the PKCS#12 keystore format');
+
+const sessionStart = main.indexOf('private void openProfileSession(String id)');
+const sessionEnd = main.indexOf('private void removeProfile(String id)', sessionStart);
+assert(sessionStart >= 0 && sessionEnd > sessionStart, 'profile launch method must exist');
+assert.doesNotMatch(main.slice(sessionStart, sessionEnd), /ensureImageGenServer\(/,
+  'opening a game session must not automatically start the disabled ImageGen service');
+
+const webStart = main.indexOf('private void createWeb(){');
+const webEnd = main.indexOf('private void beginGoogleDriveAuth(', webStart);
+assert(webStart >= 0 && webEnd > webStart, 'WebView construction method must exist');
+assert.doesNotMatch(main.slice(webStart, webEnd), /installImageGenDocumentStartScript\(/,
+  'official game sessions must not install ImageGen document-start scripts');
 
 console.log('Official v1 scope checks passed');
