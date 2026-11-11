@@ -19,9 +19,8 @@ function json(data, status = 200) {
 }
 
 function authorized(request, env) {
-  // Configure API_KEY as a Worker secret before public use.
-  if (!env.API_KEY) return true;
-  return request.headers.get("authorization") === `Bearer ${env.API_KEY}`;
+  return Boolean(env.API_KEY) &&
+    request.headers.get("authorization") === `Bearer ${env.API_KEY}`;
 }
 
 export default {
@@ -38,7 +37,8 @@ export default {
         status: "ok",
         model: MODEL,
         generate: "POST /generate",
-        authRequired: Boolean(env.API_KEY)
+        authRequired: true,
+        apiKeyConfigured: Boolean(env.API_KEY)
       });
     }
 
@@ -46,6 +46,9 @@ export default {
       return json({ error: "Not found" }, 404);
     }
 
+    if (!env.API_KEY) {
+      return json({ error: "API_KEY secret is not configured" }, 503);
+    }
     if (!authorized(request, env)) {
       return json({ error: "Unauthorized" }, 401);
     }
@@ -59,29 +62,28 @@ export default {
 
     const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
     if (!prompt) return json({ error: "prompt is required" }, 400);
-    if (prompt.length > 4000) {
-      return json({ error: "prompt must be 4000 characters or fewer" }, 413);
-    }
-
-    const width = Number.isInteger(body.width) ? body.width : 1024;
-    const height = Number.isInteger(body.height) ? body.height : 1024;
-    if (width < 256 || width > 1440 || height < 256 || height > 1440) {
-      return json({ error: "width and height must be between 256 and 1440" }, 400);
+    if (prompt.length > 2048) {
+      return json({ error: "prompt must be 2048 characters or fewer" }, 413);
     }
 
     try {
-      const image = await env.AI.run(MODEL, {
+      const result = await env.AI.run(MODEL, {
         prompt,
-        width,
-        height,
         steps: 4
       });
 
+      if (!result || typeof result.image !== "string" || !result.image) {
+        throw new Error("Workers AI returned no base64 image");
+      }
+
+      const binary = atob(result.image);
+      const imageBytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+
       const headers = new Headers(corsHeaders);
-      headers.set("content-type", "image/png");
+      headers.set("content-type", "image/jpeg");
       headers.set("cache-control", "no-store");
       headers.set("x-wayward-model", MODEL);
-      return new Response(image, { status: 200, headers });
+      return new Response(imageBytes, { status: 200, headers });
     } catch (error) {
       return json({
         error: "Image generation failed",
