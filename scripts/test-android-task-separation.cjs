@@ -11,6 +11,8 @@ const launcherTag = manifest.split('\n').find(line =>
 const sessionTag = manifest.split('\n').find(line =>
   line.includes('<activity android:name=".GameSessionActivity"')) || '';
 
+assert.equal(manifest.split('android.intent.action.MAIN').length - 1, 1,
+  'exactly one launcher entry-point filter must exist across all Activities');
 assert.ok(launcherTag.includes('android:exported="true"'),
   'MainActivity must remain the exported launcher entry point');
 assert.ok(!launcherTag.includes('documentLaunchMode'),
