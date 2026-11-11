@@ -1,0 +1,96 @@
+name: Official Android validation
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - main
+      - 'work/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: official-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android 15 / Google Drive bridge checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check app/src/main/assets/wayward-google-auth-bridge.js
+          node --check app/src/main/assets/wml-folder-bootstrap.js
+
+      - name: Test official launcher scope
+        run: node scripts/test-official-scope.cjs
+
+      - name: Test Google OAuth bridge contract
+        run: node scripts/test-google-auth-bridge.cjs
+
+      - name: Prepare optional release keystore
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$KEYSTORE_BASE64" && -n "$KEYSTORE_PASSWORD" && -n "$KEY_ALIAS" && -n "$KEY_PASSWORD" ]]; then
+            mkdir -p "$RUNNER_TEMP/wayward-release"
+            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/wayward-release/release.p12"
+            test -s "$RUNNER_TEMP/wayward-release/release.p12"
+            chmod 600 "$RUNNER_TEMP/wayward-release/release.p12"
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/wayward-release/release.p12" >> "$GITHUB_ENV"
+            echo "Release signing secrets found; the Release APK will be signed." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Release signing secrets are incomplete; the Release APK will be unsigned. Debug APK build and tests still run." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build Debug and Release APKs
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: gradle --no-daemon --stacktrace clean assembleDebug assembleRelease
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: wayward-launcher-official-apks
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 14
