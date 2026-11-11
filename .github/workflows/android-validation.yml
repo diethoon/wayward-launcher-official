@@ -189,29 +189,14 @@ jobs:
           profile: pixel_7
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
-            set -euo pipefail
             adb wait-for-device
             adb install -r app/build/outputs/apk/debug/app-debug.apk
-            start_output="$(adb shell am start -W -n com.wayward.launcher.official.debug/com.wayward.launcher.MainActivity 2>&1)" || {
-              printf '%s\n' "$start_output"
-              adb logcat -d -s AndroidRuntime:E || true
-              exit 1
-            }
-            printf '%s\n' "$start_output"
+            adb shell am start -W -n com.wayward.launcher.official.debug/com.wayward.launcher.MainActivity
             sleep 8
-            app_pid="$(adb shell pidof -s com.wayward.launcher.official.debug 2>/dev/null | tr -d '\r' || true)"
-            crash_log="$(adb logcat -d -s AndroidRuntime:E 2>&1 || true)"
-            if [[ -z "$app_pid" ]]; then
-              echo "Launcher process was not running after Activity start."
-              adb shell dumpsys activity activities | grep -E 'mResumedActivity|ResumedActivity' || true
-              printf '%s\n' "$crash_log"
-              exit 1
-            fi
-            if printf '%s' "$crash_log" | grep -q "Process: com.wayward.launcher.official.debug"; then
-              printf '%s\n' "$crash_log"
-              exit 1
-            fi
-            echo "Android 15 emulator launched the official launcher process (pid $app_pid)."
+            adb shell pidof -s com.wayward.launcher.official.debug > /tmp/wayward-launcher-app-pid.txt
+            adb logcat -d -s AndroidRuntime:E > /tmp/wayward-launcher-crash.log
+            test -s /tmp/wayward-launcher-app-pid.txt && ! grep -q "Process: com.wayward.launcher.official.debug" /tmp/wayward-launcher-crash.log
+            echo "Android 15 emulator launched the official launcher process."
 
       - name: Upload APKs
         uses: actions/upload-artifact@v7
