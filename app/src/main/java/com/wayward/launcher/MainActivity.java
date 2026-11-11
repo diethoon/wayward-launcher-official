@@ -75,6 +75,9 @@ public final class MainActivity extends Activity {
     private static final Map<String, WeakReference<MainActivity>> SESSION_ACTIVITIES =
             new ConcurrentHashMap<>();
     private static volatile String LAST_ACTIVE_SESSION_ID = "";
+    private static final int MAX_IMAGE_PREFETCH_DIRECTORIES = 256;
+    private static final int MAX_IMAGE_PREFETCH_DEPTH = 6;
+    private static final int MAX_IMAGE_PREFETCH_CHILDREN = 50000;
     private static final java.util.concurrent.ThreadPoolExecutor IMAGE_DIRECTORY_PREFETCH =
             new java.util.concurrent.ThreadPoolExecutor(1, 1, 30L,
                     java.util.concurrent.TimeUnit.SECONDS,
@@ -1051,8 +1054,12 @@ public final class MainActivity extends Activity {
         void prewarmImageDirectories() {
             try {
                 IMAGE_DIRECTORY_PREFETCH.execute(() -> {
+                    Thread.currentThread().setPriority(Thread.MIN_PRIORITY);
+                    long started = System.nanoTime();
                     int directoryCount = 0;
                     int childCount = 0;
+                    int maxDepthReached = 0;
+                    boolean limitReached = false;
                     try {
                         Node images = findIgnoreCase(rootId, "images");
                         if (images == null || !images.dir || images.id == null) return;
@@ -1064,26 +1071,48 @@ public final class MainActivity extends Activity {
                         depths.put(images.id, 0);
                         seen.add(images.id);
 
-                        while (!pending.isEmpty() && directoryCount < 64) {
+                        while (!pending.isEmpty()
+                                && directoryCount < MAX_IMAGE_PREFETCH_DIRECTORIES
+                                && childCount < MAX_IMAGE_PREFETCH_CHILDREN) {
                             String id = pending.removeFirst();
                             int depth = depths.remove(id);
                             java.util.Map<String, Node> children = childIndex(id);
                             directoryCount++;
                             childCount += children.size();
-                            if (depth >= 2) continue;
+                            maxDepthReached = Math.max(maxDepthReached, depth);
+                            if (depth >= MAX_IMAGE_PREFETCH_DEPTH) continue;
 
+                            List<Node> directories = new ArrayList<>();
                             for (Node child : children.values()) {
-                                if (!child.dir || child.id == null || child.id.isEmpty()
-                                        || !seen.add(child.id)) continue;
-                                if (directoryCount + pending.size() >= 64) break;
+                                if (child.dir && child.id != null && !child.id.isEmpty()
+                                        && seen.add(child.id)) directories.add(child);
+                            }
+                            directories.sort((left, right) -> {
+                                int priority = Integer.compare(
+                                        imageDirectoryPriority(left.name),
+                                        imageDirectoryPriority(right.name));
+                                return priority != 0 ? priority
+                                        : left.name.compareToIgnoreCase(right.name);
+                            });
+                            for (Node child : directories) {
+                                if (directoryCount + pending.size() >= MAX_IMAGE_PREFETCH_DIRECTORIES) {
+                                    limitReached = true;
+                                    break;
+                                }
                                 pending.addLast(child.id);
                                 depths.put(child.id, depth + 1);
                             }
                         }
 
+                        limitReached = limitReached || !pending.isEmpty()
+                                || childCount >= MAX_IMAGE_PREFETCH_CHILDREN;
                         JSONObject details = new JSONObject();
                         details.put("directoryCount", directoryCount);
                         details.put("childCount", childCount);
+                        details.put("maxDepth", maxDepthReached);
+                        details.put("limitReached", limitReached);
+                        details.put("elapsedMs",
+                                (System.nanoTime() - started) / 1_000_000L);
                         ImagePipelineDiagnostics.record(MainActivity.this,
                                 "saf_image_directory_prefetch_completed", details);
                     } catch (Exception error) {
@@ -1094,6 +1123,16 @@ public final class MainActivity extends Activity {
             } catch (RuntimeException ignored) {
                 // Metadata prefetch is opportunistic and must never gate image delivery.
             }
+        }
+
+        private int imageDirectoryPriority(String name) {
+            String lower = name == null ? "" : name.toLowerCase(Locale.ROOT);
+            if (lower.contains("thumb")) return 0;
+            if (lower.contains("portrait")) return 1;
+            if (lower.contains("character")) return 2;
+            if (lower.equals("nai") || lower.contains("illustrious")) return 3;
+            if (lower.contains("avatar") || lower.contains("face")) return 4;
+            return 10;
         }
         private Node resolveImage(String path)throws Exception{
             String p=FolderHandler.normal(path);if(p==null)return null;
