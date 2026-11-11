@@ -36,8 +36,21 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Reuse stable test signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: wayward-launcher-official-debug-keystore-v1
+
+      - name: Verify native OAuth bridge JavaScript
+        run: node --check app/src/main/assets/wayward-google-auth-bridge.js
+
       - name: Build official debug APK
         run: gradle :app:assembleDebug
+
+      - name: Print debug certificate fingerprint for Google Cloud Android client
+        run: |
+          keytool -list -v -keystore "$HOME/.android/debug.keystore" -alias androiddebugkey -storepass android -keypass android | grep -E 'SHA1:|SHA-1:'
 
       - name: Install and launch on Android 15 emulator
         uses: reactivecircus/android-emulator-runner@v2
