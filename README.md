@@ -29,7 +29,7 @@ GitHub Actions에서 서명된 Release APK를 만들려면 저장소 Actions sec
 - `ANDROID_KEYSTORE_PASSWORD`: PKCS#12를 열 때 사용하는 내보내기 암호
 - `ANDROID_KEY_ALIAS`: `wayward-release`
 
-CI는 업로드된 P12의 크기(2,858 bytes), P12 비밀번호, 개인키-인증서 일치 여부, 인증서 SHA-1을 검사합니다. 이후 Java 17 호환 3DES 방식으로 임시 PKCS#12를 다시 포장하고 JKS로 변환해 서명합니다. `ANDROID_KEYSTORE_PASSWORD`에는 **P12 내보내기 암호**를 등록합니다. PEM 원본 파일을 만들 때 사용한 암호가 아니라 P12를 만들 때 설정한 암호입니다. 별도 `ANDROID_KEY_PASSWORD` secret은 사용하지 않으며, 기존에 등록했다면 삭제할 필요 없이 그대로 두어도 됩니다.
+CI는 업로드된 P12의 크기(2,858 bytes), P12 비밀번호, 개인키-인증서 일치 여부, 인증서 SHA-1을 검사합니다. 이후 Java 17 호환 3DES 방식으로 임시 PKCS#12를 다시 포장하고 JKS로 변환해 서명합니다. 변환 과정에서 키 별칭도 명시적으로 유지합니다. `ANDROID_KEYSTORE_PASSWORD`에는 **P12 내보내기 암호**를 등록합니다. PEM 원본 파일을 만들 때 사용한 암호가 아니라 P12를 만들 때 설정한 암호입니다. 별도 `ANDROID_KEY_PASSWORD` secret은 사용하지 않으며, 기존에 등록했다면 삭제할 필요 없이 그대로 두어도 됩니다.
 
 키 파일과 암호는 저장소 파일이나 코드에 넣지 않습니다. 세 secret 중 하나라도 없으면 CI는 Debug APK와 unsigned Release APK를 생성합니다.
 
