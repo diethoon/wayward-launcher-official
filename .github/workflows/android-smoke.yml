@@ -52,6 +52,8 @@ jobs:
         # The next step checks event.origin/source/nonce and native result handoff.
       - name: Test native OAuth popup compatibility bridge
         run: node scripts/test-google-auth-bridge.cjs
+      - name: Enforce minimal official v1 scope
+        run: node scripts/test-official-scope.cjs
 
       - name: Build official debug APK
         run: gradle :app:assembleDebug
