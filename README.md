@@ -15,7 +15,7 @@ ZIP 모드 관리, ImageGen/ComfyUI/NovelAI/FLUX, 원격 진단 업로드는 최
 ## Google Drive CloudSave
 Android 런처 안에서는 기존 CloudSave 0.4.4의 Vercel 팝업 URL을 네이티브 Google Identity Services AuthorizationClient로 중계합니다. 요청 범위는 Drive App Data(drive.appdata)이며, 결과 토큰은 JS에 전달하기 위한 프로세스 메모리의 nonce별 일회성 결과로만 보관합니다. 게임 모드의 기존 암호화·저장/불러오기 로직은 수정하지 않습니다.
 
-일반 브라우저에서는 기존 Vercel OAuth 팝업 경로를 그대로 사용합니다. Android에서는 Google Cloud 프로젝트에 Android OAuth 클라이언트를 별도로 등록해야 합니다. 디버그 APK 패키지는 com.wayward.launcher.official.debug이며, SHA-1은 CI 로그에서 확인할 수 있습니다. 정식 Release는 별도의 배포 서명 키와 그 SHA-1 등록이 필요합니다.
+일반 브라우저에서는 기존 Vercel OAuth 팝업 경로를 그대로 사용합니다. Android에서는 기존 Web OAuth 클라이언트와 별도로 같은 Google Cloud 프로젝트에 Android OAuth 클라이언트를 등록해야 합니다. 테스트 APK의 등록값은 패키지명 com.wayward.launcher.official.debug, SHA-1 01:A6:82:34:B0:42:25:E9:86:39:99:4C:DC:91:66:D2:FF:6D:25:76 입니다. Android 클라이언트에는 JavaScript 원본이나 리디렉션 URI를 넣지 않습니다. 정식 Release는 패키지명 com.wayward.launcher.official과 배포 서명 키의 SHA-1로 별도 Android 클라이언트를 등록해야 합니다.
 
 ## 기준
 - 개발 저장소: https://github.com/diethoon/wayward
