@@ -117,22 +117,16 @@ public final class MainActivity extends Activity {
         long revision=getSharedPreferences(PREFS,MODE_PRIVATE).getLong(KEY_ZIP_REV,0);
         if(web!=null&&revision!=loadedZipRevision){loadedZipRevision=revision;web.reload();}
         if(web!=null&&tree!=null)registerSessionActivity();
-        if(home!=null&&home.getVisibility()==View.VISIBLE){renderProfiles();renderZipMods();refreshStatus();refreshImageGenStatus();}
+        if(home!=null&&home.getVisibility()==View.VISIBLE){renderProfiles();refreshStatus();}
     }
     @Override protected void onNewIntent(Intent intent){
         super.onNewIntent(intent);setIntent(intent);
         String sessionId=sessionProfileId(intent);
         if(sessionId==null)return;
-        boolean openSettings=intent.getBooleanExtra(EXTRA_OPEN_IMAGE_STUDIO_SETTINGS,false);
-        if(openSettings)pendingOpenImageStudioSettings=true;
         if(sessionId.equals(activeProfileId)&&web!=null){
             if(home!=null)home.setVisibility(View.GONE);
             web.setVisibility(View.VISIBLE);
             registerSessionActivity();
-            if(openSettings){
-                pendingOpenImageStudioSettings=false;
-                openImageGenPanel();
-            }
         }else openProfileSession(sessionId);
     }
     private static final class GameProfile{
@@ -215,13 +209,13 @@ public final class MainActivity extends Activity {
         profileList=new LinearLayout(this);profileList.setOrientation(LinearLayout.VERTICAL);page.addView(profileList);
 
         home=page;root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));setContentView(root);
-        renderProfiles();renderZipMods();refreshStatus();refreshImageGenStatus();
+        renderProfiles();refreshStatus();
     }
 
     private void showLauncherInfoDialog(){
         new android.app.AlertDialog.Builder(this)
                 .setTitle("런처 안내")
-                .setMessage("게임 폴더는 읽기 권한으로 연결해 원본 파일을 직접 수정하지 않습니다. ZIP 모드는 이 앱의 비공개 저장소에 보관하고 게임 세션에서 가상 경로로 제공합니다. 게임별 실행 세션과 브라우저 저장 데이터는 서로 분리됩니다.")
+                .setMessage("게임 폴더는 읽기 권한으로 연결해 원본 파일을 직접 수정하지 않습니다. 등록한 게임은 각각 독립 세션으로 실행되며 브라우저 저장 데이터도 세션별로 분리됩니다.")
                 .setPositiveButton("확인",null).show();
     }
     private void chooseFolder(){
@@ -522,8 +516,7 @@ public final class MainActivity extends Activity {
     }
     private void refreshStatus(){
         if(tree==null){
-            int zipCount=zipMods==null?0:zipMods.listModIds().size();
-            status("준비 완료  ·  게임 "+profiles.size()+"개  ·  ZIP 모드 "+zipCount+"개");
+            status("준비 완료  ·  게임 "+profiles.size()+"개 등록됨");
             if(folderText!=null)folderText.setText("게임 폴더를 등록하면 여기에서 상태를 확인할 수 있습니다.");
             return;
         }
@@ -543,7 +536,6 @@ public final class MainActivity extends Activity {
         int originPort=sessionPort(activeProfileId);
         web=new WebView(this);WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setDatabaseEnabled(true);s.setUseWideViewPort(true);s.setLoadWithOverviewMode(true);s.setTextZoom(100);s.setSupportZoom(true);s.setBuiltInZoomControls(false);s.setDisplayZoomControls(false);s.setAllowFileAccess(false);s.setAllowContentAccess(false);s.setCacheMode(WebSettings.LOAD_DEFAULT);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);web.addJavascriptInterface(new HostBridge(),"WMLHost");
         installGoogleAuthBridgeScript(origin);
-        installImageGenDocumentStartScript(origin);
         FolderHandler folderHandler=new FolderHandler(tree,getAssets(),zipMods,origin);
         WebViewAssetLoader loader=new WebViewAssetLoader.Builder().setDomain(domain+":"+originPort).addPathHandler("/game/",folderHandler).build();
         final java.util.concurrent.atomic.AtomicInteger imageDiagnostics=new java.util.concurrent.atomic.AtomicInteger();
@@ -1509,30 +1501,6 @@ public final class MainActivity extends Activity {
     private String msg(Throwable e){return e==null||e.getMessage()==null?"알 수 없는 오류":e.getMessage();}
     private final class HostBridge{
         @JavascriptInterface public String version(){return "1.0.0";}
-        @JavascriptInterface public void imageGenProxyFetch(String requestId,String method,String path,String headersJson,String bodyBase64){
-            ImageGenProxy.dispatch(web,requestId,method,path,headersJson,bodyBase64);
-        }
-        @JavascriptInterface public String listImageProviders(){
-            return ImageProviderBridge.list(MainActivity.this,activeProfileId);
-        }
-        @JavascriptInterface public void generateImageWithProvider(String requestId,String providerId,String prompt,int width,int height){
-            ImageProviderBridge.generate(MainActivity.this,web,activeProfileId,requestId,providerId,prompt,width,height);
-        }
-        @JavascriptInterface public String imageGenRuntimeStatus(){
-            ImageGenStatusStore.State state=ImageGenStatusStore.read(getFilesDir());
-            try{
-                JSONObject result=new JSONObject();
-                result.put("available",state.isAvailable());
-                result.put("ready",state.isReady());
-                result.put("starting",state.isStarting());
-                result.put("backendVersion",state.backendVersion);
-                return result.toString();
-            }catch(Exception ignored){return "{\"available\":false,\"ready\":false,\"starting\":false}";}
-        }
-        @JavascriptInterface public void logImageProviderDiagnostic(String eventName,String detailsJson){
-            if(eventName==null||!eventName.matches("[a-z0-9_]{1,64}"))return;
-            ImagePipelineDiagnostics.recordJson(MainActivity.this,eventName,detailsJson);
-        }
         @JavascriptInterface public String listModIds(){
             try{JSONObject r=new JSONObject();JSONArray a=new JSONArray();for(String id:allModIds())a.put(id);r.put("ok",true);r.put("ids",a);return r.toString();}
             catch(Exception e){try{JSONObject r=new JSONObject();r.put("ok",false);r.put("ids",new JSONArray());return r.toString();}catch(Exception ignored){return "{}";}}
