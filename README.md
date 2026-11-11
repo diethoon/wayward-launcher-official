@@ -15,7 +15,22 @@ ZIP 모드 관리, ImageGen/ComfyUI/NovelAI/FLUX, 원격 진단 업로드는 최
 ## Google Drive CloudSave
 Android 런처 안에서는 기존 CloudSave 0.4.4의 Vercel 팝업 URL을 네이티브 Google Identity Services AuthorizationClient로 중계합니다. 요청 범위는 Drive App Data(drive.appdata)이며, 결과 토큰은 JS에 전달하기 위한 프로세스 메모리의 nonce별 일회성 결과로만 보관합니다. 게임 모드의 기존 암호화·저장/불러오기 로직은 수정하지 않습니다.
 
-일반 브라우저에서는 기존 Vercel OAuth 팝업 경로를 그대로 사용합니다. Android에서는 기존 Web OAuth 클라이언트와 별도로 같은 Google Cloud 프로젝트에 Android OAuth 클라이언트를 등록해야 합니다.\n\n- Debug: 패키지명 `com.wayward.launcher.official.debug`, SHA-1 `01:A6:82:34:B0:42:25:E9:86:39:99:4C:DC:91:66:D2:FF:6D:25:76`\n- Release: 패키지명 `com.wayward.launcher.official`, SHA-1 `D9:BE:74:43:EB:24:7D:27:C9:58:CC:42:50:D7:F5:D1:E0:78:F7:40`\n\n두 패키지/서명 조합은 각각 별도 Android OAuth 클라이언트로 등록합니다. Android 클라이언트에는 JavaScript 원본이나 리디렉션 URI를 넣지 않습니다.
+일반 브라우저에서는 기존 Vercel OAuth 팝업 경로를 그대로 사용합니다. Android에서는 기존 Web OAuth 클라이언트와 별도로 같은 Google Cloud 프로젝트에 Android OAuth 클라이언트를 등록해야 합니다.
+
+- Debug: 패키지명 `com.wayward.launcher.official.debug`, SHA-1 `01:A6:82:34:B0:42:25:E9:86:39:99:4C:DC:91:66:D2:FF:6D:25:76`
+- Release: 패키지명 `com.wayward.launcher.official`, SHA-1 `D9:BE:74:43:EB:24:7D:27:C9:58:CC:42:50:D7:F5:D1:E0:78:F7:40`
+
+두 패키지/서명 조합은 각각 별도 Android OAuth 클라이언트로 등록합니다. Android 클라이언트에는 JavaScript 원본이나 리디렉션 URI를 넣지 않습니다. 일반 브라우저용 기존 Web OAuth 클라이언트와 Vercel 콜백은 변경하지 않습니다.
+
+## 릴리스 서명
+GitHub Actions에서 서명된 Release APK를 만들려면 저장소 Actions secrets에 다음 값을 등록합니다.
+
+- `ANDROID_KEYSTORE_BASE64`: release PKCS#12 파일의 Base64 전체 내용
+- `ANDROID_KEYSTORE_PASSWORD`: PKCS#12 저장소 암호
+- `ANDROID_KEY_ALIAS`: `wayward-release`
+- `ANDROID_KEY_PASSWORD`: 개인키 암호
+
+키 파일과 암호는 저장소 파일이나 코드에 넣지 않습니다. 네 개의 secret 중 하나라도 없으면 CI는 Debug APK와 unsigned Release APK를 생성합니다.
 
 ## 기준
 - 개발 저장소: https://github.com/diethoon/wayward
@@ -23,4 +38,6 @@ Android 런처 안에서는 기존 CloudSave 0.4.4의 Vercel 팝업 URL을 네�
 - 기준 경로: android-external-folder-launcher/
 
 ## 검증 상태
-Android Debug/Release 빌드가 통과했습니다. Android 15 에뮬레이터 실행 및 네이티브 Google Drive 승인/CloudSave 실제 저장·불러오기는 별도 스모크 테스트 중입니다. 검증 전에는 APK를 정식 배포 완료본으로 표시하지 않습니다.
+`.github/workflows/android-validation.yml`에 Node 문법 검사, 공식 런처 범위 검사, Google OAuth 브리지 계약 테스트, Gradle 8.9 Debug/Release APK 빌드, Android 15 에뮬레이터 시작 검사를 추가했습니다.
+
+이 워크플로 파일은 작업 브랜치에 반영되어 있습니다. 실제 CI 성공 결과는 아직 확인되지 않았습니다. 또한 Android 15 실기기에서의 Google 계정 승인 및 CloudSave 실제 저장·불러오기는 별도 검증이 남아 있습니다. 해당 검증 전에는 APK를 정식 배포 완료본으로 표시하지 않습니다.
