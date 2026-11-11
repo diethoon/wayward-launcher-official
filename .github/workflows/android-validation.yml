@@ -148,6 +148,16 @@ jobs:
             echo "Release signing secrets are incomplete; the Release APK will be unsigned. Debug APK build and tests still run." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      - name: Set up Python 3.12 for icon generation
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Generate custom launcher icon assets
+        run: |
+          python -m pip install --disable-pip-version-check --quiet Pillow==11.3.0
+          python scripts/generate_launcher_icons.py
+
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v6
         with:

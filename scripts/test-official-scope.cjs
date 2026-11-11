@@ -96,3 +96,13 @@ for (const source of [
 }
 assert.equal(fs.existsSync('app/src/main/res/xml/network_security_config.xml'), false,
   'obsolete loopback cleartext server policy must be removed');
+
+assert.match(manifest, /android:icon="@mipmap\\/ic_launcher"/,
+  'launcher must use the generated custom app icon');
+assert.match(manifest, /android:roundIcon="@mipmap\\/ic_launcher_round"/,
+  'round launcher icon must be registered');
+const iconGenerator = fs.readFileSync('scripts/generate_launcher_icons.py', 'utf8');
+assert.match(iconGenerator, /2f23c94d7aea3091bb3bf394131f550422fd61d1/,
+  'launcher icon generation must be pinned to the uploaded source image');
+assert.match(iconGenerator, /CROP = \\(0\\.12, 0\\.065, 0\\.88, 0\\.83\\)/,
+  'launcher icon crop must frame the central character from just above the head to the knees');
