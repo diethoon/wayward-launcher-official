@@ -20,6 +20,7 @@ import java.util.Locale;
  * through the standard WebView callback; no game HTML changes are required.
  */
 final class WebFileChooser extends WebChromeClient {
+    // Keep distinct from MainActivity's folder, ZIP, and Google OAuth request codes.
     static final int REQUEST_CODE = 4104;
 
     private final Activity activity;
