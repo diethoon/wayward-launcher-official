@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const main = fs.readFileSync('app/src/main/java/com/wayward/launcher/MainActivity.java', 'utf8');
+const gameSession = fs.readFileSync('app/src/main/java/com/wayward/launcher/GameSessionActivity.java', 'utf8');
 const application = fs.readFileSync('app/src/main/java/com/wayward/launcher/LauncherApplication.java', 'utf8');
 const manifest = fs.readFileSync('app/src/main/AndroidManifest.xml', 'utf8');
 const gradle = fs.readFileSync('app/build.gradle', 'utf8');
@@ -18,6 +19,28 @@ assert.match(home, /＋ 폴더/, 'home must expose folder registration');
 assert.match(home, /내 게임/, 'home must expose the registered game list');
 assert.match(home, /여러 게임을 독립 세션으로 실행/, 'home must describe independent sessions');
 assert.doesNotMatch(home, /ZIP|ImageGen|이미지 생성|이미지 서비스/, 'home must not expose unfinished features');
+
+const launcherActivityTag = (manifest.match(/<activity\\b[^>]*android:name="\\.MainActivity"[^>]*>/) || [])[0] || '';
+const gameSessionActivityTag = (manifest.match(/<activity\\b[^>]*android:name="\\.GameSessionActivity"[^>]*>/) || [])[0] || '';
+assert.ok(launcherActivityTag, 'the launcher entry Activity must be registered');
+assert.doesNotMatch(launcherActivityTag, /documentLaunchMode/,
+  'the launcher home must not create document tasks');
+assert.match(gameSessionActivityTag, /android:documentLaunchMode="intoExisting"/,
+  'independent document-task behavior must belong only to game sessions');
+assert.match(gameSessionActivityTag, /android:exported="false"/,
+  'game document Activity must not be externally launchable');
+assert.match(gameSession, /extends MainActivity/,
+  'game sessions must reuse the existing session implementation without duplicating launcher logic');
+assert.match(main, /public class MainActivity extends Activity/,
+  'the launcher implementation must be extensible by the dedicated session Activity');
+assert.match(main, /new Intent\\(this,GameSessionActivity\\.class\\)/,
+  'profile launches must target the dedicated game session Activity');
+assert.match(main, /if\\(sessionId==null\\)\\s*\\{\\s*showHome\\(\\)/,
+  'the folder-selection home screen must initialize only for the launcher task');
+assert.match(main, /root=new FrameLayout\\(this\\);[\\s\\S]*?openProfileSession\\(sessionId\\)/,
+  'a game document task must initialize its own WebView root without constructing the home UI');
+assert.match(main, /if\\(this instanceof GameSessionActivity\\)\\s*\\{\\s*\\/\\/[\\s\\S]*?moveTaskToBack\\(true\\)/,
+  'leaving a game session must background that document task and reveal the single launcher task');
 assert.match(home, /applySystemBarInsets\(root\)/, 'home and game root must apply safe system-bar insets');
 assert.match(main, /private void applySystemBarInsets\(View target\)/, 'system-bar inset handler must exist');
 assert.match(main, /Build\.VERSION\.SDK_INT < 35/, 'inset padding must be limited to Android 15+ edge-to-edge devices');
