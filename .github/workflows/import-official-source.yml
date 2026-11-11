@@ -19,7 +19,7 @@ permissions:
 
 concurrency:
   group: official-v1-bootstrap
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   import-and-build:
