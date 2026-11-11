@@ -20,7 +20,7 @@ import java.util.Locale;
  * through the standard WebView callback; no game HTML changes are required.
  */
 final class WebFileChooser extends WebChromeClient {
-    static final int REQUEST_CODE = 4103;
+    static final int REQUEST_CODE = 4104;
 
     private final Activity activity;
     private final java.util.concurrent.atomic.AtomicInteger consoleErrorSamples =
