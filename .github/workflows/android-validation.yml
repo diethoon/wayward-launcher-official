@@ -67,42 +67,84 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -n "$KEYSTORE_BASE64" && -n "$KEYSTORE_PASSWORD" && -n "$KEY_ALIAS" ]]; then
-            mkdir -p "$RUNNER_TEMP/wayward-release"
-            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/wayward-release/release.p12"
-            test -s "$RUNNER_TEMP/wayward-release/release.p12"
-            chmod 600 "$RUNNER_TEMP/wayward-release/release.p12"
+            work_dir="$RUNNER_TEMP/wayward-release"
+            mkdir -p "$work_dir"
+            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$work_dir/uploaded.p12"
+            chmod 600 "$work_dir/uploaded.p12"
+            actual_bytes="$(wc -c < "$work_dir/uploaded.p12" | tr -d '[:space:]')"
+            if [[ "$actual_bytes" != "2858" ]]; then
+              echo "Decoded release P12 has $actual_bytes bytes; expected 2858 bytes from the verified Termux file." >&2
+              exit 1
+            fi
 
-            # Standard OpenSSL PKCS#12 exports use the export password for both
-            # the container and private key. Convert to JKS for Gradle signing.
+            # Verify the uploaded P12 password and extract the key/certificate
+            # without ever printing PEM material into the Actions log.
+            openssl pkcs12 -in "$work_dir/uploaded.p12" -info -noout \
+              -passin env:KEYSTORE_PASSWORD >/dev/null 2>"$work_dir/p12-check.log" || {
+                echo "OpenSSL could not verify the uploaded P12 using ANDROID_KEYSTORE_PASSWORD." >&2
+                cat "$work_dir/p12-check.log" >&2
+                exit 1
+              }
+            openssl pkcs12 -in "$work_dir/uploaded.p12" -nocerts -nodes \
+              -passin env:KEYSTORE_PASSWORD -out "$work_dir/release-key.pem"
+            openssl pkcs12 -in "$work_dir/uploaded.p12" -clcerts -nokeys \
+              -passin env:KEYSTORE_PASSWORD -out "$work_dir/release-cert.pem"
+            chmod 600 "$work_dir/release-key.pem" "$work_dir/release-cert.pem"
+            openssl pkey -in "$work_dir/release-key.pem" -noout -check >/dev/null
+
+            key_public_hash="$(openssl pkey -in "$work_dir/release-key.pem" -pubout -outform DER | openssl dgst -sha256)"
+            cert_public_hash="$(openssl x509 -in "$work_dir/release-cert.pem" -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256)"
+            if [[ "$key_public_hash" != "$cert_public_hash" ]]; then
+              echo "Release private key does not match the certificate inside the uploaded P12." >&2
+              exit 1
+            fi
+
+            actual_sha1="$(openssl x509 -in "$work_dir/release-cert.pem" -noout -fingerprint -sha1 | sed 's/.*=//' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+            expected_sha1="D9BE7443EB247D27C958CC4250D7F5D1E078F740"
+            if [[ "$actual_sha1" != "$expected_sha1" ]]; then
+              echo "Release certificate SHA-1 does not match the registered Android OAuth client." >&2
+              echo "Expected: $expected_sha1; actual: ${actual_sha1:-missing}" >&2
+              exit 1
+            fi
+
+            # Repackage with the legacy 3DES PBE profile supported by the
+            # Java 17 PKCS#12 importer, then convert to a temporary JKS.
+            openssl pkcs12 -export \
+              -inkey "$work_dir/release-key.pem" \
+              -in "$work_dir/release-cert.pem" \
+              -name "$KEY_ALIAS" \
+              -passout env:KEYSTORE_PASSWORD \
+              -keypbe PBE-SHA1-3DES \
+              -certpbe PBE-SHA1-3DES \
+              -macalg sha1 \
+              -out "$work_dir/java-compatible.p12"
+            chmod 600 "$work_dir/java-compatible.p12"
             keytool -importkeystore -noprompt \
-              -srckeystore "$RUNNER_TEMP/wayward-release/release.p12" \
+              -srckeystore "$work_dir/java-compatible.p12" \
               -srcstoretype PKCS12 \
               -srcstorepass "$KEYSTORE_PASSWORD" \
-              -srcalias "$KEY_ALIAS" \
-              -srckeypass "$KEYSTORE_PASSWORD" \
-              -destkeystore "$RUNNER_TEMP/wayward-release/release.jks" \
+              -destkeystore "$work_dir/release.jks" \
               -deststoretype JKS \
               -deststorepass "$KEYSTORE_PASSWORD" \
               -destkeypass "$KEYSTORE_PASSWORD" \
               -destalias "$KEY_ALIAS"
 
             cert_info="$(keytool -list -v \
-              -keystore "$RUNNER_TEMP/wayward-release/release.jks" \
+              -keystore "$work_dir/release.jks" \
               -storetype JKS \
               -storepass "$KEYSTORE_PASSWORD" \
               -alias "$KEY_ALIAS")"
-            actual_sha1="$(printf '%s\n' "$cert_info" | awk '/SHA1:/ {print $2; exit}' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
-            expected_sha1="D9BE7443EB247D27C958CC4250D7F5D1E078F740"
-            if [[ "$actual_sha1" != "$expected_sha1" ]]; then
-              echo "Release keystore certificate SHA-1 does not match the registered Android OAuth client." >&2
-              echo "Expected: $expected_sha1; actual: ${actual_sha1:-missing}" >&2
+            jks_sha1="$(printf '%s\\n' "$cert_info" | awk '/SHA1:/ {print $2; exit}' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+            if [[ "$jks_sha1" != "$expected_sha1" ]]; then
+              echo "Temporary JKS certificate SHA-1 mismatch." >&2
+              echo "Expected: $expected_sha1; actual: ${jks_sha1:-missing}" >&2
               exit 1
             fi
 
-            chmod 600 "$RUNNER_TEMP/wayward-release/release.jks"
-            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/wayward-release/release.jks" >> "$GITHUB_ENV"
+            chmod 600 "$work_dir/release.jks"
+            echo "ANDROID_KEYSTORE_PATH=$work_dir/release.jks" >> "$GITHUB_ENV"
             echo "RELEASE_SIGNING_CONFIGURED=true" >> "$GITHUB_ENV"
-            echo "Release key imported to JKS; certificate SHA-1 verified: $expected_sha1" >> "$GITHUB_STEP_SUMMARY"
+            echo "Release P12 validated (2858 bytes), private key matched its certificate, and SHA-1 matched OAuth." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "RELEASE_SIGNING_CONFIGURED=false" >> "$GITHUB_ENV"
             echo "Release signing secrets are incomplete; the Release APK will be unsigned. Debug APK build and tests still run." >> "$GITHUB_STEP_SUMMARY"
