@@ -8,6 +8,7 @@ import android.database.Cursor;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
@@ -16,6 +17,7 @@ import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.text.InputType;
 import android.view.View;
+import android.view.WindowInsets;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -135,6 +137,21 @@ public final class MainActivity extends Activity {
         GameProfile(String i,String u,String n){id=i;uri=u;label=n;}
     }
     private int dp(float n){return Math.round(n*getResources().getDisplayMetrics().density);}
+private void applySystemBarInsets(View target){
+        if (Build.VERSION.SDK_INT < 35) return;
+        final int baseLeft=target.getPaddingLeft();
+        final int baseTop=target.getPaddingTop();
+        final int baseRight=target.getPaddingRight();
+        final int baseBottom=target.getPaddingBottom();
+        target.setOnApplyWindowInsetsListener((view,insets)->{
+            android.graphics.Insets safeInsets=insets.getInsets(
+                    WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+            view.setPadding(baseLeft+safeInsets.left,baseTop+safeInsets.top,
+                    baseRight+safeInsets.right,baseBottom+safeInsets.bottom);
+            return insets;
+        });
+        target.requestApplyInsets();
+    }
     private void status(String s){if(status!=null)status.setText(s);}
     private LinearLayout.LayoutParams buttonParams(){return new LinearLayout.LayoutParams(-1,dp(46));}
     private android.graphics.drawable.GradientDrawable uiShape(int fill,int stroke,float radius){
@@ -209,7 +226,7 @@ public final class MainActivity extends Activity {
         gameHeaderParams.bottomMargin=dp(8);page.addView(gameHeader,gameHeaderParams);
         profileList=new LinearLayout(this);profileList.setOrientation(LinearLayout.VERTICAL);page.addView(profileList);
 
-        home=page;root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));setContentView(root);
+        home=page;root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));setContentView(root);applySystemBarInsets(root);
         renderProfiles();refreshStatus();
     }
 
