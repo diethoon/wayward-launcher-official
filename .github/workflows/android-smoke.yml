@@ -18,6 +18,7 @@ concurrency:
 jobs:
   android-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout official working branch
         uses: actions/checkout@v4
@@ -67,6 +68,15 @@ jobs:
           find "$HOME/.android" -maxdepth 2 -type f -name '*.keystore' -print || true
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs app/build/outputs/apk/debug/app-debug.apk
 
+      - name: Upload official debug test APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wayward-launcher-official-1.0.0-debug-test
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Install and launch on Android 15 emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -82,12 +92,3 @@ jobs:
             sleep 4
             adb shell pidof com.wayward.launcher.official.debug
             adb logcat -d -s AndroidRuntime:E
-
-      - name: Upload official debug test APK
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: wayward-launcher-official-1.0.0-debug-test
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: warn
-          retention-days: 14
