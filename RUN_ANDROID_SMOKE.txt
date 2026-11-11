@@ -1,2 +1,3 @@
 Trigger Android 15 launcher startup smoke test.
 Native Google Identity Services bridge build and emulator startup verification.
+Use apksigner to extract the debug certificate fingerprint.
