@@ -21,7 +21,7 @@
             (init && init.headers) || (input && input.headers) || {}
           );
           const authorization = requestHeaders.get('Authorization') || '';
-          const match = /^Bearer\\s+(.+)$/i.exec(authorization);
+          const match = /^Bearer\s+(.+)$/i.exec(authorization);
           if (match) window.WMLHost.clearGoogleAccessToken(match[1]);
         }
       } catch (_) {}
