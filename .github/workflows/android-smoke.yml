@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: official-android-smoke
+  cancel-in-progress: true
+
 jobs:
   android-smoke:
     runs-on: ubuntu-latest
