@@ -5,3 +5,4 @@ Run Android smoke after minimal launcher cleanup.
 Run smoke test on pruned official v1 source.
 Smoke test Google Identity Services 21.6.0 build.
 Smoke test final minimal home screen.
+Test native Drive token cache invalidation bridge.
