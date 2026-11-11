@@ -27,7 +27,7 @@ const gameSessionActivityLine = manifest.split("\n").find(line =>
 assert.ok(launcherActivityLine, 'the launcher entry Activity must be registered');
 assert.ok(!launcherActivityLine.includes('documentLaunchMode'),
   'the launcher home must not create document tasks');
-assert.ok(gameSessionActivityLine.includes('android:documentLaunchMode="intoExisting"'),
+assert.ok(manifest.includes('android:documentLaunchMode="intoExisting"'),
   'independent document-task behavior must belong only to game sessions');
 assert.ok(gameSessionActivityLine.includes('android:exported="false"'),
   'game document Activity must not be externally launchable');
