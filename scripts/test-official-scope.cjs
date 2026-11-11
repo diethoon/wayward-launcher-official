@@ -58,12 +58,24 @@ assert(webStart >= 0 && webEnd > webStart, 'WebView construction method must exi
 assert.doesNotMatch(main.slice(webStart, webEnd), /installImageGenDocumentStartScript\(/,
   'official game sessions must not install ImageGen document-start scripts');
 
-assert.doesNotMatch(cache, /completed\.get|TeeInputStream|SHARED_LOAD_TIMEOUT_SECONDS/,
-  'image delivery must not wait for an in-flight cache writer or synchronously tee bytes to disk');
+assert.doesNotMatch(cache, /completed\.get|SHARED_LOAD_TIMEOUT_SECONDS/,
+  'image delivery must not wait for an in-flight cache writer');
 assert.match(cache, /inflight-bypass/,
   'concurrent image requests must bypass an in-flight cache fill immediately');
 assert.match(cache, /CACHE_EXECUTOR\.execute/,
   'image cache population must run on the bounded background executor');
+assert.match(cache, /chunks\.offer\(copy\)/,
+  'image bytes must enter a bounded non-blocking cache queue');
+assert.match(cache, /new ArrayBlockingQueue<>\(16\)/,
+  'the image cache queue must have a fixed memory bound');
+const teeStart = cache.indexOf('private static final class TeeInputStream');
+const teeEnd = cache.indexOf('static final class OpenResult', teeStart);
+assert(teeStart >= 0 && teeEnd > teeStart, 'lightweight stream tee must exist');
+const tee = cache.slice(teeStart, teeEnd);
+assert.match(tee, /load\.enqueue\(buffer, offset, count\)/,
+  'the WebView stream must offer byte copies to the background cache queue');
+assert.doesNotMatch(tee, /append\(|output\.write/,
+  'the WebView stream must never perform cache disk writes');
 for (const source of [
   'ComfyEndpoint.java', 'DiagnosticsUploader.java', 'ImageDiagnosticsActivity.java',
   'ImageGenBackendInstaller.java', 'ImageGenLocalProviderServer.java',
