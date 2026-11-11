@@ -61,7 +61,7 @@ import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public final class MainActivity extends Activity {
+public class MainActivity extends Activity {
     private static final int PICK_TREE=4101, PICK_MOD_ZIP=4102, REQUEST_GOOGLE_AUTH=4103;
     private static final String PREFS="wayward_launcher";
     private static final String KEY_TREE="game_tree_uri", KEY_PROFILES="game_profiles", KEY_ZIP_REV="zip_mod_revision";
@@ -107,10 +107,18 @@ public final class MainActivity extends Activity {
         DiagnosticsLogger.event(this,"INFO","launcher","activity_create",null);
         zipMods=new ZipModStore(getFilesDir());
         loadProfiles();
-        showHome();
         String sessionId=sessionProfileId(getIntent());
-        if(sessionId!=null)openProfileSession(sessionId);
-        else refreshStatus();
+        if(sessionId==null){
+            showHome();
+            refreshStatus();
+        }else{
+            // A game document task must not create a second copy of the launcher home screen.
+            root=new FrameLayout(this);
+            root.setBackgroundColor(Color.BLACK);
+            setContentView(root);
+            applySystemBarInsets(root);
+            openProfileSession(sessionId);
+        }
     }
     @Override protected void onResume(){
         super.onResume();
@@ -402,18 +410,25 @@ public final class MainActivity extends Activity {
     }
 
     private void launchProfileSession(String id){
-        Intent i=new Intent(this,MainActivity.class);i.setData(Uri.parse("wayward://session/"+Uri.encode(id)));
+        Intent i=new Intent(this,GameSessionActivity.class);i.setData(Uri.parse("wayward://session/"+Uri.encode(id)));
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT);startActivity(i);
     }
 
     private void openProfileSession(String id){
         DiagnosticsLogger.event(this,"INFO","launcher","game_session_open_requested",null);
         GameProfile p=findProfile(id);
-        if(p==null){status("등록된 게임 폴더를 찾지 못했습니다. 홈에서 다시 등록해 주세요.");return;}
+        if(p==null){
+            Toast.makeText(this,"등록된 게임 폴더를 찾지 못했습니다. 홈에서 다시 등록해 주세요.",Toast.LENGTH_LONG).show();
+            finish();return;
+        }
         try{
             if(web!=null)destroyWeb();
             activeProfileId=p.id;treeUri=Uri.parse(p.uri);tree=new SafTree(treeUri);
-            String file=gameFile();if(file==null){DiagnosticsLogger.event(this,"ERROR","launcher","game_html_not_found",null);status("선택한 폴더에서 Wayward HTML을 찾지 못했습니다: "+p.label);return;}
+            String file=gameFile();if(file==null){
+                DiagnosticsLogger.event(this,"ERROR","launcher","game_html_not_found",null);
+                Toast.makeText(this,"선택한 폴더에서 게임 HTML을 찾지 못했습니다: "+p.label,Toast.LENGTH_LONG).show();
+                finish();return;
+            }
             tree.prewarmImageDirectories();
             setTitle("Wayward · "+p.label);
             RUNNING_SESSIONS.add(p.id);
@@ -425,7 +440,14 @@ public final class MainActivity extends Activity {
             web.setVisibility(View.VISIBLE);
             DiagnosticsLogger.event(this,"INFO","launcher","game_webview_load_requested",null);
             web.loadUrl(gameUrl);
-        }catch(Exception e){DiagnosticsLogger.error(this,"launcher","game_session_open_failed",e);status("게임 실행 실패: "+msg(e));}
+        }catch(Exception e){
+            DiagnosticsLogger.error(this,"launcher","game_session_open_failed",e);
+            RUNNING_SESSIONS.remove(activeProfileId);
+            unregisterSessionActivity();
+            destroyWeb();
+            Toast.makeText(this,"게임 실행 실패: "+msg(e),Toast.LENGTH_LONG).show();
+            finish();
+        }
     }
 
     private void removeProfile(String id){
@@ -830,7 +852,16 @@ public final class MainActivity extends Activity {
         if (LAST_ACTIVE_SESSION_ID.isEmpty()) findActiveSessionActivity();
     }
 
-    private void showHomePanel(){runOnUiThread(()->{if(web!=null)web.setVisibility(View.GONE);if(home!=null)home.setVisibility(View.VISIBLE);refreshStatus();});}
+    private void showHomePanel(){runOnUiThread(()->{
+        if(this instanceof GameSessionActivity){
+            // Keep this game document alive in Recents and reveal the one launcher task.
+            moveTaskToBack(true);
+            return;
+        }
+        if(web!=null)web.setVisibility(View.GONE);
+        if(home!=null)home.setVisibility(View.VISIBLE);
+        refreshStatus();
+    });}
     private void destroyWeb(){if(webFileChooser!=null){webFileChooser.cancelPending();webFileChooser=null;}if(web==null)return;web.removeJavascriptInterface("WMLHost");root.removeView(web);web.stopLoading();web.loadUrl("about:blank");web.destroy();web=null;}
     @Override public void onBackPressed(){if(web!=null&&web.getVisibility()==View.VISIBLE){if(web.canGoBack())web.goBack();else showHomePanel();return;}super.onBackPressed();}
     @Override protected void onDestroy(){
