@@ -16,9 +16,9 @@ assert.match(main, /collectSelectedUris\(data\)/, "launcher ZIP picker must also
 assert.doesNotMatch(main, /setWebChromeClient\(new WebChromeClient\(\)\)/, "empty default WebChromeClient must not remain");
 
 
-const mainRequestCodes = main.match(/private static final int PICK_TREE=(\\d+), PICK_MOD_ZIP=(\\d+), REQUEST_GOOGLE_AUTH=(\\d+);/);
+const mainRequestCodes = main.match(/private static final int PICK_TREE=(\d+), PICK_MOD_ZIP=(\d+), REQUEST_GOOGLE_AUTH=(\d+);/);
 assert.ok(mainRequestCodes, "launcher folder, ZIP, and Google OAuth request codes must be declared");
-const webFileChooserRequestCode = picker.match(/static final int REQUEST_CODE = (\\d+);/);
+const webFileChooserRequestCode = picker.match(/static final int REQUEST_CODE = (\d+);/);
 assert.ok(webFileChooserRequestCode, "WebView file chooser request code must be declared");
 const allRequestCodes = [
   Number(mainRequestCodes[1]),
