@@ -32,6 +32,11 @@ import android.widget.Toast;
 import androidx.webkit.WebViewAssetLoader;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
+import com.google.android.gms.auth.api.identity.AuthorizationRequest;
+import com.google.android.gms.auth.api.identity.AuthorizationResult;
+import com.google.android.gms.auth.api.identity.Identity;
+import com.google.android.gms.common.api.ApiException;
+import com.google.android.gms.common.api.Scope;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.ByteArrayInputStream;
@@ -57,12 +62,13 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class MainActivity extends Activity {
-    private static final int PICK_TREE=4101, PICK_MOD_ZIP=4102;
+    private static final int PICK_TREE=4101, PICK_MOD_ZIP=4102, REQUEST_GOOGLE_AUTH=4103;
     private static final String PREFS="wayward_launcher";
     private static final String KEY_TREE="game_tree_uri", KEY_PROFILES="game_profiles", KEY_ZIP_REV="zip_mod_revision", KEY_COMFY_URL="comfy_server_url";
     private static final String KO="Wayward_WML_ko.html", EN="Wayward_WML.html";
     private static final Pattern ID=Pattern.compile("^[a-z0-9][a-z0-9._-]*$");
     private static final Set<String> RUNNING_SESSIONS=Collections.synchronizedSet(new HashSet<>());
+    private static final Map<String,String> PENDING_GOOGLE_AUTH_RESULTS=new ConcurrentHashMap<>();
     // The home launcher and game sessions are separate Android document tasks.
     // Keep weak references so settings actions can return to the Activity that
     // actually owns the active game's WebView and SAF tree.
@@ -77,6 +83,7 @@ public final class MainActivity extends Activity {
     private ZipModStore zipMods;
     private final List<GameProfile> profiles=new ArrayList<>();
     private String activeProfileId="";
+    private String pendingGoogleAuthNonce="";
     private long loadedZipRevision=-1;
     private FrameLayout root;
     private LinearLayout home, profileList, zipModList;
@@ -235,6 +242,23 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int req,int result,Intent data){
         super.onActivityResult(req,result,data);
+        if(req==REQUEST_GOOGLE_AUTH){
+            String nonce=pendingGoogleAuthNonce;pendingGoogleAuthNonce="";
+            if(nonce.isEmpty())return;
+            if(result!=RESULT_OK||data==null){
+                storeGoogleAuthResult(nonce,null,"Google 계정 권한 승인이 취소되었습니다.");
+                return;
+            }
+            try{
+                AuthorizationResult authorizationResult=Identity.getAuthorizationClient(this).getAuthorizationResultFromIntent(data);
+                storeGoogleAuthResult(nonce,authorizationResult.getAccessToken(),null);
+            }catch(ApiException error){
+                storeGoogleAuthResult(nonce,null,"Google 권한 결과를 처리하지 못했습니다: "+msg(error));
+            }catch(Throwable error){
+                storeGoogleAuthResult(nonce,null,"Google 권한 처리 실패: "+msg(error));
+            }
+            return;
+        }
         if(req==WebFileChooser.REQUEST_CODE){
             if(webFileChooser!=null)webFileChooser.handleActivityResult(result,data);
             return;
@@ -518,6 +542,7 @@ public final class MainActivity extends Activity {
         String origin=sessionOrigin(activeProfileId);
         int originPort=sessionPort(activeProfileId);
         web=new WebView(this);WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setDatabaseEnabled(true);s.setUseWideViewPort(true);s.setLoadWithOverviewMode(true);s.setTextZoom(100);s.setSupportZoom(true);s.setBuiltInZoomControls(false);s.setDisplayZoomControls(false);s.setAllowFileAccess(false);s.setAllowContentAccess(false);s.setCacheMode(WebSettings.LOAD_DEFAULT);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);web.addJavascriptInterface(new HostBridge(),"WMLHost");
+        installGoogleAuthBridgeScript(origin);
         installImageGenDocumentStartScript(origin);
         FolderHandler folderHandler=new FolderHandler(tree,getAssets(),zipMods,origin);
         WebViewAssetLoader loader=new WebViewAssetLoader.Builder().setDomain(domain+":"+originPort).addPathHandler("/game/",folderHandler).build();
@@ -642,6 +667,84 @@ public final class MainActivity extends Activity {
             }
         });
         webFileChooser=new WebFileChooser(this);web.setWebChromeClient(webFileChooser);root.addView(web,new FrameLayout.LayoutParams(-1,-1));web.setVisibility(View.GONE);
+    }
+
+
+    private void beginGoogleDriveAuth(String nonce){
+        if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return;
+        if(!pendingGoogleAuthNonce.isEmpty()){
+            storeGoogleAuthResult(nonce,null,"이미 다른 Google 권한 요청이 진행 중입니다.");
+            return;
+        }
+        pendingGoogleAuthNonce=nonce;
+        try{
+            AuthorizationRequest request=AuthorizationRequest.builder()
+                    .setRequestedScopes(Collections.singletonList(
+                            new Scope("https://www.googleapis.com/auth/drive.appdata")))
+                    .build();
+            Identity.getAuthorizationClient(this).authorize(request)
+                    .addOnSuccessListener(authorizationResult->{
+                        if(!nonce.equals(pendingGoogleAuthNonce))return;
+                        if(authorizationResult.hasResolution()){
+                            try{
+                                android.app.PendingIntent pending=authorizationResult.getPendingIntent();
+                                if(pending==null)throw new IllegalStateException("Google 권한 확인 화면을 열 수 없습니다.");
+                                startIntentSenderForResult(pending.getIntentSender(),REQUEST_GOOGLE_AUTH,null,0,0,0);
+                            }catch(android.content.IntentSender.SendIntentException error){
+                                pendingGoogleAuthNonce="";
+                                storeGoogleAuthResult(nonce,null,"Google 권한 화면을 시작하지 못했습니다: "+msg(error));
+                            }catch(Throwable error){
+                                pendingGoogleAuthNonce="";
+                                storeGoogleAuthResult(nonce,null,"Google 권한 요청 실패: "+msg(error));
+                            }
+                        }else{
+                            pendingGoogleAuthNonce="";
+                            storeGoogleAuthResult(nonce,authorizationResult.getAccessToken(),null);
+                        }
+                    })
+                    .addOnFailureListener(error->{
+                        if(nonce.equals(pendingGoogleAuthNonce))pendingGoogleAuthNonce="";
+                        storeGoogleAuthResult(nonce,null,"Google Drive 권한 요청 실패: "+msg(error));
+                    });
+        }catch(Throwable error){
+            pendingGoogleAuthNonce="";
+            storeGoogleAuthResult(nonce,null,"Google 인증 서비스를 사용할 수 없습니다: "+msg(error));
+        }
+    }
+
+    private static void storeGoogleAuthResult(String nonce,String accessToken,String error){
+        if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return;
+        JSONObject payload=new JSONObject();
+        try{
+            payload.put("nonce",nonce);
+            if(error==null&&accessToken!=null&&!accessToken.isEmpty()){
+                payload.put("type","wayward-cloud-auth-success");
+                payload.put("accessToken",accessToken);
+                payload.put("expiresIn",3600);
+            }else{
+                payload.put("type","wayward-cloud-auth-error");
+                payload.put("message",error==null?"Google에서 액세스 토큰을 반환하지 않았습니다.":error);
+            }
+            PENDING_GOOGLE_AUTH_RESULTS.put(nonce,payload.toString());
+        }catch(Exception ignored){}
+    }
+
+    private void installGoogleAuthBridgeScript(String gameOrigin){
+        if(web==null||gameOrigin==null||gameOrigin.isEmpty())return;
+        if(!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)){
+            DiagnosticsLogger.event(this,"WARN","oauth","document_start_script_unavailable",null);
+            return;
+        }
+        try(InputStream input=getAssets().open("wayward-google-auth-bridge.js");
+            ByteArrayOutputStream output=new ByteArrayOutputStream()){
+            byte[] buffer=new byte[4096];int count;
+            while((count=input.read(buffer))!=-1)output.write(buffer,0,count);
+            String script=new String(output.toByteArray(),StandardCharsets.UTF_8);
+            WebViewCompat.addDocumentStartJavaScript(web,script,Collections.singleton(gameOrigin));
+            DiagnosticsLogger.event(this,"INFO","oauth","native_google_auth_bridge_installed",null);
+        }catch(Throwable error){
+            DiagnosticsLogger.error(this,"oauth","native_google_auth_bridge_install_failed",error);
+        }
     }
 
     private static boolean isImageResourcePath(String path){
@@ -1435,6 +1538,15 @@ public final class MainActivity extends Activity {
             catch(Exception e){try{JSONObject r=new JSONObject();r.put("ok",false);r.put("ids",new JSONArray());return r.toString();}catch(Exception ignored){return "{}";}}
         }
         @JavascriptInterface public void menu(){showHomePanel();}
+        @JavascriptInterface public void startGoogleDriveAuth(String nonce){
+            if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return;
+            runOnUiThread(()->beginGoogleDriveAuth(nonce));
+        }
+        @JavascriptInterface public String takePendingStateForNonce(String nonce){
+            if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return "";
+            String result=PENDING_GOOGLE_AUTH_RESULTS.remove(nonce);
+            return result==null?"":result;
+        }
         @JavascriptInterface public String takePendingState(){return "";}
         @JavascriptInterface public String saveFile(String name,String mime,String encoded){try{saveExport(name,mime,encoded);return null;}catch(Exception e){return msg(e);}}
     }
