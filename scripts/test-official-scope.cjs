@@ -6,6 +6,8 @@ const main = fs.readFileSync('app/src/main/java/com/wayward/launcher/MainActivit
 const application = fs.readFileSync('app/src/main/java/com/wayward/launcher/LauncherApplication.java', 'utf8');
 const manifest = fs.readFileSync('app/src/main/AndroidManifest.xml', 'utf8');
 const gradle = fs.readFileSync('app/build.gradle', 'utf8');
+const cache = fs.readFileSync('app/src/main/java/com/wayward/launcher/SafImageCache.java', 'utf8');
+const diagnostics = fs.readFileSync('app/src/main/java/com/wayward/launcher/DiagnosticsLogger.java', 'utf8');
 
 const homeStart = main.indexOf('private void showHome(){');
 const homeEnd = main.indexOf('private void showLauncherInfoDialog()', homeStart);
@@ -24,9 +26,18 @@ assert.match(main, /WindowInsets\.Type\.systemBars\(\)\s*\|\s*WindowInsets\.Type
 assert.doesNotMatch(main, /installImageGenDocumentStartScript\(origin\);/, 'ImageGen document-start injection must be disabled');
 assert.doesNotMatch(main, /@JavascriptInterface public void imageGenProxyFetch/, 'ImageGen proxy bridge must not be exposed');
 assert.doesNotMatch(main, /@JavascriptInterface public String listImageProviders/, 'image provider bridge must not be exposed');
-assert.doesNotMatch(application, /DiagnosticsUploader\.uploadPending/, 'automatic remote diagnostics upload must be disabled');
+assert.doesNotMatch(application, /DiagnosticsUploader|imagegen_service/, 'application must not retain image-server process hooks');
+assert.doesNotMatch(main, /ImageGen|imageGen|ImageProvider|ComfyEndpoint|comfyUrl|imageStudioModId|OPEN_IMAGE_STUDIO_SETTINGS/,
+  'official launcher must not retain dormant image-generation server code');
+assert.match(main, /tree\.prewarmImageDirectories\(\)/,
+  'game launch must start image-directory metadata prefetch before WebView loading');
+assert.match(main, /directoryCount < 64/,
+  'image metadata prefetch must have a strict directory bound');
+assert.doesNotMatch(diagnostics, /DiagnosticsUploader|uploadPending|readPending|acknowledge|https?:\/\//,
+  'launcher diagnostics must remain local-only without a remote uploader');
 
-assert.doesNotMatch(manifest, /ImageGenService|ImageGenPanelActivity|ImageProviderActivity|ImageDiagnosticsActivity/, 'unfinished ImageGen components must not be registered');
+assert.doesNotMatch(manifest, /ImageGenService|ImageGenPanelActivity|ImageProviderActivity|ImageDiagnosticsActivity|network_security_config/,
+  'unused server and provider components must not be registered');
 assert.match(main, /startGoogleDriveAuth\(String nonce\)/, 'native Drive authorization bridge must exist');
 assert.match(main, /takePendingStateForNonce\(String nonce\)/, 'nonce-scoped one-time result handoff must exist');
 assert.match(main, /clearGoogleAccessToken\(String token\)/, 'invalid native Drive tokens must be clearable');
@@ -47,4 +58,22 @@ assert(webStart >= 0 && webEnd > webStart, 'WebView construction method must exi
 assert.doesNotMatch(main.slice(webStart, webEnd), /installImageGenDocumentStartScript\(/,
   'official game sessions must not install ImageGen document-start scripts');
 
-console.log('Official v1 scope checks passed');
+assert.doesNotMatch(cache, /completed\.get|TeeInputStream|SHARED_LOAD_TIMEOUT_SECONDS/,
+  'image delivery must not wait for an in-flight cache writer or synchronously tee bytes to disk');
+assert.match(cache, /inflight-bypass/,
+  'concurrent image requests must bypass an in-flight cache fill immediately');
+assert.match(cache, /CACHE_EXECUTOR\.execute/,
+  'image cache population must run on the bounded background executor');
+for (const source of [
+  'ComfyEndpoint.java', 'DiagnosticsUploader.java', 'ImageDiagnosticsActivity.java',
+  'ImageGenBackendInstaller.java', 'ImageGenLocalProviderServer.java',
+  'ImageGenPanelActivity.java', 'ImageGenProxy.java', 'ImageGenService.java',
+  'ImageGenStatusStore.java', 'ImageProviderActivity.java', 'ImageProviderBridge.java',
+  'ImageProviderClient.java', 'ImageProviderStore.java'
+]) {
+  assert.equal(fs.existsSync(`app/src/main/java/com/wayward/launcher/${source}`), false,
+    `${source} must be removed from the official 1.0.0 build.`);
+}
+assert.equal(fs.existsSync('app/src/main/res/xml/network_security_config.xml'), false,
+  'obsolete loopback cleartext server policy must be removed');
+console.log('Official v1 scope and image-cache checks passed');

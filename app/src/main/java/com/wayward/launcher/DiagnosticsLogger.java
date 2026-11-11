@@ -5,25 +5,20 @@ import android.content.Context;
 import android.os.Build;
 import android.os.Process;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.io.InputStreamReader;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
-import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
-/** Bounded, redacted NDJSON journal shared by the main and :imagegen processes. */
+/** Bounded, redacted local-only NDJSON journal for launcher diagnostics. */
 final class DiagnosticsLogger {
     private static final long MAX_FILE_BYTES = 512L * 1024L;
     private static final String ACTIVE = "launcher.ndjson";
@@ -45,7 +40,6 @@ final class DiagnosticsLogger {
             event.put("level", clean(level, 12));
             event.put("component", clean(component, 48));
             event.put("event", clean(name, 80));
-            event.put("deviceId", deviceId(app));
             event.put("appVersion", appVersion(app));
             event.put("sdk", Build.VERSION.SDK_INT);
             event.put("model", clean(Build.MANUFACTURER + " " + Build.MODEL, 80));
@@ -55,9 +49,6 @@ final class DiagnosticsLogger {
             event.put("details", safeDetails.substring(0, Math.min(4200, safeDetails.length())));
             boolean urgent = "ERROR".equalsIgnoreCase(level) || "WARN".equalsIgnoreCase(level);
             append(app, redact(event.toString()) + "\n", urgent);
-            if (urgent) {
-                DiagnosticsUploader.uploadPending(app);
-            }
         } catch (Throwable ignored) {
             // Diagnostics must never crash or block the launcher.
         }
@@ -75,89 +66,6 @@ final class DiagnosticsLogger {
             }
         } catch (Exception ignored) {}
         event(context, "ERROR", component, name, details);
-    }
-
-    static String deviceId(Context context) {
-        final String[] value = new String[1];
-        try {
-            synchronized (LOCK) {
-                withFileLock(context, () -> {
-                File file = new File(new File(context.getFilesDir(), "diagnostics"), "device.id");
-                if (file.isFile()) {
-                    try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                            new FileInputStream(file), StandardCharsets.UTF_8))) {
-                        String existing = reader.readLine();
-                        if (existing != null && existing.matches("[0-9a-fA-F-]{36}")) {
-                            value[0] = existing;
-                            return;
-                        }
-                    }
-                }
-                value[0] = UUID.randomUUID().toString();
-                try (FileOutputStream out = new FileOutputStream(file, false)) {
-                    out.write(value[0].getBytes(StandardCharsets.UTF_8));
-                    out.flush();
-                    out.getFD().sync();
-                }
-                });
-            }
-        } catch (Exception ignored) {
-            value[0] = UUID.randomUUID().toString();
-        }
-        return value[0];
-    }
-
-    static JSONArray readPending(Context context, int maxEvents) throws Exception {
-        final JSONArray result = new JSONArray();
-        synchronized (LOCK) {
-            withFileLock(context, () -> {
-                readFile(context, PREVIOUS, result, maxEvents);
-                readFile(context, ACTIVE, result, maxEvents);
-            });
-        }
-        return result;
-    }
-
-    static void acknowledge(Context context, Set<String> uploadedIds) throws Exception {
-        if (uploadedIds == null || uploadedIds.isEmpty()) return;
-        synchronized (LOCK) {
-            withFileLock(context, () -> {
-                rewriteWithout(context, PREVIOUS, uploadedIds);
-                rewriteWithout(context, ACTIVE, uploadedIds);
-            });
-        }
-    }
-
-    private static void readFile(Context context, String name, JSONArray result, int max) throws Exception {
-        File file = new File(new File(context.getFilesDir(), "diagnostics"), name);
-        if (!file.isFile() || result.length() >= max) return;
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                new FileInputStream(file), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null && result.length() < max) {
-                try { result.put(new JSONObject(line)); } catch (Exception ignored) {}
-            }
-        }
-    }
-
-    private static void rewriteWithout(Context context, String name, Set<String> ids) throws Exception {
-        File dir = new File(context.getFilesDir(), "diagnostics");
-        File file = new File(dir, name);
-        if (!file.isFile()) return;
-        File temp = new File(dir, name + ".tmp");
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                     new FileInputStream(file), StandardCharsets.UTF_8));
-             FileOutputStream out = new FileOutputStream(temp, false)) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                boolean remove = false;
-                try { remove = ids.contains(new JSONObject(line).optString("id")); } catch (Exception ignored) {}
-                if (!remove) out.write((line + "\n").getBytes(StandardCharsets.UTF_8));
-            }
-            out.flush();
-            out.getFD().sync();
-        }
-        Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
     }
 
     private interface LockedAction { void run() throws Exception; }

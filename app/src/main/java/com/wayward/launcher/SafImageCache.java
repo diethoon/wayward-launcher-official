@@ -7,17 +7,16 @@ import android.net.Uri;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.ThreadPoolExecutor;
 
 /**
  * Bounded app-private cache for SAF-backed image assets.
@@ -26,7 +25,13 @@ import java.util.concurrent.TimeoutException;
 final class SafImageCache {
     private static final long MAX_CACHE_BYTES = 128L * 1024L * 1024L;
     private static final long MAX_SINGLE_IMAGE_BYTES = 32L * 1024L * 1024L;
-    private static final long SHARED_LOAD_TIMEOUT_SECONDS = 60L;
+    private static final ThreadPoolExecutor CACHE_EXECUTOR = new ThreadPoolExecutor(
+            2, 2, 30L, TimeUnit.SECONDS, new ArrayBlockingQueue<>(16),
+            runnable -> {
+                Thread thread = new Thread(runnable, "wayward-saf-image-cache");
+                thread.setDaemon(true);
+                return thread;
+            }, new ThreadPoolExecutor.AbortPolicy());
     private final Context context;
     private final File directory;
     private final Object pruneLock = new Object();
@@ -63,45 +68,30 @@ final class SafImageCache {
 
         CacheLoad candidate = new CacheLoad(key, target, expectedSize);
         CacheLoad active = inFlight.putIfAbsent(key, candidate);
-        if (active != null) {
-            long waitStarted = System.nanoTime();
-            try {
-                File ready = active.completed.get(SHARED_LOAD_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-                long waitMs = (System.nanoTime() - waitStarted) / 1_000_000L;
-                if (ready != null && ready.isFile() && ready.length() == expectedSize) {
-                    long cacheOpenStarted = System.nanoTime();
-                    InputStream stream = new FileInputStream(ready);
-                    long cacheOpenMs = (System.nanoTime() - cacheOpenStarted) / 1_000_000L;
-                    ready.setLastModified(System.currentTimeMillis());
-                    return new OpenResult(stream, "shared", 0L, waitMs, cacheOpenMs);
-                }
-            } catch (InterruptedException error) {
-                Thread.currentThread().interrupt();
-                return openDirect(resolver, documentUri, "fallback");
-            } catch (ExecutionException | TimeoutException | IOException error) {
-                return openDirect(resolver, documentUri, "fallback");
-            }
-            return openDirect(resolver, documentUri, "fallback");
-        }
+        if (active != null) return openDirect(resolver, documentUri, "inflight-bypass");
 
         long openStarted = System.nanoTime();
-        InputStream source;
+        InputStream displayStream;
         try {
-            source = resolver.openInputStream(documentUri);
+            displayStream = resolver.openInputStream(documentUri);
         } catch (Exception error) {
-            candidate.fail();
+            candidate.abandon();
             throw error;
         }
         long openMs = (System.nanoTime() - openStarted) / 1_000_000L;
-        if (source == null) {
-            candidate.fail();
+        if (displayStream == null) {
+            candidate.abandon();
             return new OpenResult(null, "missing", openMs, 0L, 0L);
         }
-        if (!candidate.begin()) {
-            return new OpenResult(source, "fallback", openMs, 0L, 0L);
+
+        String cacheState = "loading";
+        try {
+            CACHE_EXECUTOR.execute(() -> fillCache(resolver, documentUri, candidate));
+        } catch (RejectedExecutionException saturated) {
+            candidate.abandon();
+            cacheState = "bypass-queue-full";
         }
-        return new OpenResult(new TeeInputStream(source, candidate), "loading",
-                openMs, 0L, 0L);
+        return new OpenResult(displayStream, cacheState, openMs, 0L, 0L);
     }
 
     private OpenResult openDirect(ContentResolver resolver, Uri documentUri, String state) throws Exception {
@@ -109,6 +99,25 @@ final class SafImageCache {
         InputStream stream = resolver.openInputStream(documentUri);
         long openMs = (System.nanoTime() - started) / 1_000_000L;
         return new OpenResult(stream, state, openMs, 0L, 0L);
+    }
+
+    private void fillCache(ContentResolver resolver, Uri documentUri, CacheLoad candidate) {
+        if (!candidate.begin()) return;
+        try (InputStream source = resolver.openInputStream(documentUri)) {
+            if (source == null) throw new IOException("SAF provider returned no cache stream");
+            byte[] buffer = new byte[32 * 1024];
+            while (true) {
+                long readStarted = System.nanoTime();
+                int count = source.read(buffer);
+                candidate.recordSourceReadDuration(System.nanoTime() - readStarted);
+                if (count < 0) break;
+                if (count > 0) candidate.append(buffer, 0, count);
+                if (!candidate.isActive()) return;
+            }
+            candidate.finish();
+        } catch (Exception error) {
+            candidate.fail();
+        }
     }
 
     private OpenResult openCached(File target, long expectedSize) {
@@ -173,7 +182,6 @@ final class SafImageCache {
         final File target;
         final File part;
         final long expectedSize;
-        final CompletableFuture<File> completed = new CompletableFuture<>();
         FileOutputStream output;
         long copiedBytes;
         long sourceReadNanos;
@@ -226,6 +234,17 @@ final class SafImageCache {
             if (active && !finished) sourceReadNanos += Math.max(0L, nanos);
         }
 
+        synchronized boolean isActive() {
+            return active && !finished;
+        }
+
+        synchronized void abandon() {
+            if (finished) return;
+            active = false;
+            finished = true;
+            inFlight.remove(key, this);
+        }
+
         synchronized void finish() {
             if (finished) return;
             finished = true;
@@ -251,7 +270,6 @@ final class SafImageCache {
                 trimCache(target);
                 cacheFinalizeNanos = Math.max(0L, System.nanoTime() - finalizeStarted);
                 active = false;
-                completed.complete(target);
                 inFlight.remove(key, this);
                 recordCacheCompleted(sourceReadNanos / 1_000_000L, cacheWriteNanos / 1_000_000L,
                         cacheFinalizeNanos / 1_000_000L, copiedBytes, true);
@@ -274,102 +292,10 @@ final class SafImageCache {
                 output = null;
             }
             if (part.exists()) part.delete();
-            completed.completeExceptionally(new IOException("SAF image cache fill failed"));
             inFlight.remove(key, this);
             recordCacheCompleted(sourceReadNanos / 1_000_000L, cacheWriteNanos / 1_000_000L,
                     cacheFinalizeNanos / 1_000_000L, copiedBytes, false);
             finished = true;
-        }
-    }
-
-    private static final class TeeInputStream extends FilterInputStream {
-        private final CacheLoad load;
-        private boolean closed;
-
-        TeeInputStream(InputStream source, CacheLoad cacheLoad) {
-            super(source);
-            load = cacheLoad;
-        }
-
-        @Override
-        public int read() throws IOException {
-            int value;
-            long started = System.nanoTime();
-            try {
-                value = in.read();
-            } catch (IOException error) {
-                load.recordSourceReadDuration(System.nanoTime() - started);
-                load.fail();
-                throw error;
-            }
-            load.recordSourceReadDuration(System.nanoTime() - started);
-            if (value >= 0) {
-                byte[] one = {(byte) value};
-                load.append(one, 0, 1);
-            } else {
-                load.finish();
-            }
-            return value;
-        }
-
-        @Override
-        public int read(byte[] buffer, int offset, int length) throws IOException {
-            if (length == 0) return 0;
-            int count;
-            long started = System.nanoTime();
-            try {
-                count = in.read(buffer, offset, length);
-            } catch (IOException error) {
-                load.recordSourceReadDuration(System.nanoTime() - started);
-                load.fail();
-                throw error;
-            }
-            load.recordSourceReadDuration(System.nanoTime() - started);
-            if (count > 0) {
-                load.append(buffer, offset, count);
-            } else if (count < 0) {
-                load.finish();
-            }
-            return count;
-        }
-
-        @Override
-        public long skip(long requested) throws IOException {
-            if (requested <= 0L) return 0L;
-            byte[] buffer = new byte[(int) Math.min(8192L, requested)];
-            long skipped = 0L;
-            while (skipped < requested) {
-                int count = read(buffer, 0, (int) Math.min(buffer.length, requested - skipped));
-                if (count < 0) break;
-                skipped += count;
-            }
-            return skipped;
-        }
-
-        @Override
-        public boolean markSupported() {
-            return false;
-        }
-
-        @Override
-        public void mark(int readLimit) {
-            // This stream intentionally does not support rewind while caching.
-        }
-
-        @Override
-        public void reset() throws IOException {
-            throw new IOException("SAF image stream does not support reset");
-        }
-
-        @Override
-        public void close() throws IOException {
-            if (closed) return;
-            closed = true;
-            try {
-                super.close();
-            } finally {
-                load.fail();
-            }
         }
     }
 

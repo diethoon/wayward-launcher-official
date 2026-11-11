@@ -22,8 +22,8 @@ public final class SafImageCacheTest {
     public static void main(String[] args) throws Exception {
         testColdWriteThenWarmHit();
         testMetadataBypass();
-        testInterruptedStreamDoesNotPublishPartialCache();
-        testConcurrentMissSharesOneRead();
+        testDisplayCloseDoesNotCancelCache();
+        testConcurrentMissDoesNotWaitForCache();
         testSkipStillCopiesSkippedBytes();
         testModifiedTimeInvalidatesCache();
         testStalePartCleanup();
@@ -39,7 +39,8 @@ public final class SafImageCacheTest {
         equal("loading", first.cacheState, "first request state");
         bytes(IMAGE, readAll(first.stream), "first stream bytes");
         first.stream.close();
-        equal(1, resolver.opens.get(), "first request provider open count");
+        awaitFileCount(new File(context.getCacheDir(), "wayward-saf-images"), ".img", 1, "cold cache fill");
+        equal(2, resolver.opens.get(), "display and cache must use independent SAF streams");
 
         SafImageCache.OpenResult second = cache.open(resolver, uri("cold"), "doc-cold", IMAGE.length, 1000L);
         equal("hit", second.cacheState, "second request cache hit");
@@ -78,49 +79,60 @@ public final class SafImageCacheTest {
         deleteTree(root);
     }
 
-    private static void testInterruptedStreamDoesNotPublishPartialCache() throws Exception {
-        File root = Files.createTempDirectory("saf-cache-abort").toFile();
+    private static void testDisplayCloseDoesNotCancelCache() throws Exception {
+        File root = Files.createTempDirectory("saf-cache-display-close").toFile();
         Context context = new Context(new File(root, "cache"));
         FakeResolver resolver = new FakeResolver(IMAGE);
         SafImageCache cache = new SafImageCache(context);
-        SafImageCache.OpenResult partial = cache.open(resolver, uri("abort"), "doc-abort", IMAGE.length, 1000L);
-        equal((int) IMAGE[0], partial.stream.read(), "first byte of partial stream");
-        partial.stream.close();
-        require(countFiles(new File(context.getCacheDir(), "wayward-saf-images"), ".img") == 0,
-                "an interrupted stream must not publish an image cache file");
-        require(countFiles(new File(context.getCacheDir(), "wayward-saf-images"), ".part") == 0,
-                "an interrupted stream must delete its partial cache file");
+        SafImageCache.OpenResult first = cache.open(resolver, uri("display-close"), "doc-display-close", IMAGE.length, 1000L);
+        equal((int) IMAGE[0], first.stream.read(), "first display byte");
+        first.stream.close();
 
-        SafImageCache.OpenResult retry = cache.open(resolver, uri("abort"), "doc-abort", IMAGE.length, 1000L);
-        bytes(IMAGE, readAll(retry.stream), "retry stream bytes");
-        retry.stream.close();
-        equal(2, resolver.opens.get(), "retry should reopen the provider once");
-        SafImageCache.OpenResult hit = cache.open(resolver, uri("abort"), "doc-abort", IMAGE.length, 1000L);
-        equal("hit", hit.cacheState, "completed retry should be cached");
+        awaitFileCount(new File(context.getCacheDir(), "wayward-saf-images"), ".img", 1,
+                "cache fill must continue after display stream closes");
+        SafImageCache.OpenResult hit = cache.open(resolver, uri("display-close"), "doc-display-close", IMAGE.length, 1000L);
+        equal("hit", hit.cacheState, "independent cache fill should become a hit");
+        bytes(IMAGE, readAll(hit.stream), "independent cache bytes");
         hit.stream.close();
+        equal(2, resolver.opens.get(), "display and cache must use separate provider streams");
         deleteTree(root);
     }
 
-    private static void testConcurrentMissSharesOneRead() throws Exception {
-        File root = Files.createTempDirectory("saf-cache-shared").toFile();
+    private static void testConcurrentMissDoesNotWaitForCache() throws Exception {
+        File root = Files.createTempDirectory("saf-cache-concurrent").toFile();
         Context context = new Context(new File(root, "cache"));
-        FakeResolver resolver = new FakeResolver(IMAGE);
+        BlockingResolver resolver = new BlockingResolver(IMAGE);
         SafImageCache cache = new SafImageCache(context);
-        SafImageCache.OpenResult first = cache.open(resolver, uri("shared"), "doc-shared", IMAGE.length, 1000L);
-        FutureTask<SafImageCache.OpenResult> secondTask = new FutureTask<>(
-                () -> cache.open(resolver, uri("shared"), "doc-shared", IMAGE.length, 1000L));
-        Thread secondThread = new Thread(secondTask, "saf-cache-shared-test");
-        secondThread.start();
-        Thread.sleep(40L);
-        require(!secondTask.isDone(), "second same-key miss should wait for first stream completion");
+        SafImageCache.OpenResult first = cache.open(resolver, uri("concurrent"), "doc-concurrent", IMAGE.length, 1000L);
+        require(resolver.cacheReadStarted.await(2, TimeUnit.SECONDS), "background cache reader did not start");
 
-        bytes(IMAGE, readAll(first.stream), "first concurrent stream");
-        first.stream.close();
-        SafImageCache.OpenResult second = secondTask.get(2, TimeUnit.SECONDS);
-        equal("shared", second.cacheState, "concurrent request must share completed cache");
-        bytes(IMAGE, readAll(second.stream), "shared stream bytes");
-        second.stream.close();
-        equal(1, resolver.opens.get(), "same-key simultaneous miss must open SAF only once");
+        FutureTask<SafImageCache.OpenResult> secondTask = new FutureTask<>(
+                () -> cache.open(resolver, uri("concurrent"), "doc-concurrent", IMAGE.length, 1000L));
+        Thread secondThread = new Thread(secondTask, "saf-cache-concurrent-test");
+        secondThread.start();
+        SafImageCache.OpenResult second;
+        try {
+            second = secondTask.get(500L, TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException error) {
+            resolver.releaseCache.countDown();
+            throw new AssertionError("same-key image request waited for the background cache fill");
+        }
+
+        try {
+            equal("inflight-bypass", second.cacheState, "concurrent request must bypass in-flight cache");
+            bytes(IMAGE, readAll(first.stream), "first concurrent display stream");
+            bytes(IMAGE, readAll(second.stream), "second concurrent display stream");
+        } finally {
+            first.stream.close();
+            second.stream.close();
+            resolver.releaseCache.countDown();
+        }
+        awaitFileCount(new File(context.getCacheDir(), "wayward-saf-images"), ".img", 1,
+                "background cache fill after concurrent displays");
+        SafImageCache.OpenResult hit = cache.open(resolver, uri("concurrent"), "doc-concurrent", IMAGE.length, 1000L);
+        equal("hit", hit.cacheState, "third request should hit completed cache");
+        hit.stream.close();
+        equal(3, resolver.opens.get(), "two displays plus one cache stream should be opened");
         deleteTree(root);
     }
 
@@ -134,12 +146,13 @@ public final class SafImageCacheTest {
         byte[] remaining = readAll(first.stream);
         bytes(Arrays.copyOfRange(IMAGE, 2, IMAGE.length), remaining, "post-skip stream bytes");
         first.stream.close();
+        awaitFileCount(new File(context.getCacheDir(), "wayward-saf-images"), ".img", 1, "skip cache fill");
 
         SafImageCache.OpenResult cached = cache.open(resolver, uri("skip"), "doc-skip", IMAGE.length, 1000L);
         equal("hit", cached.cacheState, "skip path should produce a complete cache");
         bytes(IMAGE, readAll(cached.stream), "cache must retain skipped bytes too");
         cached.stream.close();
-        equal(1, resolver.opens.get(), "skip cache hit provider open count");
+        equal(2, resolver.opens.get(), "skip must use separate display and cache streams");
         deleteTree(root);
     }
 
@@ -151,12 +164,14 @@ public final class SafImageCacheTest {
         SafImageCache.OpenResult first = cache.open(resolver, uri("mtime"), "doc-mtime", IMAGE.length, 1000L);
         readAll(first.stream);
         first.stream.close();
+        awaitFileCount(new File(context.getCacheDir(), "wayward-saf-images"), ".img", 1, "initial mtime cache fill");
 
         SafImageCache.OpenResult changed = cache.open(resolver, uri("mtime"), "doc-mtime", IMAGE.length, 2000L);
         equal("loading", changed.cacheState, "changed modified time must miss old cache");
         readAll(changed.stream);
         changed.stream.close();
-        equal(2, resolver.opens.get(), "modified time change should trigger a fresh provider open");
+        awaitFileCount(new File(context.getCacheDir(), "wayward-saf-images"), ".img", 2, "changed mtime cache fill");
+        equal(4, resolver.opens.get(), "modified time change must open independent display and cache streams");
         deleteTree(root);
     }
 
@@ -184,6 +199,15 @@ public final class SafImageCacheTest {
         return output.toByteArray();
     }
 
+    private static void awaitFileCount(File directory, String suffix, int minimum, String label) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5L);
+        while (System.nanoTime() < deadline) {
+            if (countFiles(directory, suffix) >= minimum) return;
+            Thread.sleep(10L);
+        }
+        throw new AssertionError(label + " timed out");
+    }
+
     private static int countFiles(File directory, String suffix) {
         File[] files = directory.listFiles((parent, name) -> name.endsWith(suffix));
         return files == null ? 0 : files.length;
@@ -208,6 +232,48 @@ public final class SafImageCacheTest {
         File[] children = file.listFiles();
         if (children != null) for (File child : children) deleteTree(child);
         file.delete();
+    }
+
+    private static final class BlockingResolver extends ContentResolver {
+        final AtomicInteger opens = new AtomicInteger();
+        final java.util.concurrent.CountDownLatch cacheReadStarted = new java.util.concurrent.CountDownLatch(1);
+        final java.util.concurrent.CountDownLatch releaseCache = new java.util.concurrent.CountDownLatch(1);
+        private final byte[] bytes;
+
+        BlockingResolver(byte[] source) { bytes = source.clone(); }
+
+        @Override public InputStream openInputStream(Uri uri) {
+            int call = opens.incrementAndGet();
+            if (call != 2) return new ByteArrayInputStream(bytes);
+            return new InputStream() {
+                private final ByteArrayInputStream source = new ByteArrayInputStream(bytes);
+                private boolean released;
+
+                private void awaitRelease() throws IOException {
+                    if (released) return;
+                    cacheReadStarted.countDown();
+                    try {
+                        if (!releaseCache.await(5L, TimeUnit.SECONDS)) throw new IOException("cache gate timed out");
+                        released = true;
+                    } catch (InterruptedException error) {
+                        Thread.currentThread().interrupt();
+                        throw new IOException("cache gate interrupted", error);
+                    }
+                }
+
+                @Override public int read() throws IOException {
+                    awaitRelease();
+                    return source.read();
+                }
+
+                @Override public int read(byte[] buffer, int offset, int length) throws IOException {
+                    awaitRelease();
+                    return source.read(buffer, offset, length);
+                }
+
+                @Override public void close() throws IOException { source.close(); }
+            };
+        }
     }
 
     private static final class FakeResolver extends ContentResolver {
