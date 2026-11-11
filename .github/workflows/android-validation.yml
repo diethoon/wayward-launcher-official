@@ -120,6 +120,7 @@ jobs:
               -srckeystore "$work_dir/java-compatible.p12" \
               -srcstoretype PKCS12 \
               -srcstorepass "$KEYSTORE_PASSWORD" \
+              -srcalias "$KEY_ALIAS" \
               -destkeystore "$work_dir/release.jks" \
               -deststoretype JKS \
               -deststorepass "$KEYSTORE_PASSWORD" \
