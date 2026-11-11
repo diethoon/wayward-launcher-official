@@ -44,6 +44,9 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Check branch diff whitespace
+        run: git diff --check origin/main...HEAD
+
       - name: Check JavaScript syntax
         run: |
           node --check app/src/main/assets/wayward-google-auth-bridge.js
