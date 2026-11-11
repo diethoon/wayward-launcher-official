@@ -13,9 +13,9 @@ SOURCE = ROOT / "1794430759353.png"
 EXPECTED_BYTES = 1_427_230
 EXPECTED_GIT_BLOB_SHA1 = "2f23c94d7aea3091bb3bf394131f550422fd61d1"
 
-# This central crop keeps the seated subject from just above the head to the knees.
-# The coordinates were measured against the actual source preview at 320x320.
-CROP = (0.12, 0.065, 0.88, 0.83)
+# Tight, center-weighted portrait crop: keep the full head and upper chest visible.
+# Coordinates are measured against the pinned source image, with the face as the focal point.
+CROP = (0.2537, 0.0675, 0.7463, 0.5605)
 
 LEGACY_DENSITIES = {
     "mdpi": 48,
