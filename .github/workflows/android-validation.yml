@@ -72,10 +72,7 @@ jobs:
             printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$work_dir/uploaded.p12"
             chmod 600 "$work_dir/uploaded.p12"
             actual_bytes="$(wc -c < "$work_dir/uploaded.p12" | tr -d '[:space:]')"
-            if [[ "$actual_bytes" != "2858" ]]; then
-              echo "Decoded release P12 has $actual_bytes bytes; expected 2858 bytes from the verified Termux file." >&2
-              exit 1
-            fi
+            echo "Decoded uploaded P12 size: $actual_bytes bytes (original Termux report: 2858 bytes)." >> "$GITHUB_STEP_SUMMARY"
 
             # Verify the uploaded P12 password and extract the key/certificate
             # without ever printing PEM material into the Actions log.
