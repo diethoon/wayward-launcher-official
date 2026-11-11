@@ -33,6 +33,7 @@ import androidx.webkit.WebViewAssetLoader;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 import com.google.android.gms.auth.api.identity.AuthorizationRequest;
+import com.google.android.gms.auth.api.identity.ClearTokenRequest;
 import com.google.android.gms.auth.api.identity.AuthorizationResult;
 import com.google.android.gms.auth.api.identity.Identity;
 import com.google.android.gms.common.api.ApiException;
@@ -1514,6 +1515,18 @@ public final class MainActivity extends Activity {
             if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return "";
             String result=PENDING_GOOGLE_AUTH_RESULTS.remove(nonce);
             return result==null?"":result;
+        }
+        @JavascriptInterface public void clearGoogleAccessToken(String token){
+            if(token==null||token.isEmpty()||token.length()>4096)return;
+            runOnUiThread(()->{
+                try{
+                    Identity.getAuthorizationClient(MainActivity.this)
+                            .clearToken(ClearTokenRequest.builder().setToken(token).build())
+                            .addOnFailureListener(error->DiagnosticsLogger.error(MainActivity.this,"oauth","google_access_token_cache_clear_failed",error));
+                }catch(Throwable error){
+                    DiagnosticsLogger.error(MainActivity.this,"oauth","google_access_token_cache_clear_failed",error);
+                }
+            });
         }
         @JavascriptInterface public String takePendingState(){return "";}
         @JavascriptInterface public String saveFile(String name,String mime,String encoded){try{saveExport(name,mime,encoded);return null;}catch(Exception e){return msg(e);}}
