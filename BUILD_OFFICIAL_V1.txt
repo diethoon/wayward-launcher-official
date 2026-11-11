@@ -2,3 +2,4 @@ Trigger official v1 source import and first CI build. This marker is not part of
 Retry trigger after enabling workflow push event.
 Rebuild official 1.0.0 APKs after native Drive OAuth bridge integration.
 Rebuild after removing dormant ImageGen UI and JS bridge.
+Rebuild after disabling startup telemetry and pruning development-only artifacts.
