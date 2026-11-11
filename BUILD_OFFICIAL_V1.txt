@@ -6,3 +6,4 @@ Rebuild after disabling startup telemetry and pruning development-only artifacts
 Rebuild with current Google Identity Services 21.6.0.
 Rebuild after final minimal home-screen copy update.
 Rebuild after adding native cached-token invalidation on Drive 401.
+Rebuild after fixing Bearer token matcher in 401 invalidation.
