@@ -7,6 +7,28 @@
   const AUTH_ORIGIN = 'https://wayward-cloud-auth.vercel.app';
   const originalOpen = typeof window.open === 'function' ? window.open.bind(window) : null;
 
+  const originalFetch = typeof window.fetch === 'function' ? window.fetch.bind(window) : null;
+  if (originalFetch) {
+    window.fetch = async function (input, init) {
+      const response = await originalFetch(input, init);
+      try {
+        const requestUrl = typeof input === 'string' ? input : (input && input.url) || '';
+        if (response && response.status === 401 &&
+            requestUrl.startsWith('https://www.googleapis.com/drive/v3/') &&
+            window.WMLHost &&
+            typeof window.WMLHost.clearGoogleAccessToken === 'function') {
+          const requestHeaders = new Headers(
+            (init && init.headers) || (input && input.headers) || {}
+          );
+          const authorization = requestHeaders.get('Authorization') || '';
+          const match = /^Bearer\\s+(.+)$/i.exec(authorization);
+          if (match) window.WMLHost.clearGoogleAccessToken(match[1]);
+        }
+      } catch (_) {}
+      return response;
+    };
+  }
+
   window.open = function (url, target, features) {
     let parsed;
     try {
