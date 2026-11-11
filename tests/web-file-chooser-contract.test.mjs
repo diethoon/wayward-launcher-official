@@ -15,4 +15,18 @@ assert.match(main, /req==WebFileChooser\.REQUEST_CODE/, "file chooser activity r
 assert.match(main, /collectSelectedUris\(data\)/, "launcher ZIP picker must also accept ClipData-only results");
 assert.doesNotMatch(main, /setWebChromeClient\(new WebChromeClient\(\)\)/, "empty default WebChromeClient must not remain");
 
+
+const mainRequestCodes = main.match(/private static final int PICK_TREE=(\\d+), PICK_MOD_ZIP=(\\d+), REQUEST_GOOGLE_AUTH=(\\d+);/);
+assert.ok(mainRequestCodes, "launcher folder, ZIP, and Google OAuth request codes must be declared");
+const webFileChooserRequestCode = picker.match(/static final int REQUEST_CODE = (\\d+);/);
+assert.ok(webFileChooserRequestCode, "WebView file chooser request code must be declared");
+const allRequestCodes = [
+  Number(mainRequestCodes[1]),
+  Number(mainRequestCodes[2]),
+  Number(mainRequestCodes[3]),
+  Number(webFileChooserRequestCode[1]),
+];
+assert.equal(new Set(allRequestCodes).size, allRequestCodes.length,
+  `Android activity request codes must be unique; found: ${allRequestCodes.join(", ")}`);
+
 console.log("WebFileChooser contract tests passed.");
