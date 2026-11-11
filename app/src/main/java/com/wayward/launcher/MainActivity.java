@@ -188,7 +188,7 @@ public final class MainActivity extends Activity {
         infoParams.leftMargin=dp(5);top.addView(info,infoParams);
         LinearLayout.LayoutParams topParams=new LinearLayout.LayoutParams(-1,-2);topParams.bottomMargin=dp(3);
         page.addView(top,topParams);
-        TextView subtitle=uiText("GAME LAUNCHER  ·  게임과 모드를 한곳에서",11,Color.rgb(111,118,125),false);
+        TextView subtitle=uiText("GAME LAUNCHER  ·  여러 게임을 독립 세션으로 실행",11,Color.rgb(111,118,125),false);
         subtitle.setLetterSpacing(0.025f);page.addView(subtitle);
 
         LinearLayout statusCard=uiCard();
