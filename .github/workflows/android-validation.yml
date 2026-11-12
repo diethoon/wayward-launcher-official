@@ -2,7 +2,7 @@ name: Official Android validation
 
 on:
   pull_request:
-    branches: [main, 'work/**']
+    branches: [main, 'work/**', 'restart/**']
   push:
     branches:
       - main
@@ -69,6 +69,8 @@ jobs:
 
       - name: Test native CloudSave granted scope
         run: node scripts/test-cloudsave-native-auth-scope.cjs
+      - name: Test Custom Tabs static CloudSave bridge contract
+        run: node scripts/test-cloudsave-cct-bridge.cjs
 
       - name: Test Google CloudSave session policy bridge
         run: node scripts/test-cloudsave-session-policy.cjs
