@@ -1009,6 +1009,9 @@ public final class MainActivity extends Activity {
                 }
             });
         }
+        // Compatibility shim for legacy game scripts. OAuth tokens are never returned
+        // to the game WebView; the in-app static auth page receives them directly.
+        @JavascriptInterface public String takePendingStateForNonce(String nonce){return "";}
         @JavascriptInterface public void clearGoogleAccessToken(String token){
             if(token==null||token.isEmpty()||token.length()>4096)return;
             runOnUiThread(()->{
