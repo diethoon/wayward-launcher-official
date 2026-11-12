@@ -10,7 +10,11 @@ import android.view.Gravity;
 import android.view.ViewGroup;
 import android.util.Base64;
 import android.view.Window;
+import android.webkit.ConsoleMessage;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -43,6 +47,7 @@ final class GoogleAuthInAppDialog {
         void onAuthRequest(String nonce, boolean selectAccount);
         void onRevokeRequest(String nonce);
         void onClosed(String nonce);
+        void onDiagnosticsRequested();
     }
 
     private static final String AUTH_ORIGIN = "https://jeiky224.github.io";
@@ -129,7 +134,18 @@ final class GoogleAuthInAppDialog {
         close.setMinHeight(dp(40));
         close.setBackground(roundRect(Color.WHITE, Color.rgb(220, 224, 228)));
         close.setOnClickListener(v -> closeFromGame());
-        header.addView(close, new LinearLayout.LayoutParams(dp(76), dp(42)));
+        Button diagnostics = new Button(activity);
+        diagnostics.setText("진단 내보내기");
+        diagnostics.setAllCaps(false);
+        diagnostics.setTextSize(12);
+        diagnostics.setTextColor(COLOR_TEXT);
+        diagnostics.setMinHeight(dp(40));
+        diagnostics.setBackground(roundRect(Color.WHITE, Color.rgb(220, 224, 228)));
+        diagnostics.setOnClickListener(v -> listener.onDiagnosticsRequested());
+        LinearLayout.LayoutParams diagnosticsParams = new LinearLayout.LayoutParams(dp(104), dp(42));
+        diagnosticsParams.rightMargin = dp(6);
+        header.addView(diagnostics, diagnosticsParams);
+        header.addView(close, new LinearLayout.LayoutParams(dp(68), dp(42)));
         panel.addView(header, new LinearLayout.LayoutParams(-1, -2));
 
         WebView page = new WebView(activity);
@@ -147,6 +163,51 @@ final class GoogleAuthInAppDialog {
         page.setBackgroundColor(Color.WHITE);
         page.setWebViewClient(new WebViewClient() {
             @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                DiagnosticsLogger.event(activity, "INFO", "oauth_webview", "auth_page_started",
+                        pageUrlDetails(url));
+                super.onPageStarted(view, url, favicon);
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                DiagnosticsLogger.event(activity, "INFO", "oauth_webview", "auth_page_finished",
+                        pageUrlDetails(url));
+                super.onPageFinished(view, url);
+                injectPageDiagnostics(view);
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request,
+                                        WebResourceError error) {
+                if (request != null && request.isForMainFrame()) {
+                    JSONObject details = new JSONObject();
+                    try {
+                        details.put("errorCode", error == null ? 0 : error.getErrorCode());
+                        details.put("url", pageUrlDetails(request.getUrl().toString()));
+                    } catch (Throwable ignored) {}
+                    DiagnosticsLogger.event(activity, "ERROR", "oauth_webview",
+                            "auth_page_main_frame_error", details);
+                }
+                super.onReceivedError(view, request, error);
+            }
+
+            @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest request,
+                                            WebResourceResponse response) {
+                if (request != null && response != null && request.isForMainFrame()) {
+                    JSONObject details = new JSONObject();
+                    try {
+                        details.put("status", response.getStatusCode());
+                        details.put("url", pageUrlDetails(request.getUrl().toString()));
+                    } catch (Throwable ignored) {}
+                    DiagnosticsLogger.event(activity, "ERROR", "oauth_webview",
+                            "auth_page_main_frame_http_error", details);
+                }
+                super.onReceivedHttpError(view, request, response);
+            }
+
+            @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 return !isAllowedPageUrl(request.getUrl());
             }
@@ -161,6 +222,23 @@ final class GoogleAuthInAppDialog {
             }
         });
 
+        page.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onConsoleMessage(ConsoleMessage message) {
+                if (message != null && message.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
+                    JSONObject details = new JSONObject();
+                    try {
+                        details.put("level", message.messageLevel().name());
+                        details.put("line", message.lineNumber());
+                        details.put("source", "static-auth-page");
+                    } catch (Throwable ignored) {}
+                    DiagnosticsLogger.event(activity, "ERROR", "oauth_webview",
+                            "auth_page_console_error", details);
+                }
+                return true;
+            }
+        });
+
         WebViewCompat.addWebMessageListener(page, "WaywardAuthHost",
                 Collections.singleton(AUTH_ORIGIN), new WebMessageListener() {
                     @Override
@@ -171,7 +249,12 @@ final class GoogleAuthInAppDialog {
                                 || sourceOrigin == null
                                 || !AUTH_ORIGIN.equals(sourceOrigin.toString())
                                 || message == null || message.getData() == null
-                                || message.getData().length() > 24 * 1024 + 1024) return;
+                                || message.getData().length() > 24 * 1024 + 1024) {
+                            DiagnosticsLogger.event(activity, "WARN", "oauth_webview",
+                                    "auth_page_message_rejected",
+                                    new JSONObject());
+                            return;
+                        }
                         replyProxy = reply;
                         handlePageCommand(message.getData());
                     }
@@ -206,14 +289,29 @@ final class GoogleAuthInAppDialog {
     private void handlePageCommand(String raw) {
         try {
             JSONObject command = new JSONObject(raw);
-            if (!activeNonce.equals(command.optString("nonce", ""))) return;
             String type = command.optString("type", "");
+            if (!activeNonce.equals(command.optString("nonce", ""))) {
+                DiagnosticsLogger.event(activity, "WARN", "oauth_webview",
+                        "auth_page_nonce_mismatch", null);
+                return;
+            }
+            if ("debug-state".equals(type)) {
+                recordPageDiagnosticState(command);
+                return;
+            }
             switch (type) {
-                case "ready":
-                    sendToPage(new JSONObject()
+                case "ready": {
+                    DiagnosticsLogger.event(activity, "INFO", "oauth_webview",
+                            "auth_page_native_channel_ready_received", null);
+                    boolean sent = sendToPage(new JSONObject()
                             .put("type", "native-ready")
                             .put("nonce", activeNonce));
+                    JSONObject details = new JSONObject();
+                    details.put("sent", sent);
+                    DiagnosticsLogger.event(activity, sent ? "INFO" : "ERROR", "oauth_webview",
+                            "native_ready_response", details);
                     break;
+                }
                 case "to-game": {
                     String message = command.optString("raw", "");
                     if (message.isEmpty() || message.length() > CHUNK_CHARS + 1024) return;
@@ -223,10 +321,19 @@ final class GoogleAuthInAppDialog {
                     } else if (!activeNonce.equals(payload.optString("nonce", ""))
                             || payload.optInt("version", -1) != 1
                             || !isAllowedPageToGameMessage(payload.optString("type", ""))) return;
+                    JSONObject messageDetails = new JSONObject();
+                    try {
+                        messageDetails.put("type", payload.optString("type", "chunk"));
+                        messageDetails.put("chars", message.length());
+                    } catch (Throwable ignored) {}
+                    DiagnosticsLogger.event(activity, "INFO", "oauth_webview",
+                            "auth_page_message_forwarded_to_game", messageDetails);
                     listener.onPageMessage(message);
                     break;
                 }
                 case "auth-request":
+                    DiagnosticsLogger.event(activity, "INFO", "oauth_webview",
+                            "native_google_auth_request_received", null);
                     listener.onAuthRequest(activeNonce, command.optBoolean("selectAccount", false));
                     break;
                 case "revoke-request":
@@ -249,7 +356,20 @@ final class GoogleAuthInAppDialog {
         try {
             byte[] bytes = rawMessage.getBytes(StandardCharsets.UTF_8);
             if (bytes.length == 0 || bytes.length > MAX_MESSAGE_BYTES) return false;
-            if (bytes.length <= CHUNK_CHARS) return postGamePart(rawMessage);
+            if (bytes.length <= CHUNK_CHARS) {
+                JSONObject details = new JSONObject();
+                try {
+                    JSONObject payload = new JSONObject(rawMessage);
+                    details.put("type", payload.optString("type", "unknown"));
+                    details.put("chars", rawMessage.length());
+                } catch (Throwable ignored) {}
+                DiagnosticsLogger.event(activity, "INFO", "oauth_webview",
+                        "game_message_received_by_auth_dialog", details);
+                boolean sent = postGamePart(rawMessage);
+                if (!sent) DiagnosticsLogger.event(activity, "ERROR", "oauth_webview",
+                        "game_message_delivery_failed", null);
+                return sent;
+            }
 
             String encoded = Base64.encodeToString(bytes, Base64.NO_WRAP);
             int total = (encoded.length() + CHUNK_CHARS - 1) / CHUNK_CHARS;
@@ -288,6 +408,73 @@ final class GoogleAuthInAppDialog {
         } catch (Throwable ignored) {
             return false;
         }
+    }
+
+    private JSONObject pageUrlDetails(String rawUrl) {
+        JSONObject details = new JSONObject();
+        try {
+            Uri uri = Uri.parse(rawUrl);
+            details.put("scheme", String.valueOf(uri.getScheme()));
+            details.put("host", String.valueOf(uri.getHost()));
+            details.put("path", String.valueOf(uri.getPath()));
+            details.put("transport", String.valueOf(uri.getQueryParameter("transport")));
+            details.put("build", String.valueOf(uri.getQueryParameter("_wml_auth_build")));
+        } catch (Throwable ignored) {}
+        return details;
+    }
+
+    private void injectPageDiagnostics(WebView page) {
+        String script =
+                "(function(){'use strict';" +
+                "if(window.__waywardNativeDiagInstalled)return;" +
+                "window.__waywardNativeDiagInstalled=true;" +
+                "var host=window.WaywardAuthHost;" +
+                "if(!host||typeof host.postMessage!=='function')return;" +
+                "var params=new URLSearchParams(location.search);" +
+                "var last='';" +
+                "function read(id){var e=document.getElementById(id);return e?String(e.textContent||'').slice(0,220):'';}" +
+                "function emit(){try{" +
+                "var s=document.querySelector('script[src*="/cloud/auth.js"]');" +
+                "var origin='';try{origin=new URL(params.get('origin')||'').protocol;}catch(e){}" +
+                "var state={type:'debug-state',nonce:params.get('nonce')||''," +
+                "transport:params.get('transport')||'',build:params.get('_wml_auth_build')||''," +
+                "authScriptLoaded:!!s,authScriptVersion:s?(new URL(s.src)).searchParams.get('v')||'':''," +
+                "readyState:document.readyState,nativeHost:true," +
+                "nativeHandler:typeof host.onmessage==='function',gameOriginScheme:origin," +
+                "originTitle:read('origin-title'),originDetail:read('origin-detail')," +
+                "status:read('status'),driveStatus:read('drive-status')," +
+                "confirmVisible:!!(document.getElementById('confirm-wrap')&&!document.getElementById('confirm-wrap').hidden)};" +
+                "var key=JSON.stringify(state);if(key!==last){last=key;host.postMessage(JSON.stringify(state));}" +
+                "}catch(e){}}" +
+                "emit();var root=document.documentElement;if(root&&window.MutationObserver){" +
+                "new MutationObserver(emit).observe(root,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['hidden','disabled']});}" +
+                "})();";
+        try {
+            page.evaluateJavascript(script, null);
+        } catch (Throwable error) {
+            DiagnosticsLogger.error(activity, "oauth_webview", "auth_page_diagnostics_probe_failed", error);
+        }
+    }
+
+    private void recordPageDiagnosticState(JSONObject command) {
+        JSONObject details = new JSONObject();
+        try {
+            String[] keys = {"transport", "build", "authScriptLoaded", "authScriptVersion",
+                    "readyState", "nativeHost", "nativeHandler", "gameOriginScheme",
+                    "originTitle", "originDetail", "status", "driveStatus", "confirmVisible"};
+            for (String key : keys) {
+                if (!command.has(key)) continue;
+                Object value = command.get(key);
+                if (value instanceof String) {
+                    String text = ((String) value).replace('\\n', ' ').replace('\\r', ' ').trim();
+                    details.put(key, text.substring(0, Math.min(220, text.length())));
+                } else {
+                    details.put(key, value);
+                }
+            }
+        } catch (Throwable ignored) {}
+        DiagnosticsLogger.event(activity, "INFO", "oauth_webview",
+                "auth_page_runtime_state", details);
     }
 
     private boolean isValidChunk(JSONObject payload) {
