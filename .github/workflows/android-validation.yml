@@ -58,6 +58,9 @@ jobs:
       - name: Test Google OAuth bridge contract
         run: node scripts/test-google-auth-bridge.cjs
 
+      - name: Test Google CloudSave session policy bridge
+        run: node scripts/test-cloudsave-session-policy.cjs
+
       - name: Prepare optional release keystore
         shell: bash
         env:
