@@ -409,7 +409,7 @@ final class GoogleAuthInAppDialog {
             Uri uri = Uri.parse(value);
             return ("https".equalsIgnoreCase(uri.getScheme()) || "http".equalsIgnoreCase(uri.getScheme()))
                     && uri.getHost() != null && uri.getPort() >= -1
-                    && uri.getUserInfo() == null && uri.getPath().isEmpty()
+                    && uri.getUserInfo() == null && (uri.getPath() == null || uri.getPath().isEmpty())
                     && uri.getQuery() == null && uri.getFragment() == null
                     && uri.toString().equals(value);
         } catch (Throwable ignored) {
