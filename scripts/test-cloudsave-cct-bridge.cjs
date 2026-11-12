@@ -11,7 +11,7 @@ const injected = read('app/src/main/assets/wayward-google-auth-bridge.js');
 const manifest = read('app/src/main/AndroidManifest.xml');
 const gradle = read('app/build.gradle');
 
-assert.match(gradle, /androidx\.browser:browser:1\.10\.0/);
+assert.match(gradle, /androidx\.browser:browser:1\.8\.0/);
 assert.match(manifest, /androidx\.browser\.customtabs\.PostMessageService/);
 assert.match(manifest, /android:exported="true"/);
 assert.match(bridge, /CustomTabsClient\.getPackageName/);
