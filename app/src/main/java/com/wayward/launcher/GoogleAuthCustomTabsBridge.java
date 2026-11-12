@@ -129,7 +129,11 @@ final class GoogleAuthCustomTabsBridge {
 
     private void ensureBound() {
         if (bound || destroyed) return;
-        String packageName = CustomTabsClient.getPackageName(activity, null);
+        String packageName = CustomTabsClient.getPackageName(
+                activity, java.util.Collections.singletonList("com.android.chrome"), true);
+        if (packageName == null || packageName.isEmpty()) {
+            packageName = CustomTabsClient.getPackageName(activity, null);
+        }
         if (packageName == null || packageName.isEmpty()) {
             reportError("Custom Tabs를 지원하는 브라우저를 찾지 못했습니다.");
             return;
