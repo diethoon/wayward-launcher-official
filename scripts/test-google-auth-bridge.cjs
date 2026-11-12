@@ -28,6 +28,13 @@ async function main() {
   };
   const dispatched = [];
   const clearedTokens = [];
+  const documentListeners = {};
+  const localStorageValues = new Map([
+    ['wml-google-drive-session-token-v1', JSON.stringify({
+      accessToken: 'persisted-token-not-for-production',
+      expiresAt: Date.now() + 3600000
+    })]
+  ]);
   let poll = null;
   let timeout = null;
   let fallbackOpened = false;
@@ -35,6 +42,9 @@ async function main() {
 
   const window = {
     location: { href: 'https://localhost:12000/game/Wayward_WML_ko.html' },
+    localStorage: {
+      getItem(key) { return localStorageValues.get(key) || null; }
+    },
     WMLHost: {
       startGoogleDriveAuth(value) {
         assert.equal(value, nonce);
@@ -61,6 +71,11 @@ async function main() {
     dispatchEvent(event) { dispatched.push(event); return true; }
   };
   const document = {
+    addEventListener(type, callback, capture) {
+      assert.equal(type, 'click');
+      assert.equal(capture, true);
+      documentListeners[type] = callback;
+    },
     documentElement: { appendChild(node) { assert.equal(node, frame); } },
     createElement(tag) { assert.equal(tag, 'iframe'); return frame; }
   };
@@ -84,6 +99,67 @@ async function main() {
   assert.equal(dispatched[0].data.nonce, nonce);
   assert.equal(dispatched[0].data.accessToken, 'test-token-not-for-production');
   assert.equal(typeof timeout, 'function');
+
+  const makeLogoutTarget = insideCloudSave => {
+    const button = {
+      textContent: '로그아웃',
+      closest(selector) {
+        if (selector === 'button,[role="button"]') return this;
+        if (selector === '.wml-gd-wrap') return insideCloudSave ? {} : null;
+        return null;
+      }
+    };
+    return {
+      closest(selector) {
+        return selector === 'button,[role="button"]' ? button : null;
+      }
+    };
+  };
+
+  assert.equal(typeof documentListeners.click, 'function');
+  documentListeners.click({ target: makeLogoutTarget(false) });
+  assert.deepEqual(clearedTokens, []);
+  documentListeners.click({ target: makeLogoutTarget(true) });
+  assert.deepEqual(clearedTokens, ['test-token-not-for-production']);
+  clearedTokens.length = 0;
+
+  // A page reload loses the in-memory token; the persistent session token
+  // must still be supplied to the native cache-clear bridge on explicit logout.
+  const restoredClears = [];
+  let restoredClick = null;
+  const restoredWindow = {
+    location: { href: 'https://localhost:12000/game/Wayward_WML_ko.html' },
+    localStorage: {
+      getItem(key) {
+        return key === 'wml-google-drive-session-token-v1'
+          ? JSON.stringify({ accessToken: 'restored-token-not-for-production' })
+          : null;
+      }
+    },
+    WMLHost: {
+      clearGoogleAccessToken(value) { restoredClears.push(value); }
+    },
+    fetch: async () => ({ status: 200 }),
+    open() { return null; }
+  };
+  const restoredDocument = {
+    addEventListener(type, callback, capture) {
+      assert.equal(type, 'click');
+      assert.equal(capture, true);
+      restoredClick = callback;
+    },
+    documentElement: {},
+    createElement() { throw new Error('unexpected iframe creation'); }
+  };
+  vm.runInNewContext(source, {
+    window: restoredWindow,
+    document: restoredDocument,
+    URL,
+    Headers,
+    MessageEvent: TestMessageEvent
+  });
+  restoredClick({ target: makeLogoutTarget(true) });
+  assert.deepEqual(restoredClears, ['restored-token-not-for-production']);
 
   const driveResponse = await window.fetch(
     'https://www.googleapis.com/drive/v3/files',
