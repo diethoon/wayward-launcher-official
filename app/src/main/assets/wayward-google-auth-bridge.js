@@ -5,7 +5,7 @@
   window.__waywardGoogleAuthBridgeInstalled = true;
 
   const AUTH_ORIGIN = 'https://jeiky224.github.io';
-  const AUTH_PATH = '/cloud/';
+  const AUTH_PATH = '/cloud/auth.html';
   const originalOpen = typeof window.open === 'function' ? window.open.bind(window) : null;
 
   window.open = function (url, target, features) {
@@ -30,7 +30,7 @@
       try {
         if (host.openGoogleAuthPage(parsed.href)) {
           // The returned handle is only a popup-contract placeholder. The
-          // authentication result travels through the nonce-bound WebSocket.
+          // authentication result returns through the nonce-bound local message event. No network relay is used.
           return { closed: false, close() { this.closed = true; } };
         }
       } catch (_) { /* preserve ordinary browser popup behavior */ }
