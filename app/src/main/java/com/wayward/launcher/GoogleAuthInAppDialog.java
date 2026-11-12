@@ -434,7 +434,7 @@ final class GoogleAuthInAppDialog {
                 "var last='';" +
                 "function read(id){var e=document.getElementById(id);return e?String(e.textContent||'').slice(0,220):'';}" +
                 "function emit(){try{" +
-                "var s=document.querySelector('script[src*="/cloud/auth.js"]');" +
+                "var s=Array.from(document.scripts).find(function(x){return x.src.indexOf('/cloud/auth.js')>=0;});" +
                 "var origin='';try{origin=new URL(params.get('origin')||'').protocol;}catch(e){}" +
                 "var state={type:'debug-state',nonce:params.get('nonce')||''," +
                 "transport:params.get('transport')||'',build:params.get('_wml_auth_build')||''," +
@@ -466,7 +466,7 @@ final class GoogleAuthInAppDialog {
                 if (!command.has(key)) continue;
                 Object value = command.get(key);
                 if (value instanceof String) {
-                    String text = ((String) value).replace('\\n', ' ').replace('\\r', ' ').trim();
+                    String text = ((String) value).replace('\n', ' ').replace('\r', ' ').trim();
                     details.put(key, text.substring(0, Math.min(220, text.length())));
                 } else {
                     details.put(key, value);
