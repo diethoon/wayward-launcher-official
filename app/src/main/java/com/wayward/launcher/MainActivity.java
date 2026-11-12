@@ -711,6 +711,7 @@ public class MainActivity extends Activity {
             AuthorizationRequest request=AuthorizationRequest.builder()
                     .setRequestedScopes(Collections.singletonList(
                             new Scope("https://www.googleapis.com/auth/drive.appdata")))
+                    .setPrompt(AuthorizationRequest.Prompt.SELECT_ACCOUNT)
                     .build();
             Identity.getAuthorizationClient(this).authorize(request)
                     .addOnSuccessListener(authorizationResult->{
