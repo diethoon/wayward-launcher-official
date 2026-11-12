@@ -5,6 +5,45 @@
   window.__waywardGoogleAuthBridgeInstalled = true;
 
   const AUTH_ORIGIN = 'https://wayward-cloud-auth.vercel.app';
+
+  const DRIVE_SESSION_TOKEN_KEY = 'wml-google-drive-session-token-v1';
+  let lastGoogleDriveAccessToken = '';
+
+  function storedGoogleDriveAccessToken() {
+    try {
+      const raw = window.localStorage && window.localStorage.getItem(DRIVE_SESSION_TOKEN_KEY);
+      if (!raw) return '';
+      const session = JSON.parse(raw);
+      return session && typeof session.accessToken === 'string' ? session.accessToken : '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function clearGoogleTokenOnExplicitLogout(event) {
+    try {
+      const target = event && event.target;
+      const button = target && typeof target.closest === 'function'
+        ? target.closest('button,[role="button"]') : null;
+      if (!button) return;
+
+      const label = String(button.textContent || button.innerText || '')
+        .replace(/\\s+/g, ' ').trim();
+      if (label !== '로그아웃') return;
+      if (typeof button.closest !== 'function' || !button.closest('.wml-gd-wrap')) return;
+
+      const token = lastGoogleDriveAccessToken || storedGoogleDriveAccessToken();
+      const host = window.WMLHost;
+      if (!token || !host || typeof host.clearGoogleAccessToken !== 'function') return;
+
+      host.clearGoogleAccessToken(token);
+      lastGoogleDriveAccessToken = '';
+    } catch (_) {}
+  }
+
+  if (document && typeof document.addEventListener === 'function') {
+    document.addEventListener('click', clearGoogleTokenOnExplicitLogout, true);
+  }
   const originalOpen = typeof window.open === 'function' ? window.open.bind(window) : null;
 
   const originalFetch = typeof window.fetch === 'function' ? window.fetch.bind(window) : null;
@@ -108,6 +147,11 @@
             nonce,
             message: 'Android 인증 요청이 일치하지 않습니다.'
           };
+        }
+        if (data && data.nonce === nonce &&
+            data.type === 'wayward-cloud-auth-success' &&
+            typeof data.accessToken === 'string' && data.accessToken) {
+          lastGoogleDriveAccessToken = data.accessToken;
         }
         deliver(data);
       } else if (ticks >= 720) {
