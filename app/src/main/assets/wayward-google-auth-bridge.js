@@ -147,7 +147,7 @@
       return originalOpen ? originalOpen(url, target, features) : null;
     }
 
-    parsed.searchParams.set('transport', 'custom-tabs');
+    parsed.searchParams.set('transport', 'native-webview');
     try {
       if (!host.openGoogleAuthPage(parsed.href)) {
         return originalOpen ? originalOpen(url, target, features) : null;
