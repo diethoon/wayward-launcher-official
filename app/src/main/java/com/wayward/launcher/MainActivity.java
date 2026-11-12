@@ -98,7 +98,7 @@ public final class MainActivity extends Activity {
     private LinearLayout home, profileList, zipModList;
     private TextView status, folderText, profileSummary, zipSummary;
     private WebView web;
-    private GoogleAuthCustomTabsBridge googleAuthCustomTabsBridge;
+    private GoogleAuthInAppDialog googleAuthInAppDialog;
     private WebFileChooser webFileChooser;
 
     @Override public void onCreate(Bundle b){
@@ -106,8 +106,8 @@ public final class MainActivity extends Activity {
         DiagnosticsLogger.event(this,"INFO","launcher","activity_create",null);
         zipMods=new ZipModStore(getFilesDir());
         loadProfiles();
-        googleAuthCustomTabsBridge = new GoogleAuthCustomTabsBridge(this,
-                new GoogleAuthCustomTabsBridge.Listener() {
+        googleAuthInAppDialog = new GoogleAuthInAppDialog(this,
+                new GoogleAuthInAppDialog.Listener() {
                     @Override public void onPageMessage(String message) {
                         WebView target = web;
                         if (target == null || message == null) return;
@@ -117,17 +117,18 @@ public final class MainActivity extends Activity {
                             if (web == target) target.evaluateJavascript(script, null);
                         });
                     }
-                    @Override public void onTabClosed() {
+                    @Override public void onAuthRequest(String nonce, boolean selectAccount) {
+                        beginGoogleDriveAuth(nonce, selectAccount);
+                    }
+                    @Override public void onRevokeRequest(String nonce) {
+                        beginGoogleDriveRevoke(nonce);
+                    }
+                    @Override public void onClosed(String nonce) {
                         WebView target = web;
                         if (target != null) target.post(() -> {
                             if (web == target) target.evaluateJavascript(
                                     "window.__waywardCctMarkClosed && window.__waywardCctMarkClosed();", null);
                         });
-                    }
-                    @Override public void onBridgeError(String message) {
-                        DiagnosticsLogger.event(MainActivity.this, "ERROR", "oauth",
-                                "custom_tabs_bridge_error", null);
-                        Toast.makeText(MainActivity.this, message, Toast.LENGTH_LONG).show();
                     }
                 });
         showHome();
@@ -137,7 +138,6 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onResume(){
         super.onResume();
-        if(googleAuthCustomTabsBridge!=null)googleAuthCustomTabsBridge.onActivityResumed();
         DiagnosticsLogger.event(this,"INFO","launcher","activity_resume",null);
         loadProfiles();
         long revision=getSharedPreferences(PREFS,MODE_PRIVATE).getLong(KEY_ZIP_REV,0);
@@ -176,7 +176,6 @@ public final class MainActivity extends Activity {
         target.requestApplyInsets();
     }
     @Override protected void onPause(){
-        if(googleAuthCustomTabsBridge!=null)googleAuthCustomTabsBridge.onActivityPaused();
         super.onPause();
     }
     private void status(String s){if(status!=null)status.setText(s);}
@@ -286,6 +285,7 @@ public final class MainActivity extends Activity {
             if(nonce.isEmpty())return;
             if(result!=RESULT_OK||data==null){
                 storeGoogleAuthResult(nonce,null,"Google 계정 권한 승인이 취소되었습니다.");
+                deliverPendingGoogleAuthResult(nonce);
                 return;
             }
             try{
@@ -296,6 +296,7 @@ public final class MainActivity extends Activity {
             }catch(Throwable error){
                 storeGoogleAuthResult(nonce,null,"Google 권한 처리 실패: "+msg(error));
             }
+            deliverPendingGoogleAuthResult(nonce);
             return;
         }
         if(req==WebFileChooser.REQUEST_CODE){
@@ -707,19 +708,18 @@ public final class MainActivity extends Activity {
 
 
     private void beginGoogleDriveAuth(String nonce,boolean selectAccount){
-        if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return;
+        if(nonce==null||!nonce.matches("[a-f0-9]{48}")||googleAuthInAppDialog==null
+                ||!googleAuthInAppDialog.ownsNonce(nonce))return;
         if(!pendingGoogleAuthNonce.isEmpty()){
             storeGoogleAuthResult(nonce,null,"이미 다른 Google 권한 요청이 진행 중입니다.");
+            deliverPendingGoogleAuthResult(nonce);
             return;
         }
         pendingGoogleAuthNonce=nonce;
         try{
             AuthorizationRequest.Builder requestBuilder=AuthorizationRequest.builder()
-                    .setRequestedScopes(Collections.singletonList(
-                            new Scope("https://www.googleapis.com/auth/drive.appdata")));
-            if(selectAccount){
-                requestBuilder.setPrompt(AuthorizationRequest.Prompt.SELECT_ACCOUNT);
-            }
+                    .setRequestedScopes(Collections.singletonList(new Scope(WAYWARD_CLOUDSAVE_DRIVE_SCOPE)));
+            if(selectAccount)requestBuilder.setPrompt(AuthorizationRequest.Prompt.SELECT_ACCOUNT);
             AuthorizationRequest request=requestBuilder.build();
             Identity.getAuthorizationClient(this).authorize(request)
                     .addOnSuccessListener(authorizationResult->{
@@ -732,22 +732,51 @@ public final class MainActivity extends Activity {
                             }catch(android.content.IntentSender.SendIntentException error){
                                 pendingGoogleAuthNonce="";
                                 storeGoogleAuthResult(nonce,null,"Google 권한 화면을 시작하지 못했습니다: "+msg(error));
+                                deliverPendingGoogleAuthResult(nonce);
                             }catch(Throwable error){
                                 pendingGoogleAuthNonce="";
                                 storeGoogleAuthResult(nonce,null,"Google 권한 요청 실패: "+msg(error));
+                                deliverPendingGoogleAuthResult(nonce);
                             }
                         }else{
                             pendingGoogleAuthNonce="";
                             storeGoogleAuthResult(nonce,authorizationResult);
+                            deliverPendingGoogleAuthResult(nonce);
                         }
                     })
                     .addOnFailureListener(error->{
                         if(nonce.equals(pendingGoogleAuthNonce))pendingGoogleAuthNonce="";
                         storeGoogleAuthResult(nonce,null,"Google Drive 권한 요청 실패: "+msg(error));
+                        deliverPendingGoogleAuthResult(nonce);
                     });
         }catch(Throwable error){
             pendingGoogleAuthNonce="";
             storeGoogleAuthResult(nonce,null,"Google 인증 서비스를 사용할 수 없습니다: "+msg(error));
+            deliverPendingGoogleAuthResult(nonce);
+        }
+    }
+
+    private void deliverPendingGoogleAuthResult(String nonce){
+        if(nonce==null||!nonce.matches("[a-f0-9]{48}")||googleAuthInAppDialog==null
+                ||!googleAuthInAppDialog.ownsNonce(nonce))return;
+        String payload=PENDING_GOOGLE_AUTH_RESULTS.get(nonce);
+        if(payload!=null&&googleAuthInAppDialog.deliverAuthResult(payload)){
+            PENDING_GOOGLE_AUTH_RESULTS.remove(nonce,payload);
+        }
+    }
+
+    private void beginGoogleDriveRevoke(String nonce){
+        if(nonce==null||!nonce.matches("[a-f0-9]{48}")||googleAuthInAppDialog==null
+                ||!googleAuthInAppDialog.ownsNonce(nonce))return;
+        try{
+            RevokeAccessRequest request=RevokeAccessRequest.builder()
+                    .setScopes(Collections.singletonList(new Scope(WAYWARD_CLOUDSAVE_DRIVE_SCOPE)))
+                    .build();
+            Identity.getAuthorizationClient(this).revokeAccess(request)
+                    .addOnSuccessListener(unused->googleAuthInAppDialog.deliverRevokeResult(nonce,true,null))
+                    .addOnFailureListener(error->googleAuthInAppDialog.deliverRevokeResult(nonce,false,msg(error)));
+        }catch(Throwable error){
+            googleAuthInAppDialog.deliverRevokeResult(nonce,false,msg(error));
         }
     }
 
@@ -905,13 +934,13 @@ public final class MainActivity extends Activity {
     }
 
     private void showHomePanel(){runOnUiThread(()->{if(web!=null)web.setVisibility(View.GONE);if(home!=null)home.setVisibility(View.VISIBLE);refreshStatus();});}
-    private void destroyWeb(){if(googleAuthCustomTabsBridge!=null)googleAuthCustomTabsBridge.closeFromGame();if(webFileChooser!=null){webFileChooser.cancelPending();webFileChooser=null;}if(web==null)return;web.removeJavascriptInterface("WMLHost");root.removeView(web);web.stopLoading();web.loadUrl("about:blank");web.destroy();web=null;}
+    private void destroyWeb(){if(googleAuthInAppDialog!=null)googleAuthInAppDialog.closeFromGame();if(webFileChooser!=null){webFileChooser.cancelPending();webFileChooser=null;}if(web==null)return;web.removeJavascriptInterface("WMLHost");root.removeView(web);web.stopLoading();web.loadUrl("about:blank");web.destroy();web=null;}
     @Override public void onBackPressed(){if(web!=null&&web.getVisibility()==View.VISIBLE){if(web.canGoBack())web.goBack();else showHomePanel();return;}super.onBackPressed();}
     @Override protected void onDestroy(){
         String sessionId=sessionProfileId(getIntent());if(sessionId!=null)RUNNING_SESSIONS.remove(sessionId);
         unregisterSessionActivity();
         DiagnosticsLogger.event(this,"INFO","launcher","activity_destroy",null);
-        if(googleAuthCustomTabsBridge!=null)googleAuthCustomTabsBridge.destroy();destroyWeb();if(zipMods!=null)zipMods.close();super.onDestroy();
+        if(googleAuthInAppDialog!=null)googleAuthInAppDialog.closeFromGame();destroyWeb();if(zipMods!=null)zipMods.close();super.onDestroy();
     }
     private String msg(Throwable e){return e==null||e.getMessage()==null?"알 수 없는 오류":e.getMessage();}
     private final class HostBridge{
@@ -922,7 +951,7 @@ public final class MainActivity extends Activity {
         }
         @JavascriptInterface public void menu(){showHomePanel();}
         @JavascriptInterface public boolean openGoogleAuthPage(String rawUrl){
-            if(rawUrl==null||rawUrl.length()>2048||googleAuthCustomTabsBridge==null)return false;
+            if(rawUrl==null||rawUrl.length()>2048||googleAuthInAppDialog==null)return false;
             final Uri uri;
             try{
                 uri=Uri.parse(rawUrl);
@@ -932,25 +961,25 @@ public final class MainActivity extends Activity {
                         ||!"/cloud/auth.html".equals(uri.getPath())
                         ||uri.getUserInfo()!=null
                         ||uri.getFragment()!=null
-                        ||!"custom-tabs".equals(uri.getQueryParameter("transport")))return false;
+                        ||!"native-webview".equals(uri.getQueryParameter("transport")))return false;
                 String nonce=uri.getQueryParameter("nonce");
                 if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return false;
             }catch(Throwable error){return false;}
             runOnUiThread(()->{
-                if(googleAuthCustomTabsBridge.open(uri.toString())){
-                    DiagnosticsLogger.event(MainActivity.this,"INFO","oauth","github_auth_custom_tab_open_requested",null);
+                if(googleAuthInAppDialog.open(uri.toString())){
+                    DiagnosticsLogger.event(MainActivity.this,"INFO","oauth","in_app_static_auth_dialog_opened",null);
                 }else{
-                    DiagnosticsLogger.event(MainActivity.this,"ERROR","oauth","github_auth_custom_tab_request_rejected",null);
-                    Toast.makeText(MainActivity.this,"정적 CloudSave 인증 페이지 요청을 검증하지 못했습니다.",Toast.LENGTH_LONG).show();
+                    DiagnosticsLogger.event(MainActivity.this,"ERROR","oauth","in_app_static_auth_dialog_open_failed",null);
+                    Toast.makeText(MainActivity.this,"앱 내부 CloudSave 인증창을 열지 못했습니다. Android System WebView 업데이트를 확인하세요.",Toast.LENGTH_LONG).show();
                 }
             });
             return true;
         }
         @JavascriptInterface public boolean sendGoogleAuthMessage(String rawMessage){
-            return googleAuthCustomTabsBridge!=null&&googleAuthCustomTabsBridge.postGameMessage(rawMessage);
+            return googleAuthInAppDialog!=null&&googleAuthInAppDialog.postGameMessage(rawMessage);
         }
         @JavascriptInterface public void closeGoogleAuthPage(){
-            runOnUiThread(()->{if(googleAuthCustomTabsBridge!=null)googleAuthCustomTabsBridge.closeFromGame();});
+            runOnUiThread(()->{if(googleAuthInAppDialog!=null)googleAuthInAppDialog.closeFromGame();});
         }
         @JavascriptInterface public void startGoogleDriveAuth(String nonce){
             startGoogleDriveAuthWithPolicy(nonce,false);
@@ -974,11 +1003,6 @@ public final class MainActivity extends Activity {
                     storeGoogleRevokeResult(nonce,false,msg(error));
                 }
             });
-        }
-        @JavascriptInterface public String takePendingStateForNonce(String nonce){
-            if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return "";
-            String result=PENDING_GOOGLE_AUTH_RESULTS.remove(nonce);
-            return result==null?"":result;
         }
         @JavascriptInterface public void clearGoogleAccessToken(String token){
             if(token==null||token.isEmpty()||token.length()>4096)return;
