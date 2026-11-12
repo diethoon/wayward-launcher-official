@@ -66,7 +66,7 @@ assert.equal(window.__waywardCctReceive(JSON.stringify(pageReady)), true);
 assert.equal(received.type, 'message');
 assert.equal(received.origin, 'https://jeiky224.github.io');
 assert.equal(received.source, result);
-assert.deepEqual(received.data, pageReady);
+assert.deepEqual(JSON.parse(JSON.stringify(received.data)), pageReady);
 
 result.close();
 assert.equal(result.closed, true);
