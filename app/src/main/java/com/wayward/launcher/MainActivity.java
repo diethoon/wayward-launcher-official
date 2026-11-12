@@ -844,6 +844,32 @@ public final class MainActivity extends Activity {
             catch(Exception e){try{JSONObject r=new JSONObject();r.put("ok",false);r.put("ids",new JSONArray());return r.toString();}catch(Exception ignored){return "{}";}}
         }
         @JavascriptInterface public void menu(){showHomePanel();}
+        @JavascriptInterface public boolean openGoogleAuthPage(String rawUrl){
+            if(rawUrl==null||rawUrl.length()>2048)return false;
+            final Uri uri;
+            try{
+                uri=Uri.parse(rawUrl);
+                if(!"https".equalsIgnoreCase(uri.getScheme())
+                        ||!"jeiky224.github.io".equalsIgnoreCase(uri.getHost())
+                        ||uri.getPort()!=-1
+                        ||!"/cloud/".equals(uri.getPath())
+                        ||uri.getUserInfo()!=null
+                        ||uri.getFragment()!=null)return false;
+                String nonce=uri.getQueryParameter("nonce");
+                if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return false;
+            }catch(Throwable error){return false;}
+            runOnUiThread(()->{
+                try{
+                    Intent authIntent=new Intent(Intent.ACTION_VIEW,uri);
+                    authIntent.addCategory(Intent.CATEGORY_BROWSABLE);
+                    startActivity(authIntent);
+                    DiagnosticsLogger.event(MainActivity.this,"INFO","oauth","github_auth_page_opened",null);
+                }catch(Throwable error){
+                    DiagnosticsLogger.error(MainActivity.this,"oauth","github_auth_page_open_failed",error);
+                }
+            });
+            return true;
+        }
         @JavascriptInterface public void startGoogleDriveAuth(String nonce){
             if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return;
             runOnUiThread(()->beginGoogleDriveAuth(nonce));
