@@ -115,6 +115,13 @@ jobs:
 
             actual_sha1="$(openssl x509 -in "$work_dir/release-cert.pem" -noout -fingerprint -sha1 | sed 's/.*=//' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
             expected_sha1="D9BE7443EB247D27C958CC4250D7F5D1E078F740"
+            actual_sha256="$(openssl x509 -in "$work_dir/release-cert.pem" -noout -fingerprint -sha256 | sed 's/.*=//' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+            expected_sha256="F3CA95AD6C6C7D192327C88F82B59E53B2C9897C455A0F0BEF2EAFCF29A8D754"
+            if [[ "$actual_sha256" != "$expected_sha256" ]]; then
+              echo "Release certificate SHA-256 does not match the registered Digital Asset Links fingerprint." >&2
+              echo "Expected: $expected_sha256; actual: ${actual_sha256:-missing}" >&2
+              exit 1
+            fi
             if [[ "$actual_sha1" != "$expected_sha1" ]]; then
               echo "Release certificate SHA-1 does not match the registered Android OAuth client." >&2
               echo "Expected: $expected_sha1; actual: ${actual_sha1:-missing}" >&2
