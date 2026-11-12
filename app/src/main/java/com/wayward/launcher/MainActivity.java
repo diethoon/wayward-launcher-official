@@ -260,7 +260,7 @@ public final class MainActivity extends Activity {
             }
             try{
                 AuthorizationResult authorizationResult=Identity.getAuthorizationClient(this).getAuthorizationResultFromIntent(data);
-                storeGoogleAuthResult(nonce,authorizationResult.getAccessToken(),null);
+                storeGoogleAuthResult(nonce,authorizationResult);
             }catch(ApiException error){
                 storeGoogleAuthResult(nonce,null,"Google 권한 결과를 처리하지 못했습니다: "+msg(error));
             }catch(Throwable error){
@@ -708,7 +708,7 @@ public final class MainActivity extends Activity {
                             }
                         }else{
                             pendingGoogleAuthNonce="";
-                            storeGoogleAuthResult(nonce,authorizationResult.getAccessToken(),null);
+                            storeGoogleAuthResult(nonce,authorizationResult);
                         }
                     })
                     .addOnFailureListener(error->{
@@ -721,19 +721,49 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private static final String WAYWARD_CLOUDSAVE_DRIVE_SCOPE="https://www.googleapis.com/auth/drive.appdata";
+
+    private static void storeGoogleAuthResult(String nonce,AuthorizationResult result){
+        if(result==null){
+            storeGoogleAuthResult(nonce,null,"Google 권한 결과가 없습니다.");
+            return;
+        }
+        List<String> grantedScopes=result.getGrantedScopes();
+        if(grantedScopes==null||!grantedScopes.contains(WAYWARD_CLOUDSAVE_DRIVE_SCOPE)){
+            storeGoogleAuthResult(nonce,null,"Google Drive 앱 데이터 권한이 실제 승인 scope에 포함되지 않았습니다.");
+            return;
+        }
+        String accessToken=result.getAccessToken();
+        StringBuilder scopeText=new StringBuilder();
+        for(String scope:grantedScopes){
+            if(scope==null||scope.isEmpty())continue;
+            if(scopeText.length()>0)scopeText.append(' ');
+            scopeText.append(scope);
+        }
+        storeGoogleAuthResult(nonce,accessToken,null,scopeText.toString());
+    }
+
     private static void storeGoogleAuthResult(String nonce,String accessToken,String error){
+        storeGoogleAuthResult(nonce,accessToken,error,null);
+    }
+
+    private static void storeGoogleAuthResult(String nonce,String accessToken,String error,String grantedScopeText){
         if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return;
         JSONObject payload=new JSONObject();
         try{
             payload.put("nonce",nonce);
-            if(error==null&&accessToken!=null&&!accessToken.isEmpty()){
+            if(error==null&&accessToken!=null&&!accessToken.isEmpty()
+                    &&accessToken.length()<=4096
+                    &&grantedScopeText!=null
+                    &&java.util.Arrays.asList(grantedScopeText.split("\\s+"))
+                        .contains(WAYWARD_CLOUDSAVE_DRIVE_SCOPE)){
                 payload.put("type","wayward-cloud-auth-success");
                 payload.put("accessToken",accessToken);
                 payload.put("expiresIn",3600);
-                payload.put("scope","https://www.googleapis.com/auth/drive.appdata");
+                payload.put("scope",grantedScopeText);
             }else{
                 payload.put("type","wayward-cloud-auth-error");
-                payload.put("message",error==null?"Google에서 액세스 토큰을 반환하지 않았습니다.":error);
+                payload.put("message",error==null?"Google Drive 권한 검증에 실패했거나 액세스 토큰을 반환하지 않았습니다.":error);
             }
             PENDING_GOOGLE_AUTH_RESULTS.put(nonce,payload.toString());
         }catch(Exception ignored){}
