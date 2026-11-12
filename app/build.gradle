@@ -42,6 +42,7 @@ android {
 }
 dependencies {
     implementation 'androidx.webkit:webkit:1.12.1'
+    implementation 'androidx.browser:browser:1.8.0'
     implementation 'com.google.android.gms:play-services-auth:21.6.0'
     androidTestImplementation 'androidx.test:runner:1.6.2'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
