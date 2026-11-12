@@ -420,7 +420,8 @@ final class GoogleAuthCustomTabsBridge {
 
     private void reportError(String message) {
         activity.runOnUiThread(() -> {
-            if (!destroyed) listener.onBridgeError(message);
+            if (destroyed || activity.isFinishing()) return;
+            DiagnosticDialog.show(activity, message);
         });
     }
 
