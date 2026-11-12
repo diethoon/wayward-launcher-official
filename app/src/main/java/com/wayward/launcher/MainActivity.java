@@ -124,6 +124,10 @@ public final class MainActivity extends Activity {
                         beginGoogleDriveRevoke(nonce);
                     }
                     @Override public void onClosed(String nonce) {
+                        if (nonce != null && nonce.equals(pendingGoogleAuthNonce)) {
+                            pendingGoogleAuthNonce = "";
+                            PENDING_GOOGLE_AUTH_RESULTS.remove(nonce);
+                        }
                         WebView target = web;
                         if (target != null) target.post(() -> {
                             if (web == target) target.evaluateJavascript(
@@ -951,7 +955,8 @@ public final class MainActivity extends Activity {
         }
         @JavascriptInterface public void menu(){showHomePanel();}
         @JavascriptInterface public boolean openGoogleAuthPage(String rawUrl){
-            if(rawUrl==null||rawUrl.length()>2048||googleAuthInAppDialog==null)return false;
+            if(rawUrl==null||rawUrl.length()>2048||googleAuthInAppDialog==null
+                    ||!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER))return false;
             final Uri uri;
             try{
                 uri=Uri.parse(rawUrl);
