@@ -1,5 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <service android:name="androidx.browser.customtabs.PostMessageService" android:exported="true" />
     <application android:name=".LauncherApplication" android:label="Wayward Launcher" android:allowBackup="true" android:fullBackupContent="@xml/backup_rules" android:dataExtractionRules="@xml/data_extraction_rules"
         android:theme="@style/AppTheme" android:usesCleartextTraffic="false">
         <activity android:name=".MainActivity" android:exported="true" android:documentLaunchMode="intoExisting"
