@@ -11,6 +11,19 @@ async function main() {
     'utf8'
   );
 
+  const activitySource = fs.readFileSync(
+    path.join(__dirname, '../app/src/main/java/com/wayward/launcher/MainActivity.java'),
+    'utf8'
+  );
+  assert.match(
+    activitySource,
+    /\\.setPrompt\\(AuthorizationRequest\\.Prompt\\.SELECT_ACCOUNT\\)/
+  );
+  assert.match(
+    activitySource,
+    /clearToken\\(ClearTokenRequest\\.builder\\(\\)\\.setToken\\(token\\)\\.build\\(\\)\\)/
+  );
+
   const nonce = '0123456789abcdef0123456789abcdef0123456789abcdef';
   const origin = 'https://wayward-cloud-auth.vercel.app';
   const frame = {
