@@ -730,6 +730,7 @@ public final class MainActivity extends Activity {
                 payload.put("type","wayward-cloud-auth-success");
                 payload.put("accessToken",accessToken);
                 payload.put("expiresIn",3600);
+                payload.put("scope","https://www.googleapis.com/auth/drive.appdata");
             }else{
                 payload.put("type","wayward-cloud-auth-error");
                 payload.put("message",error==null?"Google에서 액세스 토큰을 반환하지 않았습니다.":error);
