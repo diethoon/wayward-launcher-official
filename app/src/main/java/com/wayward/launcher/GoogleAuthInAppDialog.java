@@ -222,7 +222,7 @@ final class GoogleAuthInAppDialog {
                         if (!isValidChunk(payload)) return;
                     } else if (!activeNonce.equals(payload.optString("nonce", ""))
                             || payload.optInt("version", -1) != 1
-                            || !isAllowedGameMessage(payload.optString("type", ""))) return;
+                            || !isAllowedPageToGameMessage(payload.optString("type", ""))) return;
                     listener.onPageMessage(message);
                     break;
                 }
@@ -421,6 +421,13 @@ final class GoogleAuthInAppDialog {
         return "wayward-cloudsave-hello".equals(type)
                 || "wayward-cloudsave-request".equals(type)
                 || "wayward-cloudsave-native-close".equals(type);
+    }
+
+    private static boolean isAllowedPageToGameMessage(String type) {
+        return "wayward-cloudsave-page-ready".equals(type)
+                || "wayward-cloudsave-ready".equals(type)
+                || "wayward-cloudsave-status".equals(type)
+                || "wayward-cloudsave-response".equals(type);
     }
 
     private int dp(int value) {
