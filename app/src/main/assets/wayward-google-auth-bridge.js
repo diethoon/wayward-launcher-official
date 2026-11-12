@@ -28,7 +28,7 @@
       if (!button) return;
 
       const label = String(button.textContent || button.innerText || '')
-        .replace(/\\s+/g, ' ').trim();
+        .replace(/\s+/g, ' ').trim();
       if (label !== '로그아웃') return;
       if (typeof button.closest !== 'function' || !button.closest('.wml-gd-wrap')) return;
 
