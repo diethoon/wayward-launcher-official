@@ -8,6 +8,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.view.Gravity;
 import android.view.ViewGroup;
+import android.util.Base64;
 import android.view.Window;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -27,6 +28,9 @@ import androidx.webkit.WebViewCompat.WebMessageListener;
 import org.json.JSONObject;
 
 import java.util.Collections;
+import java.util.Locale;
+import java.security.SecureRandom;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Displays the one static GitHub Pages CloudSave page inside the launcher.
@@ -44,11 +48,15 @@ final class GoogleAuthInAppDialog {
     private static final String AUTH_ORIGIN = "https://jeiky224.github.io";
     private static final String AUTH_HOST = "jeiky224.github.io";
     private static final String AUTH_PATH = "/cloud/auth.html";
+    private static final int MAX_MESSAGE_BYTES = 12 * 1024 * 1024;
+    private static final int CHUNK_CHARS = 24 * 1024;
+    private static final int MAX_CHUNKS = 768;
     private static final int COLOR_TEXT = Color.rgb(28, 32, 36);
     private static final int COLOR_MUTED = Color.rgb(106, 114, 122);
 
     private final Activity activity;
     private final Listener listener;
+    private final SecureRandom random = new SecureRandom();
     private Dialog dialog;
     private WebView webView;
     private JavaScriptReplyProxy replyProxy;
@@ -208,9 +216,11 @@ final class GoogleAuthInAppDialog {
                     break;
                 case "to-game": {
                     String message = command.optString("raw", "");
-                    if (message.isEmpty() || message.length() > 24 * 1024 + 1024) return;
+                    if (message.isEmpty() || message.length() > CHUNK_CHARS + 1024) return;
                     JSONObject payload = new JSONObject(message);
-                    if (!activeNonce.equals(payload.optString("nonce", ""))
+                    if (payload.optInt("__waywardCctChunk", -1) == 1) {
+                        if (!isValidChunk(payload)) return;
+                    } else if (!activeNonce.equals(payload.optString("nonce", ""))
                             || payload.optInt("version", -1) != 1
                             || !isAllowedGameMessage(payload.optString("type", ""))) return;
                     listener.onPageMessage(message);
@@ -234,10 +244,40 @@ final class GoogleAuthInAppDialog {
     }
 
     boolean postGameMessage(String rawMessage) {
-        if (closed || replyProxy == null || rawMessage == null || rawMessage.length() > 12 * 1024 * 1024) return false;
+        if (closed || replyProxy == null || rawMessage == null || rawMessage.length() > MAX_MESSAGE_BYTES * 2)
+            return false;
+        try {
+            byte[] bytes = rawMessage.getBytes(StandardCharsets.UTF_8);
+            if (bytes.length == 0 || bytes.length > MAX_MESSAGE_BYTES) return false;
+            if (bytes.length <= CHUNK_CHARS) return postGamePart(rawMessage);
+
+            String encoded = Base64.encodeToString(bytes, Base64.NO_WRAP);
+            int total = (encoded.length() + CHUNK_CHARS - 1) / CHUNK_CHARS;
+            if (total < 2 || total > MAX_CHUNKS) return false;
+            String transferId = randomHex48();
+            for (int seq = 0; seq < total; seq++) {
+                int start = seq * CHUNK_CHARS;
+                int end = Math.min(encoded.length(), start + CHUNK_CHARS);
+                JSONObject part = new JSONObject();
+                part.put("__waywardCctChunk", 1);
+                part.put("id", transferId);
+                part.put("seq", seq);
+                part.put("total", total);
+                part.put("data", encoded.substring(start, end));
+                if (!postGamePart(part.toString())) return false;
+            }
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private boolean postGamePart(String rawMessage) {
         try {
             JSONObject payload = new JSONObject(rawMessage);
-            if (!activeNonce.equals(payload.optString("nonce", ""))
+            if (payload.optInt("__waywardCctChunk", -1) == 1) {
+                if (!isValidChunk(payload)) return false;
+            } else if (!activeNonce.equals(payload.optString("nonce", ""))
                     || payload.optInt("version", -1) != 1
                     || !isAllowedGameMessage(payload.optString("type", ""))) return false;
             JSONObject envelope = new JSONObject();
@@ -248,6 +288,23 @@ final class GoogleAuthInAppDialog {
         } catch (Throwable ignored) {
             return false;
         }
+    }
+
+    private boolean isValidChunk(JSONObject payload) {
+        String id = payload.optString("id", "");
+        int seq = payload.optInt("seq", -1);
+        int total = payload.optInt("total", -1);
+        String data = payload.optString("data", "");
+        return id.matches("[a-f0-9]{48}") && total >= 2 && total <= MAX_CHUNKS
+                && seq >= 0 && seq < total && !data.isEmpty() && data.length() <= CHUNK_CHARS;
+    }
+
+    private String randomHex48() {
+        byte[] bytes = new byte[24];
+        random.nextBytes(bytes);
+        StringBuilder value = new StringBuilder(48);
+        for (byte item : bytes) value.append(String.format(Locale.ROOT, "%02x", item & 0xff));
+        return value.toString();
     }
 
     boolean deliverAuthResult(String rawPayload) {
