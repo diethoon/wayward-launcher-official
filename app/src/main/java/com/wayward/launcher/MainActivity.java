@@ -124,8 +124,8 @@ public final class MainActivity extends Activity {
                         beginGoogleDriveRevoke(nonce);
                     }
                     @Override public void onClosed(String nonce) {
-                        if (nonce != null && nonce.equals(pendingGoogleAuthNonce)) {
-                            pendingGoogleAuthNonce = "";
+                        if (nonce != null) {
+                            if (nonce.equals(pendingGoogleAuthNonce)) pendingGoogleAuthNonce = "";
                             PENDING_GOOGLE_AUTH_RESULTS.remove(nonce);
                         }
                         WebView target = web;
