@@ -1,0 +1,61 @@
+name: One-off Digital Asset Links diagnostic
+
+on:
+  push:
+    branches:
+      - diagnostic/dal-use-as-origin-20261113
+    paths:
+      - .github/workflows/dal-diagnostic.yml
+
+permissions:
+  contents: read
+
+jobs:
+  dal-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch the exact GitHub Pages statement file
+        shell: bash
+        run: |
+          set -euo pipefail
+          url='https://jeiky224.github.io/.well-known/assetlinks.json'
+          curl --fail-with-body --location --silent --show-error \
+            --dump-header /tmp/assetlinks-headers.txt \
+            --output /tmp/assetlinks.json "$url"
+          echo '--- HTTP response headers ---'
+          cat /tmp/assetlinks-headers.txt
+          echo '--- JSON body ---'
+          jq . /tmp/assetlinks.json
+          echo '--- SHA-256 ---'
+          sha256sum /tmp/assetlinks.json
+          echo '--- Expected statement assertions ---'
+          jq -e '
+            any(.[];
+              (.relation | index("delegate_permission/common.use_as_origin")) != null
+              and .target.namespace == "android_app"
+              and .target.package_name == "com.wayward.launcher.official"
+              and (.target.sha256_cert_fingerprints |
+                index("F3:CA:95:AD:6C:6C:7D:19:23:27:C8:8F:82:B5:9E:53:B2:C9:89:7C:45:5A:0F:0B:EF:2E:AF:CF:29:A8:D7:54")) != null
+            )
+          ' /tmp/assetlinks.json
+
+      - name: Ask Google's Digital Asset Links verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint='https://digitalassetlinks.googleapis.com/v1/assetlinks:check'
+          fingerprint='F3:CA:95:AD:6C:6C:7D:19:23:27:C8:8F:82:B5:9E:53:B2:C9:89:7C:45:5A:0F:0B:EF:2E:AF:CF:29:A8:D7:54'
+          check_relation() {
+            relation="$1"
+            echo "--- Google DAL check: $relation ---"
+            curl --fail-with-body --silent --show-error --get "$endpoint" \
+              --data-urlencode 'source.web.site=https://jeiky224.github.io' \
+              --data-urlencode "relation=$relation" \
+              --data-urlencode 'target.androidApp.packageName=com.wayward.launcher.official' \
+              --data-urlencode "target.androidApp.certificate.sha256Fingerprint=$fingerprint" \
+              | tee "/tmp/$(echo "$relation" | tr '/.' '__').json" \
+              | jq .
+          }
+          check_relation 'delegate_permission/common.use_as_origin'
+          check_relation 'delegate_permission/common.handle_all_urls'
