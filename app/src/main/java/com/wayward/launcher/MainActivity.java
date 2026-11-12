@@ -119,10 +119,18 @@ public final class MainActivity extends Activity {
                         } catch (Throwable ignored) {}
                         DiagnosticsLogger.event(MainActivity.this, "INFO", "oauth",
                                 "auth_page_message_received_by_game_host", details);
-                        String script = "window.__waywardCctReceive && window.__waywardCctReceive("
-                                + JSONObject.quote(message) + ");";
+                        String script = "window.__waywardCctReceive ? window.__waywardCctReceive("
+                                + JSONObject.quote(message) + ") : false;";
                         target.post(() -> {
-                            if (web == target) target.evaluateJavascript(script, null);
+                            if (web == target) target.evaluateJavascript(script, value -> {
+                                JSONObject dispatch = new JSONObject();
+                                try {
+                                    dispatch.put("accepted", "true".equals(value));
+                                } catch (Throwable ignored) {}
+                                DiagnosticsLogger.event(MainActivity.this,
+                                        "true".equals(value) ? "INFO" : "WARN", "oauth",
+                                        "auth_page_message_game_dispatch_result", dispatch);
+                            });
                         });
                     }
                     @Override public void onAuthRequest(String nonce, boolean selectAccount) {
@@ -132,11 +140,11 @@ public final class MainActivity extends Activity {
                         beginGoogleDriveRevoke(nonce);
                     }
                     @Override public void onDiagnosticsRequested() {
+                        DiagnosticsLogger.event(MainActivity.this, "INFO", "oauth",
+                                "cloudsave_diagnostics_export_requested", null);
                         shareCloudSaveDiagnostics();
                     }
                     @Override public void onClosed(String nonce) {
-                        DiagnosticsLogger.event(MainActivity.this, "INFO", "oauth",
-                                "cloudsave_diagnostics_export_requested", null);
                         if (nonce != null) {
                             if (nonce.equals(pendingGoogleAuthNonce)) pendingGoogleAuthNonce = "";
                             PENDING_GOOGLE_AUTH_RESULTS.remove(nonce);
