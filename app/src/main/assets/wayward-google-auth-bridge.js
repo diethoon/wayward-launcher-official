@@ -148,6 +148,8 @@
     }
 
     parsed.searchParams.set('transport', 'native-webview');
+    // Force a fresh static auth document and script after the transport rollout.
+    parsed.searchParams.set('_wml_auth_build', '20261113-2');
     try {
       if (!host.openGoogleAuthPage(parsed.href)) {
         return originalOpen ? originalOpen(url, target, features) : null;
