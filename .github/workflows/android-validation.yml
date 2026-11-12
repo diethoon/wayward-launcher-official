@@ -2,11 +2,12 @@ name: Official Android validation
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, 'work/**']
   push:
     branches:
       - main
       - 'work/**'
+      - 'restart/**'
   workflow_dispatch:
 
 permissions:
@@ -57,6 +58,9 @@ jobs:
 
       - name: Test Google OAuth bridge contract
         run: node scripts/test-google-auth-bridge.cjs
+
+      - name: Test native CloudSave granted scope
+        run: node scripts/test-cloudsave-native-auth-scope.cjs
 
       - name: Test Google CloudSave session policy bridge
         run: node scripts/test-cloudsave-session-policy.cjs
