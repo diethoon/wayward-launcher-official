@@ -12,7 +12,7 @@ const source = fs.readFileSync(
 );
 const nonce = '0123456789abcdef0123456789abcdef0123456789abcdef';
 const page = 'https://jeiky224.github.io/cloud/auth.html?origin=http%3A%2F%2F127.0.0.1%3A8080&nonce=' + nonce;
-const expectedPage = page + '&transport=native-webview';
+const expectedPage = page + '&transport=native-webview&_wml_auth_build=20261113-2';
 const launched = [];
 const fallback = [];
 const sent = [];
