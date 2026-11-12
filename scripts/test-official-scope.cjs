@@ -38,8 +38,10 @@ assert.doesNotMatch(diagnostics, /DiagnosticsUploader|uploadPending|readPending|
 
 assert.doesNotMatch(manifest, /ImageGenService|ImageGenPanelActivity|ImageProviderActivity|ImageDiagnosticsActivity|network_security_config/,
   'unused server and provider components must not be registered');
-assert.match(main, /startGoogleDriveAuth\(String nonce\)/, 'native Drive authorization bridge must exist');
-assert.match(main, /takePendingStateForNonce\(String nonce\)/, 'nonce-scoped one-time result handoff must exist');
+assert.match(main, /openGoogleAuthPage\(String rawUrl\)/, 'launcher must open the unified GitHub Pages login from an external browser');
+assert.match(main, /jeiky224\.github\.io/, 'launcher external auth URL must be restricted to the GitHub Pages host');
+assert.match(main, /startGoogleDriveAuth\(String nonce\)/, 'legacy native auth method remains for compatibility but is not used by the GitHub bridge');
+assert.match(main, /takePendingStateForNonce\(String nonce\)/, 'legacy native result handoff remains available but is not used by the GitHub bridge');
 assert.match(main, /clearGoogleAccessToken\(String token\)/, 'invalid native Drive tokens must be clearable');
 assert.match(gradle, /play-services-auth:21\.6\.0/, 'Google Identity Services dependency must be pinned');
 assert.match(gradle, /storeType\s+['"]JKS['"]/, 'CI must normalize the PKCS#12 upload key to a Java keystore before Gradle signing');

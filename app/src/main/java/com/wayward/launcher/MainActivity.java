@@ -98,7 +98,6 @@ public final class MainActivity extends Activity {
     private TextView status, folderText, profileSummary, zipSummary;
     private WebView web;
     private WebFileChooser webFileChooser;
-
     @Override public void onCreate(Bundle b){
         super.onCreate(b);
         DiagnosticsLogger.event(this,"INFO","launcher","activity_create",null);
@@ -197,8 +196,7 @@ public final class MainActivity extends Activity {
         Button addFolder=compactButton("＋ 폴더",true,this::chooseFolder);
         LinearLayout.LayoutParams addFolderParams=new LinearLayout.LayoutParams(dp(82),dp(38));
         addFolderParams.leftMargin=dp(6);top.addView(addFolder,addFolderParams);
-        Button info=compactButton("안내",false,this::showLauncherInfoDialog);
-        LinearLayout.LayoutParams infoParams=new LinearLayout.LayoutParams(dp(56),dp(38));
+        Button info=compactButton("안내",false,this::showLauncherInfoDialog);        LinearLayout.LayoutParams infoParams=new LinearLayout.LayoutParams(dp(56),dp(38));
         infoParams.leftMargin=dp(5);top.addView(info,infoParams);
         LinearLayout.LayoutParams topParams=new LinearLayout.LayoutParams(-1,-2);topParams.bottomMargin=dp(3);
         page.addView(top,topParams);
@@ -297,8 +295,7 @@ public final class MainActivity extends Activity {
             if(result!=RESULT_OK||data==null)return;
             List<Uri> selected=collectSelectedUris(data);
             if(!selected.isEmpty())installModZips(selected);
-        }
-    }
+        }    }
 
     private List<Uri> collectSelectedUris(Intent data){
         List<Uri> selected=new ArrayList<>();
@@ -397,7 +394,6 @@ public final class MainActivity extends Activity {
     private String sessionOrigin(String id){
         return "https://" + sessionDomain(id) + ":" + sessionPort(id);
     }
-
     private void launchProfileSession(String id){
         Intent i=new Intent(this,MainActivity.class);i.setData(Uri.parse("wayward://session/"+Uri.encode(id)));
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT);startActivity(i);
@@ -497,8 +493,7 @@ public final class MainActivity extends Activity {
         }else{
             dialog.setItems(ids.toArray(new String[0]),(window,which)->showZipModActions(ids.get(which)));
         }
-        dialog.setPositiveButton("ZIP 설치",(window,which)->chooseModZip());
-        dialog.setNegativeButton("닫기",null);dialog.show();
+        dialog.setPositiveButton("ZIP 설치",(window,which)->chooseModZip());        dialog.setNegativeButton("닫기",null);dialog.show();
     }
 
     private void showZipModActions(String id){
@@ -597,8 +592,7 @@ public final class MainActivity extends Activity {
                     if(imageResource){
                         String safePath=ImagePipelineDiagnostics.sanitizePath(failedPath);
                         String sampleKey=(failedUri==null?"":String.valueOf(failedUri.getHost()))+"|"+safePath;
-                        int repeatCount;
-                        synchronized(imageHttpErrorCounts){
+                        int repeatCount;                        synchronized(imageHttpErrorCounts){
                             Integer previous=imageHttpErrorCounts.get(sampleKey);
                             repeatCount=previous==null?1:previous+1;
                             if(previous==null&&imageHttpErrorCounts.size()>=256){
@@ -697,8 +691,7 @@ public final class MainActivity extends Activity {
                                 startIntentSenderForResult(pending.getIntentSender(),REQUEST_GOOGLE_AUTH,null,0,0,0);
                             }catch(android.content.IntentSender.SendIntentException error){
                                 pendingGoogleAuthNonce="";
-                                storeGoogleAuthResult(nonce,null,"Google 권한 화면을 시작하지 못했습니다: "+msg(error));
-                            }catch(Throwable error){
+                                storeGoogleAuthResult(nonce,null,"Google 권한 화면을 시작하지 못했습니다: "+msg(error));                            }catch(Throwable error){
                                 pendingGoogleAuthNonce="";
                                 storeGoogleAuthResult(nonce,null,"Google 권한 요청 실패: "+msg(error));
                             }
@@ -797,8 +790,7 @@ public final class MainActivity extends Activity {
 
     private static MainActivity findActiveSessionActivity() {
         String lastId = LAST_ACTIVE_SESSION_ID;
-        if (lastId != null && !lastId.isEmpty()) {
-            WeakReference<MainActivity> last = SESSION_ACTIVITIES.get(lastId);
+        if (lastId != null && !lastId.isEmpty()) {            WeakReference<MainActivity> last = SESSION_ACTIVITIES.get(lastId);
             MainActivity activity = last == null ? null : last.get();
             if (activity != null && !activity.isFinishing()
                     && activity.web != null && activity.tree != null) return activity;
@@ -844,6 +836,32 @@ public final class MainActivity extends Activity {
             catch(Exception e){try{JSONObject r=new JSONObject();r.put("ok",false);r.put("ids",new JSONArray());return r.toString();}catch(Exception ignored){return "{}";}}
         }
         @JavascriptInterface public void menu(){showHomePanel();}
+        @JavascriptInterface public boolean openGoogleAuthPage(String rawUrl){
+            if(rawUrl==null||rawUrl.length()>2048)return false;
+            final Uri uri;
+            try{
+                uri=Uri.parse(rawUrl);
+                if(!"https".equalsIgnoreCase(uri.getScheme())
+                        ||!"jeiky224.github.io".equalsIgnoreCase(uri.getHost())
+                        ||uri.getPort()!=-1
+                        ||!"/cloud/".equals(uri.getPath())
+                        ||uri.getUserInfo()!=null
+                        ||uri.getFragment()!=null)return false;
+                String nonce=uri.getQueryParameter("nonce");
+                if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return false;
+            }catch(Throwable error){return false;}
+            runOnUiThread(()->{
+                try{
+                    Intent authIntent=new Intent(Intent.ACTION_VIEW,uri);
+                    authIntent.addCategory(Intent.CATEGORY_BROWSABLE);
+                    startActivity(authIntent);
+                    DiagnosticsLogger.event(MainActivity.this,"INFO","oauth","github_auth_page_opened",null);
+                }catch(Throwable error){
+                    DiagnosticsLogger.error(MainActivity.this,"oauth","github_auth_page_open_failed",error);
+                }
+            });
+            return true;
+        }
         @JavascriptInterface public void startGoogleDriveAuth(String nonce){
             if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return;
             runOnUiThread(()->beginGoogleDriveAuth(nonce));
@@ -897,8 +915,7 @@ public final class MainActivity extends Activity {
             return path!=null&&path.regionMatches(true,0,"images/",0,7);
         }
         WebResourceResponse serveImagePath(String relative){
-            WebResourceResponse result=serveLocalImage(relative);
-            return result!=null?result:response(404,"Not Found","text/plain","Local image not found");
+            WebResourceResponse result=serveLocalImage(relative);            return result!=null?result:response(404,"Not Found","text/plain","Local image not found");
         }
         WebResourceResponse serveExternalImagePath(String relative){
             return serveLocalImage(relative);
@@ -997,8 +1014,7 @@ public final class MainActivity extends Activity {
             return p.endsWith(".png")||p.endsWith(".jpg")||p.endsWith(".jpeg")||p.endsWith(".webp")||p.endsWith(".gif")||p.endsWith(".avif")||p.endsWith(".svg")||p.endsWith(".woff")||p.endsWith(".woff2")||p.endsWith(".ttf")||p.endsWith(".otf");
         }
         WebResourceResponse response(int c,String r,String m,String s){return new WebResourceResponse(m,"UTF-8",c,r,headers(null),new ByteArrayInputStream(s.getBytes(StandardCharsets.UTF_8)));}
-        static boolean text(String m){return m.startsWith("text/")||m.contains("javascript")||m.contains("json")||m.contains("xml")||m.contains("svg");}
-        static String mime(String p){p=p.toLowerCase(Locale.ROOT);if(p.endsWith(".html"))return"text/html";if(p.endsWith(".js")||p.endsWith(".mjs"))return"application/javascript";if(p.endsWith(".css"))return"text/css";if(p.endsWith(".json"))return"application/json";if(p.endsWith(".svg"))return"image/svg+xml";if(p.endsWith(".png"))return"image/png";if(p.endsWith(".jpg")||p.endsWith(".jpeg"))return"image/jpeg";if(p.endsWith(".webp"))return"image/webp";if(p.endsWith(".gif"))return"image/gif";if(p.endsWith(".avif"))return"image/avif";if(p.endsWith(".woff2"))return"font/woff2";if(p.endsWith(".ttf"))return"font/ttf";if(p.endsWith(".wasm"))return"application/wasm";if(p.endsWith(".mp4"))return"video/mp4";if(p.endsWith(".webm"))return"video/webm";if(p.endsWith(".mp3"))return"audio/mpeg";if(p.endsWith(".ogg"))return"audio/ogg";if(p.endsWith(".wav"))return"audio/wav";if(p.endsWith(".txt"))return"text/plain";return"application/octet-stream";}
+        static boolean text(String m){return m.startsWith("text/")||m.contains("javascript")||m.contains("json")||m.contains("xml")||m.contains("svg");}        static String mime(String p){p=p.toLowerCase(Locale.ROOT);if(p.endsWith(".html"))return"text/html";if(p.endsWith(".js")||p.endsWith(".mjs"))return"application/javascript";if(p.endsWith(".css"))return"text/css";if(p.endsWith(".json"))return"application/json";if(p.endsWith(".svg"))return"image/svg+xml";if(p.endsWith(".png"))return"image/png";if(p.endsWith(".jpg")||p.endsWith(".jpeg"))return"image/jpeg";if(p.endsWith(".webp"))return"image/webp";if(p.endsWith(".gif"))return"image/gif";if(p.endsWith(".avif"))return"image/avif";if(p.endsWith(".woff2"))return"font/woff2";if(p.endsWith(".ttf"))return"font/ttf";if(p.endsWith(".wasm"))return"application/wasm";if(p.endsWith(".mp4"))return"video/mp4";if(p.endsWith(".webm"))return"video/webm";if(p.endsWith(".mp3"))return"audio/mpeg";if(p.endsWith(".ogg"))return"audio/ogg";if(p.endsWith(".wav"))return"audio/wav";if(p.endsWith(".txt"))return"text/plain";return"application/octet-stream";}
     }
     private final class SafTree{
         private static final int MAX_CACHED_DIRECTORIES=2048;
@@ -1097,8 +1113,7 @@ public final class MainActivity extends Activity {
         }
         private Node resolveImage(String path)throws Exception{
             String p=FolderHandler.normal(path);if(p==null)return null;
-            String parent=rootId;Node n=null;String[] parts=p.split("/");
-            for(int i=0;i<parts.length;i++){
+            String parent=rootId;Node n=null;String[] parts=p.split("/");            for(int i=0;i<parts.length;i++){
                 n=findIgnoreCase(parent,parts[i]);if(n==null)return null;
                 if(i<parts.length-1){if(!n.dir)return null;parent=n.id;}
             }
@@ -1197,8 +1212,7 @@ public final class MainActivity extends Activity {
                 }
                 return folded.get(key);
             }
-        }
-        List<Node> children(String parent)throws Exception{return new ArrayList<>(childIndex(parent).values());}
+        }        List<Node> children(String parent)throws Exception{return new ArrayList<>(childIndex(parent).values());}
         java.util.Map<String,Node> childIndex(String parent)throws Exception{
             long generation;
             synchronized(directoryIndexLock){
@@ -1297,8 +1311,7 @@ public final class MainActivity extends Activity {
             }
             directoryLoads.clear();
             cachedModIds=null;
-            cachedModIdsGeneration=-1L;
-        }
+            cachedModIdsGeneration=-1L;        }
         Node node(String id)throws Exception{
             Uri u=DocumentsContract.buildDocumentUriUsingTree(tree,id);
             try(Cursor c=getContentResolver().query(u,new String[]{
