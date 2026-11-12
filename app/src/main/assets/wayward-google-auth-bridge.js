@@ -8,26 +8,60 @@
   const originalOpen = typeof window.open === 'function' ? window.open.bind(window) : null;
 
   const originalFetch = typeof window.fetch === 'function' ? window.fetch.bind(window) : null;
+  let lastGoogleAccessToken = '';
   if (originalFetch) {
     window.fetch = async function (input, init) {
-      const response = await originalFetch(input, init);
-      try {
-        const requestUrl = typeof input === 'string' ? input : (input && input.url) || '';
-        if (response && response.status === 401 &&
-            requestUrl.startsWith('https://www.googleapis.com/drive/v3/') &&
-            window.WMLHost &&
-            typeof window.WMLHost.clearGoogleAccessToken === 'function') {
+      const requestUrl = typeof input === 'string' ? input : (input && input.url) || '';
+      let requestToken = '';
+      if (requestUrl.startsWith('https://www.googleapis.com/drive/v3/')) {
+        try {
           const requestHeaders = new Headers(
             (init && init.headers) || (input && input.headers) || {}
           );
           const authorization = requestHeaders.get('Authorization') || '';
           const match = /^Bearer\s+(.+)$/i.exec(authorization);
-          if (match) window.WMLHost.clearGoogleAccessToken(match[1]);
+          if (match) {
+            requestToken = match[1];
+            lastGoogleAccessToken = requestToken;
+          }
+        } catch (_) {}
+      }
+
+      const response = await originalFetch(input, init);
+      try {
+        if (response && response.status === 401 && requestToken &&
+            window.WMLHost &&
+            typeof window.WMLHost.clearGoogleAccessToken === 'function') {
+          window.WMLHost.clearGoogleAccessToken(requestToken);
+          if (lastGoogleAccessToken === requestToken) lastGoogleAccessToken = '';
         }
       } catch (_) {}
       return response;
     };
   }
+
+  // CloudSave keeps its token inside the mod closure. Observe its actual Drive
+  // request token so explicit in-mod logout clears Android's Identity cache,
+  // including when the mod's session-only policy does not use localStorage.
+  document.addEventListener('click', event => {
+    try {
+      const target = event && event.target;
+      if (!target || typeof target.closest !== 'function') return;
+      const root = target.closest('.wml-gd-wrap');
+      if (!root) return;
+      const control = target.closest(
+        'button,[role="button"],input[type="button"],input[type="submit"]'
+      );
+      if (!control || !root.contains(control)) return;
+      const label = String(control.textContent || control.value || '')
+        .replace(/\s+/g, ' ').trim();
+      if (label !== '로그아웃' || !lastGoogleAccessToken) return;
+      const host = window.WMLHost;
+      if (!host || typeof host.clearGoogleAccessToken !== 'function') return;
+      host.clearGoogleAccessToken(lastGoogleAccessToken);
+      lastGoogleAccessToken = '';
+    } catch (_) {}
+  }, true);
 
   window.open = function (url, target, features) {
     let parsed;
