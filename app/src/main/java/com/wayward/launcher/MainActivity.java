@@ -111,6 +111,14 @@ public final class MainActivity extends Activity {
                     @Override public void onPageMessage(String message) {
                         WebView target = web;
                         if (target == null || message == null) return;
+                        JSONObject details = new JSONObject();
+                        try {
+                            JSONObject payload = new JSONObject(message);
+                            details.put("type", payload.optString("type", "unknown"));
+                            details.put("chars", message.length());
+                        } catch (Throwable ignored) {}
+                        DiagnosticsLogger.event(MainActivity.this, "INFO", "oauth",
+                                "auth_page_message_received_by_game_host", details);
                         String script = "window.__waywardCctReceive && window.__waywardCctReceive("
                                 + JSONObject.quote(message) + ");";
                         target.post(() -> {
@@ -123,7 +131,12 @@ public final class MainActivity extends Activity {
                     @Override public void onRevokeRequest(String nonce) {
                         beginGoogleDriveRevoke(nonce);
                     }
+                    @Override public void onDiagnosticsRequested() {
+                        shareCloudSaveDiagnostics();
+                    }
                     @Override public void onClosed(String nonce) {
+                        DiagnosticsLogger.event(MainActivity.this, "INFO", "oauth",
+                                "cloudsave_diagnostics_export_requested", null);
                         if (nonce != null) {
                             if (nonce.equals(pendingGoogleAuthNonce)) pendingGoogleAuthNonce = "";
                             PENDING_GOOGLE_AUTH_RESULTS.remove(nonce);
@@ -182,6 +195,20 @@ public final class MainActivity extends Activity {
     @Override protected void onPause(){
         super.onPause();
     }
+    private void shareCloudSaveDiagnostics() {
+        String report = DiagnosticsLogger.snapshot(this);
+        Intent share = new Intent(Intent.ACTION_SEND);
+        share.setType("text/plain");
+        share.putExtra(Intent.EXTRA_SUBJECT, "Wayward CloudSave 진단 로그");
+        share.putExtra(Intent.EXTRA_TEXT, report);
+        try {
+            startActivity(Intent.createChooser(share, "CloudSave 진단 로그 공유"));
+        } catch (Throwable error) {
+            Toast.makeText(this, "진단 로그 공유 화면을 열지 못했습니다: " + msg(error),
+                    Toast.LENGTH_LONG).show();
+        }
+    }
+
     private void status(String s){if(status!=null)status.setText(s);}
     private LinearLayout.LayoutParams buttonParams(){return new LinearLayout.LayoutParams(-1,dp(46));}
     private android.graphics.drawable.GradientDrawable uiShape(int fill,int stroke,float radius){
@@ -585,6 +612,20 @@ public final class MainActivity extends Activity {
         String domain=sessionDomain(activeProfileId);
         String origin=sessionOrigin(activeProfileId);
         int originPort=sessionPort(activeProfileId);
+        JSONObject webviewFeatures = new JSONObject();
+        try {
+            webviewFeatures.put("documentStartScript",
+                    WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT));
+            webviewFeatures.put("webMessageListener",
+                    WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER));
+            android.content.pm.PackageInfo webViewPackage = WebView.getCurrentWebViewPackage();
+            if (webViewPackage != null) {
+                webviewFeatures.put("webViewPackage", webViewPackage.packageName);
+                webviewFeatures.put("webViewVersion", webViewPackage.versionName);
+            }
+        } catch (Throwable ignored) {}
+        DiagnosticsLogger.event(this, "INFO", "oauth",
+                "game_webview_auth_bridge_capabilities", webviewFeatures);
         web=new WebView(this);WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setDatabaseEnabled(true);s.setUseWideViewPort(true);s.setLoadWithOverviewMode(true);s.setTextZoom(100);s.setSupportZoom(true);s.setBuiltInZoomControls(false);s.setDisplayZoomControls(false);s.setAllowFileAccess(false);s.setAllowContentAccess(false);s.setCacheMode(WebSettings.LOAD_DEFAULT);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);web.addJavascriptInterface(new HostBridge(),"WMLHost");
         installGoogleAuthBridgeScript(origin);
         FolderHandler folderHandler=new FolderHandler(tree,getAssets(),zipMods,origin);
@@ -712,6 +753,10 @@ public final class MainActivity extends Activity {
 
 
     private void beginGoogleDriveAuth(String nonce,boolean selectAccount){
+        JSONObject authDetails = new JSONObject();
+        try { authDetails.put("selectAccount", selectAccount); } catch (Throwable ignored) {}
+        DiagnosticsLogger.event(this, "INFO", "oauth", "native_google_drive_auth_begin",
+                authDetails);
         if(nonce==null||!nonce.matches("[a-f0-9]{48}")||googleAuthInAppDialog==null
                 ||!googleAuthInAppDialog.ownsNonce(nonce))return;
         if(!pendingGoogleAuthNonce.isEmpty()){
@@ -847,7 +892,8 @@ public final class MainActivity extends Activity {
     private void installGoogleAuthBridgeScript(String gameOrigin){
         if(web==null||gameOrigin==null||gameOrigin.isEmpty())return;
         if(!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)){
-            DiagnosticsLogger.event(this,"WARN","oauth","document_start_script_unavailable",null);
+            DiagnosticsLogger.event(this,"ERROR","oauth","document_start_script_unavailable",
+                    new JSONObject());
             return;
         }
         try(InputStream input=getAssets().open("wayward-google-auth-bridge.js");
@@ -955,8 +1001,22 @@ public final class MainActivity extends Activity {
         }
         @JavascriptInterface public void menu(){showHomePanel();}
         @JavascriptInterface public boolean openGoogleAuthPage(String rawUrl){
+            JSONObject requestDetails = new JSONObject();
+            try {
+                requestDetails.put("urlProvided", rawUrl != null);
+                requestDetails.put("urlLength", rawUrl == null ? 0 : rawUrl.length());
+                requestDetails.put("dialogAvailable", googleAuthInAppDialog != null);
+                requestDetails.put("webMessageListener",
+                        WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER));
+            } catch (Throwable ignored) {}
+            DiagnosticsLogger.event(MainActivity.this, "INFO", "oauth",
+                    "auth_page_open_request_received", requestDetails);
             if(rawUrl==null||rawUrl.length()>2048||googleAuthInAppDialog==null
-                    ||!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER))return false;
+                    ||!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+                DiagnosticsLogger.event(MainActivity.this, "ERROR", "oauth",
+                        "auth_page_open_request_rejected", requestDetails);
+                return false;
+            }
             final Uri uri;
             try{
                 uri=Uri.parse(rawUrl);
@@ -968,8 +1028,20 @@ public final class MainActivity extends Activity {
                         ||uri.getFragment()!=null
                         ||!"native-webview".equals(uri.getQueryParameter("transport")))return false;
                 String nonce=uri.getQueryParameter("nonce");
-                if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return false;
-            }catch(Throwable error){return false;}
+                if(nonce==null||!nonce.matches("[a-f0-9]{48}")) {
+                    DiagnosticsLogger.event(MainActivity.this, "ERROR", "oauth",
+                            "auth_page_open_nonce_rejected", null);
+                    return false;
+                }
+                requestDetails.put("transport", String.valueOf(uri.getQueryParameter("transport")));
+                requestDetails.put("build", String.valueOf(uri.getQueryParameter("_wml_auth_build")));
+            }catch(Throwable error){
+                DiagnosticsLogger.error(MainActivity.this, "oauth",
+                        "auth_page_open_url_parse_failed", error);
+                return false;
+            }
+            DiagnosticsLogger.event(MainActivity.this, "INFO", "oauth",
+                    "auth_page_open_request_validated", requestDetails);
             runOnUiThread(()->{
                 if(googleAuthInAppDialog.open(uri.toString())){
                     DiagnosticsLogger.event(MainActivity.this,"INFO","oauth","in_app_static_auth_dialog_opened",null);
@@ -981,7 +1053,25 @@ public final class MainActivity extends Activity {
             return true;
         }
         @JavascriptInterface public boolean sendGoogleAuthMessage(String rawMessage){
-            return googleAuthInAppDialog!=null&&googleAuthInAppDialog.postGameMessage(rawMessage);
+            boolean delivered = googleAuthInAppDialog != null
+                    && googleAuthInAppDialog.postGameMessage(rawMessage);
+            JSONObject details = new JSONObject();
+            try {
+                String type = "invalid";
+                if (rawMessage != null) {
+                    JSONObject payload = new JSONObject(rawMessage);
+                    type = payload.optInt("__waywardCctChunk", -1) == 1
+                            ? "chunk" : payload.optString("type", "unknown");
+                }
+                details.put("type", type);
+                details.put("delivered", delivered);
+                details.put("chars", rawMessage == null ? 0 : rawMessage.length());
+            } catch (Throwable ignored) {}
+            if (!"chunk".equals(details.optString("type", ""))) {
+                DiagnosticsLogger.event(MainActivity.this, delivered ? "INFO" : "WARN",
+                        "oauth", "game_to_auth_message_bridge", details);
+            }
+            return delivered;
         }
         @JavascriptInterface public void closeGoogleAuthPage(){
             runOnUiThread(()->{if(googleAuthInAppDialog!=null)googleAuthInAppDialog.closeFromGame();});
