@@ -83,18 +83,18 @@ final class DiagnosticsLogger {
             try {
                 byte[] bytes = Files.readAllBytes(file.toPath());
                 if (bytes.length == 0) continue;
-                if (report.length() > 0) report.append('\\n');
-                report.append("=== ").append(name).append(" ===\\n");
+                if (report.length() > 0) report.append('\n');
+                report.append("=== ").append(name).append(" ===\n");
                 report.append(new String(bytes, StandardCharsets.UTF_8));
             } catch (Throwable error) {
                 report.append("[diagnostic read failed: ")
-                      .append(error.getClass().getSimpleName()).append("]\\n");
+                      .append(error.getClass().getSimpleName()).append("]\n");
             }
         }
         if (report.length() == 0) return "Wayward diagnostics: no events recorded yet.";
         int limit = 240 * 1024;
         if (report.length() > limit) {
-            return "[Earlier log lines omitted; latest 240 KiB follow.]\\n"
+            return "[Earlier log lines omitted; latest 240 KiB follow.]\n"
                     + report.substring(report.length() - limit);
         }
         return report.toString();
