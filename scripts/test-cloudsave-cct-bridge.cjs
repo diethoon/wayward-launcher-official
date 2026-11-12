@@ -36,7 +36,7 @@ assert.match(activity, /deliverPendingGoogleAuthResult\(nonce\)/);
 assert.match(activity, /googleAuthInAppDialog\.deliverAuthResult\(payload\)/);
 assert.match(activity, /beginGoogleDriveRevoke\(nonce\)/);
 assert.doesNotMatch(activity, /googleAuthCustomTabsBridge/);
-assert.match(activity, /takePendingStateForNonce\\(String nonce\\)\\s*\\{return \"\";\\}/);
+assert.ok(activity.includes('@JavascriptInterface public String takePendingStateForNonce(String nonce){return "";} '.trim()));
 assert.match(activity, /WebViewFeature\.WEB_MESSAGE_LISTENER/);
 assert.match(activity, /window\.__waywardCctReceive/);
 assert.match(activity, /window\.__waywardCctMarkClosed/);
