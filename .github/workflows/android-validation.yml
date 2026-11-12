@@ -46,7 +46,15 @@ jobs:
           node-version: '20'
 
       - name: Check branch diff whitespace
-        run: git diff --check origin/main...HEAD
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            base_ref="origin/${GITHUB_BASE_REF}"
+          else
+            base_ref="HEAD^"
+          fi
+          git diff --check "${base_ref}"...HEAD
 
       - name: Check JavaScript syntax
         run: |
