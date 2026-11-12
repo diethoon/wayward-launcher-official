@@ -68,6 +68,38 @@ final class DiagnosticsLogger {
         event(context, "ERROR", component, name, details);
     }
 
+    /**
+     * Returns a bounded local diagnostic snapshot for explicit user sharing.
+     * The journal is already redacted at write time; no auth token is stored.
+     */
+    static String snapshot(Context context) {
+        if (context == null) return "Wayward diagnostics unavailable.";
+        StringBuilder report = new StringBuilder();
+        File dir = new File(context.getFilesDir(), "diagnostics");
+        String[] names = { PREVIOUS, ACTIVE };
+        for (String name : names) {
+            File file = new File(dir, name);
+            if (!file.isFile()) continue;
+            try {
+                byte[] bytes = Files.readAllBytes(file.toPath());
+                if (bytes.length == 0) continue;
+                if (report.length() > 0) report.append('\\n');
+                report.append("=== ").append(name).append(" ===\\n");
+                report.append(new String(bytes, StandardCharsets.UTF_8));
+            } catch (Throwable error) {
+                report.append("[diagnostic read failed: ")
+                      .append(error.getClass().getSimpleName()).append("]\\n");
+            }
+        }
+        if (report.length() == 0) return "Wayward diagnostics: no events recorded yet.";
+        int limit = 240 * 1024;
+        if (report.length() > limit) {
+            return "[Earlier log lines omitted; latest 240 KiB follow.]\\n"
+                    + report.substring(report.length() - limit);
+        }
+        return report.toString();
+    }
+
     private interface LockedAction { void run() throws Exception; }
 
     private static void withFileLock(Context context, LockedAction action) throws Exception {
