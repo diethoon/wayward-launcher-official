@@ -32,6 +32,8 @@ async function main() {
   let timeout = null;
   let fallbackOpened = false;
   let pending = '';
+  let fetchStatus = 401;
+  const documentListeners = Object.create(null);
 
   const window = {
     location: { href: 'https://localhost:12000/game/Wayward_WML_ko.html' },
@@ -53,7 +55,7 @@ async function main() {
       },
       clearGoogleAccessToken(value) { clearedTokens.push(value); }
     },
-    fetch: async (url) => ({ status: 401, url }),
+    fetch: async (url) => ({ status: fetchStatus, url }),
     open() { fallbackOpened = true; },
     setInterval(callback, ms) { assert.equal(ms, 250); poll = callback; return 7; },
     clearInterval(id) { assert.equal(id, 7); },
@@ -62,7 +64,12 @@ async function main() {
   };
   const document = {
     documentElement: { appendChild(node) { assert.equal(node, frame); } },
-    createElement(tag) { assert.equal(tag, 'iframe'); return frame; }
+    createElement(tag) { assert.equal(tag, 'iframe'); return frame; },
+    addEventListener(type, callback, capture) {
+      assert.equal(type, 'click');
+      assert.equal(capture, true);
+      documentListeners[type] = callback;
+    }
   };
   class TestMessageEvent {
     constructor(type, init) { this.type = type; Object.assign(this, init); }
@@ -96,6 +103,42 @@ async function main() {
     headers: { Authorization: 'Bearer unrelated-token' }
   });
   assert.deepEqual(clearedTokens, ['stale-drive-token']);
+
+  // Explicit logout must clear the cached Android token even when CloudSave
+  // uses session-only storage and keeps the access token inside its closure.
+  fetchStatus = 200;
+  await window.fetch('https://www.googleapis.com/drive/v3/files', {
+    headers: { Authorization: 'Bearer explicit-logout-token' }
+  });
+  assert.deepEqual(clearedTokens, ['stale-drive-token']);
+
+  const dispatchCloudSaveClick = (insideCloudSave, label) => {
+    const control = { textContent: label, value: '' };
+    const root = { contains(node) { return node === control; } };
+    const target = {
+      closest(selector) {
+        if (selector === '.wml-gd-wrap') return insideCloudSave ? root : null;
+        if (selector === 'button,[role="button"],input[type="button"],input[type="submit"]') return control;
+        return null;
+      }
+    };
+    documentListeners.click({ target });
+  };
+
+  dispatchCloudSaveClick(false, '로그아웃');
+  dispatchCloudSaveClick(true, '로그인 유지 설정');
+  assert.deepEqual(clearedTokens, ['stale-drive-token']);
+
+  dispatchCloudSaveClick(true, '로그아웃');
+  assert.deepEqual(clearedTokens, ['stale-drive-token', 'explicit-logout-token']);
+
+  // Other panels and other CloudSave controls must not clear Google auth.
+  await window.fetch('https://www.googleapis.com/drive/v3/files', {
+    headers: { Authorization: 'Bearer unrelated-panel-token' }
+  });
+  dispatchCloudSaveClick(false, '로그아웃');
+  dispatchCloudSaveClick(true, '계정 연결');
+  assert.deepEqual(clearedTokens, ['stale-drive-token', 'explicit-logout-token']);
 
   const other = window.open('https://example.com/', '_blank');
   assert.equal(other, undefined);
