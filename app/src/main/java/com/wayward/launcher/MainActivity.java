@@ -868,7 +868,7 @@ public final class MainActivity extends Activity {
                 if(!"https".equalsIgnoreCase(uri.getScheme())
                         ||!"jeiky224.github.io".equalsIgnoreCase(uri.getHost())
                         ||uri.getPort()!=-1
-                        ||!"/cloud/".equals(uri.getPath())
+                        ||!("/cloud/".equals(uri.getPath())||"/cloud/auth.html".equals(uri.getPath()))
                         ||uri.getUserInfo()!=null
                         ||uri.getFragment()!=null)return false;
                 String nonce=uri.getQueryParameter("nonce");
