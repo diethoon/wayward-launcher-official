@@ -22,6 +22,9 @@ assert.match(dialog, /MAX_MESSAGE_BYTES = 12 \* 1024 \* 1024/);
 assert.match(dialog, /CHUNK_CHARS = 24 \* 1024/);
 assert.match(dialog, /Base64\.encodeToString/);
 assert.match(dialog, /replyProxy\.postMessage/);
+assert.match(dialog, /isAllowedPageToGameMessage/);
+assert.match(dialog, /wayward-cloudsave-page-ready/);
+assert.match(dialog, /wayward-cloudsave-response/);
 assert.doesNotMatch(dialog, /Intent\.ACTION_VIEW|CustomTabsIntent|client_secret|refresh_token|workers\.dev|vercel\.app|render\.com/i);
 
 const authStart = activity.indexOf('@JavascriptInterface public boolean openGoogleAuthPage');
