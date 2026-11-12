@@ -10,7 +10,7 @@ const source = fs.readFileSync(
   'utf8'
 );
 const nonce = '0123456789abcdef0123456789abcdef0123456789abcdef';
-const page = 'https://jeiky224.github.io/cloud/?nonce=' + nonce;
+const page = 'https://jeiky224.github.io/cloud/auth.html?origin=http%3A%2F%2F127.0.0.1%3A8080&nonce=' + nonce;
 const launched = [];
 const fallback = [];
 const window = {
@@ -33,7 +33,7 @@ assert.deepEqual(launched, [page]);
 assert.equal(result.closed, false);
 assert.equal(fallback.length, 0);
 
-window.open('https://jeiky224.github.io/cloud/?nonce=invalid', '_blank');
+window.open('https://jeiky224.github.io/cloud/auth.html?nonce=invalid', '_blank');
 assert.equal(fallback.length, 1, 'invalid nonce must not reach the native launcher');
 
 window.open('https://example.com/', '_blank');
