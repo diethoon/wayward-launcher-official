@@ -1771,8 +1771,6 @@ public final class MainActivity extends Activity {
                 long size=sizeIndex>=0&&!c.isNull(sizeIndex)?c.getLong(sizeIndex):-1L;
                 long modified=modifiedIndex>=0&&!c.isNull(modifiedIndex)?c.getLong(modifiedIndex):-1L;
                 return new Node(actualId,name,DocumentsContract.Document.MIME_TYPE_DIR.equals(mime),size,modified);
-            }catch(java.io.FileNotFoundException missing){
-                return null;
             }
         }
         private Node resolveImageViaProvider(String path)throws Exception{
