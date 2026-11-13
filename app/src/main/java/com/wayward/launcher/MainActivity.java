@@ -1715,20 +1715,67 @@ public final class MainActivity extends Activity {
         InputStream open(String p)throws Exception{Node n=resolve(p);if(n==null||n.dir)return null;return getContentResolver().openInputStream(DocumentsContract.buildDocumentUriUsingTree(tree,n.id));}
         InputStream openImage(String p)throws Exception{
             long resolveStarted=System.nanoTime();
-            Node n=resolveImage(p);
+            String normalized=FolderHandler.normal(p);
+            String directDocumentId=null;
+            try{
+                if(tree!=null&&normalized!=null){
+                    directDocumentId=SafImageDocumentResolver.buildDocumentId(
+                            tree.getAuthority(),DocumentsContract.getTreeDocumentId(tree),normalized);
+                }
+            }catch(RuntimeException ignored){}
+            String resolverMode;
+            Node n;
+            if(directDocumentId!=null){
+                // ExternalStorageProvider document IDs are volume-relative paths.
+                // Resolve the one requested document directly; never enumerate the
+                // character directory (which may contain tens of thousands of files).
+                resolverMode="external-storage-direct";
+                Uri documentUri=DocumentsContract.buildDocumentUriUsingTree(tree,directDocumentId);
+                n=queryImageDocument(documentUri,directDocumentId);
+            }else{
+                // Keep compatibility with non-filesystem SAF providers whose document
+                // IDs are opaque and cannot be derived from a relative path.
+                resolverMode="provider-directory-index";
+                n=resolveImageViaProvider(p);
+            }
             long resolveMs=(System.nanoTime()-resolveStarted)/1_000_000L;
             if(n==null||n.dir){
-                recordImageOpenTiming(p,resolveMs,0L,null,-1L);
+                recordImageOpenTiming(p,resolveMs,0L,null,-1L,resolverMode);
                 return null;
             }
             long accessStarted=System.nanoTime();
             Uri documentUri=DocumentsContract.buildDocumentUriUsingTree(tree,n.id);
             SafImageCache.OpenResult opened=imageCache.open(getContentResolver(),documentUri,n.id,n.size,n.lastModified);
             long accessMs=(System.nanoTime()-accessStarted)/1_000_000L;
-            recordImageOpenTiming(p,resolveMs,accessMs,opened,n.size);
+            recordImageOpenTiming(p,resolveMs,accessMs,opened,n.size,resolverMode);
             return opened==null?null:opened.stream;
         }
-        private Node resolveImage(String path)throws Exception{
+        private Node queryImageDocument(Uri documentUri,String expectedId)throws Exception{
+            try(Cursor c=getContentResolver().query(documentUri,new String[]{
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    DocumentsContract.Document.COLUMN_SIZE,
+                    DocumentsContract.Document.COLUMN_LAST_MODIFIED
+            },null,null,null)){
+                if(c==null||!c.moveToFirst())return null;
+                int idIndex=c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
+                int nameIndex=c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
+                int mimeIndex=c.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE);
+                int sizeIndex=c.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE);
+                int modifiedIndex=c.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED);
+                String actualId=idIndex>=0?c.getString(idIndex):null;
+                if(actualId==null||!expectedId.equals(actualId))return null;
+                String name=nameIndex>=0?c.getString(nameIndex):"";
+                String mime=mimeIndex>=0?c.getString(mimeIndex):null;
+                long size=sizeIndex>=0&&!c.isNull(sizeIndex)?c.getLong(sizeIndex):-1L;
+                long modified=modifiedIndex>=0&&!c.isNull(modifiedIndex)?c.getLong(modifiedIndex):-1L;
+                return new Node(actualId,name,DocumentsContract.Document.MIME_TYPE_DIR.equals(mime),size,modified);
+            }catch(java.io.FileNotFoundException missing){
+                return null;
+            }
+        }
+        private Node resolveImageViaProvider(String path)throws Exception{
             String p=FolderHandler.normal(path);if(p==null)return null;
             String parent=rootId;Node n=null;String[] parts=p.split("/");
             for(int i=0;i<parts.length;i++){
@@ -1737,7 +1784,7 @@ public final class MainActivity extends Activity {
             }
             return n;
         }
-        private void recordImageOpenTiming(String path,long resolveMs,long accessMs,SafImageCache.OpenResult opened,long imageSize){
+        private void recordImageOpenTiming(String path,long resolveMs,long accessMs,SafImageCache.OpenResult opened,long imageSize,String resolverMode){
             int sample=imageTimingSamples.getAndIncrement();
             if(sample>=96&&resolveMs<350L&&accessMs<350L)return;
             JSONObject details=new JSONObject();
@@ -1745,6 +1792,7 @@ public final class MainActivity extends Activity {
                 details.put("elapsedMs",resolveMs+accessMs);
                 details.put("resolveImageMs",resolveMs);
                 details.put("imageAccessMs",accessMs);
+                details.put("resolverMode",resolverMode);
                 if(opened!=null){
                     details.put("cacheState",opened.cacheState);
                     details.put("openInputStreamMs",opened.openInputStreamMs);
