@@ -31,29 +31,13 @@ final class ImagePipelineDiagnostics {
     private static final Object LOCK = new Object();
     private static final Pattern EVENT = Pattern.compile("[a-z0-9_]{1,64}");
     private static final Set<String> ALLOWED_EVENTS = new HashSet<>(Arrays.asList(
-            "capture_started", "log_cleared", "js_bridge_unavailable", "image_element_watch_installed",
-            "js_bridge_installed", "img_element_error", "img_element_loaded", "resolver_received",
-            "resolver_orphaned", "game_generate_rejected", "game_generate_resolved",
-            "data_url_probe_loaded", "data_url_probe_failed", "data_url_probe_setup_failed",
-            "data_url_probe_skipped", "resolver_payload_parse_failed", "provider_list_failed",
-            "game_generate_requested", "game_generate_timeout", "game_generate_dispatched",
-            "game_generate_dispatch_failed", "native_request_rejected", "native_request_received",
-            "native_worker_started", "provider_selection_failed", "provider_selected",
-            "provider_permission_denied", "native_image_received", "native_data_url_built",
-            "native_generation_succeeded", "native_generation_failed", "native_queue_rejected",
-            "native_webview_delivery_started", "native_delivery_failed", "native_delivery_queued",
-            "native_js_evaluate_callback", "native_js_resolver_invoked", "native_js_resolver_missing",
-            "native_webview_evaluate_failed", "provider_http_response",
-            "provider_http_error", "provider_http_request_failed", "webview_image_network_error",
-            "native_image_decode_bounds_succeeded", "native_image_decode_bounds_failed", "webview_image_http_error",
+            "webview_image_network_error", "webview_image_http_error",
             "webview_image_resource_error", "webview_image_resource_slow",
             "saf_image_open_timing", "saf_directory_query_timing", "saf_image_cache_completed"
     ));
     private static final Set<String> ALLOWED = new HashSet<>(Arrays.asList(
-            "requestId", "providerId", "providerType", "mimeType", "imageBytes",
-            "imageWidth", "imageHeight", "imageFormat", "promptLength",
-            "requestedWidth", "requestedHeight", "elapsedMs", "fallbackUsed",
-            "responseStatus", "responseContentType", "responseBytes", "dataUrlLength", "providerType", "networkErrorCode",
+            "mimeType", "imageBytes", "imageWidth", "imageHeight", "imageFormat",
+            "elapsedMs", "responseStatus", "responseContentType", "networkErrorCode",
             "deliveryQueued", "webViewUrlPresent", "srcKind", "srcLength",
             "naturalWidth", "naturalHeight", "complete", "reasonCode", "errorType",
             "queueDepth", "hasProvider", "mimeDetected", "stage", "success",
@@ -62,7 +46,7 @@ final class ImagePipelineDiagnostics {
             "resolveImageMs", "imageAccessMs", "openInputStreamMs", "sourceReadMs",
             "cacheWriteMs", "cacheFinalizeMs", "cacheWaitMs", "cacheOpenMs",
             "directoryWaitMs", "directoryQueryMs",
-            "directoryChildCount", "imageSizeBytes", "cacheState"
+            "directoryChildCount", "imageSizeBytes", "cacheState", "resolverMode"
     ));
 
     private ImagePipelineDiagnostics() {}
@@ -80,7 +64,7 @@ final class ImagePipelineDiagnostics {
                 withLock(context, () -> append(context, bytes));
             }
         } catch (Throwable ignored) {
-            // Diagnostics must never interrupt image generation or gameplay.
+            // Diagnostics must never interrupt image loading or gameplay.
         }
     }
 
@@ -116,14 +100,6 @@ final class ImagePipelineDiagnostics {
     private static boolean safeString(String key, String value) {
         if (value == null || value.length() > 120) return false;
         switch (key) {
-            case "requestId":
-                return value.matches("[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
-                        || value.matches("wprovider-[a-z0-9]+-[a-z0-9]+");
-            case "providerId":
-                return value.matches("[a-f0-9]{32}");
-            case "providerType":
-                return "cloudflare-worker".equals(value) || "openai-compatible".equals(value)
-                        || "custom-json".equals(value);
             case "mimeType":
             case "responseContentType":
             case "mimeDetected":
@@ -161,6 +137,8 @@ final class ImagePipelineDiagnostics {
                         || "invalid_prompt_length".equals(value);
             case "errorType":
                 return value.matches("[A-Za-z0-9_.$-]{1,80}");
+            case "resolverMode":
+                return "external-storage-direct".equals(value) || "provider-directory-index".equals(value);
             case "cacheState":
                 return "hit".equals(value) || "loaded".equals(value) || "shared".equals(value)
                         || "loading".equals(value) || "cached".equals(value) || "failed".equals(value)
