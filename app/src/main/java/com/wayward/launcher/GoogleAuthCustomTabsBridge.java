@@ -2,6 +2,9 @@ package com.wayward.launcher;
 
 import android.app.Activity;
 import android.content.ComponentName;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.Signature;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Base64;
@@ -16,6 +19,7 @@ import androidx.browser.customtabs.CustomTabsSession;
 import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 
 /**
@@ -30,6 +34,8 @@ final class GoogleAuthCustomTabsBridge {
     }
 
     private static final Uri APP_ORIGIN = Uri.parse("https://jeiky224.github.io");
+    private static final String EXPECTED_APP_PACKAGE = "com.wayward.launcher.official";
+    private static final String EXPECTED_SIGNER_SHA256 = "F3:CA:95:AD:6C:6C:7D:19:23:27:C8:8F:82:B5:9E:53:B2:C9:89:7C:45:5A:0F:0B:EF:2E:AF:CF:29:A8:D7:54";
     private static final String AUTH_HOST = "jeiky224.github.io";
     private static final String AUTH_PATH = "/cloud/auth.html";
     private static final int MAX_MESSAGE_BYTES = 12 * 1024 * 1024;
@@ -53,6 +59,7 @@ final class GoogleAuthCustomTabsBridge {
     private boolean destroyed;
     private Uri pendingUri;
     private String pendingNonce = "";
+    private String customTabsProviderPackage = "";
 
     private final CustomTabsCallback callback = new CustomTabsCallback() {
         @Override
@@ -80,11 +87,32 @@ final class GoogleAuthCustomTabsBridge {
         @Override
         public void onRelationshipValidationResult(int relation, Uri requestedOrigin,
                                                    boolean result, Bundle extras) {
-            if (relation != CustomTabsService.RELATION_USE_AS_ORIGIN ||
-                    requestedOrigin == null || !APP_ORIGIN.equals(requestedOrigin)) return;
+            JSONObject details = new JSONObject();
+            try {
+                details.put("relation", relation);
+                details.put("expectedRelation", CustomTabsService.RELATION_USE_AS_ORIGIN);
+                details.put("requestedOrigin", requestedOrigin == null ? "" : requestedOrigin.toString());
+                details.put("expectedOrigin", APP_ORIGIN.toString());
+                details.put("result", result);
+                details.put("providerPackage", customTabsProviderPackage);
+                details.put("providerVersion", packageVersion(customTabsProviderPackage));
+                details.put("appPackage", activity.getPackageName());
+                details.put("appPackageMatches", EXPECTED_APP_PACKAGE.equals(activity.getPackageName()));
+                details.put("appSignerSha256", currentSigningFingerprint());
+                details.put("appSignerMatches", EXPECTED_SIGNER_SHA256.equals(currentSigningFingerprint()));
+            } catch (Throwable ignored) {}
+            boolean expectedCallback = relation == CustomTabsService.RELATION_USE_AS_ORIGIN &&
+                    requestedOrigin != null && APP_ORIGIN.equals(requestedOrigin);
+            DiagnosticsLogger.event(activity, expectedCallback && result ? "INFO" : "ERROR",
+                    "oauth", "custom_tabs_dal_validation_result", details);
+            if (!expectedCallback) {
+                relationshipValidated = false;
+                reportError("Custom Tabs 검증 콜백의 관계 또는 Origin이 요청값과 다릅니다.\n" + runtimeDiagnosticSummary());
+                return;
+            }
             relationshipValidated = result;
             if (!result) {
-                reportError("Digital Asset Links의 use_as_origin 검증에 실패했습니다. assetlinks.json과 APK 서명을 확인하세요.");
+                reportError("Google은 현재 연결을 인정하지만 기기의 Custom Tabs 검증은 거부했습니다.\n" + runtimeDiagnosticSummary());
                 return;
             }
             launchPendingTab();
@@ -138,6 +166,7 @@ final class GoogleAuthCustomTabsBridge {
             reportError("Custom Tabs를 지원하는 브라우저를 찾지 못했습니다.");
             return;
         }
+        customTabsProviderPackage = packageName;
         serviceConnection = new CustomTabsServiceConnection() {
             @Override
             public void onCustomTabsServiceConnected(ComponentName name, CustomTabsClient customTabsClient) {
@@ -151,7 +180,20 @@ final class GoogleAuthCustomTabsBridge {
                 }
                 boolean accepted = session.validateRelationship(
                         CustomTabsService.RELATION_USE_AS_ORIGIN, APP_ORIGIN, null);
-                if (!accepted) reportError("브라우저가 앱 origin 검증 요청을 받지 않았습니다.");
+                JSONObject details = new JSONObject();
+                try {
+                    details.put("providerPackage", customTabsProviderPackage);
+                    details.put("providerVersion", packageVersion(customTabsProviderPackage));
+                    details.put("appPackage", activity.getPackageName());
+                    details.put("appPackageMatches", EXPECTED_APP_PACKAGE.equals(activity.getPackageName()));
+                    details.put("appSignerSha256", currentSigningFingerprint());
+                    details.put("appSignerMatches", EXPECTED_SIGNER_SHA256.equals(currentSigningFingerprint()));
+                    details.put("origin", APP_ORIGIN.toString());
+                    details.put("requestAccepted", accepted);
+                } catch (Throwable ignored) {}
+                DiagnosticsLogger.event(activity, accepted ? "INFO" : "ERROR", "oauth",
+                        "custom_tabs_dal_validation_requested", details);
+                if (!accepted) reportError("브라우저가 origin 검증 요청을 수락하지 않았습니다.\n" + runtimeDiagnosticSummary());
             }
 
             @Override
@@ -333,9 +375,53 @@ final class GoogleAuthCustomTabsBridge {
         pendingNonce = "";
     }
 
+    private String currentSigningFingerprint() {
+        try {
+            PackageInfo info = activity.getPackageManager().getPackageInfo(
+                    activity.getPackageName(), PackageManager.GET_SIGNING_CERTIFICATES);
+            if (info.signingInfo == null) return "unavailable:no_signing_info";
+            Signature[] signers = info.signingInfo.getApkContentsSigners();
+            if (signers == null || signers.length == 0) return "unavailable:no_signers";
+            StringBuilder fingerprints = new StringBuilder();
+            for (Signature signer : signers) {
+                byte[] digest = MessageDigest.getInstance("SHA-256").digest(signer.toByteArray());
+                if (fingerprints.length() > 0) fingerprints.append(",");
+                for (int i = 0; i < digest.length; i++) {
+                    if (i > 0) fingerprints.append(":");
+                    fingerprints.append(String.format(java.util.Locale.ROOT, "%02X", digest[i] & 0xff));
+                }
+            }
+            return fingerprints.toString();
+        } catch (Throwable error) {
+            return "unavailable:" + error.getClass().getSimpleName();
+        }
+    }
+
+    private String packageVersion(String packageName) {
+        if (packageName == null || packageName.isEmpty()) return "unknown";
+        try {
+            PackageInfo info = activity.getPackageManager().getPackageInfo(packageName, 0);
+            return info.versionName == null ? String.valueOf(info.getLongVersionCode()) :
+                    info.versionName + " (" + info.getLongVersionCode() + ")";
+        } catch (Throwable error) {
+            return "unavailable:" + error.getClass().getSimpleName();
+        }
+    }
+
+    private String runtimeDiagnosticSummary() {
+        String appPackage = activity.getPackageName();
+        String signer = currentSigningFingerprint();
+        return "브라우저: " + customTabsProviderPackage + " / " + packageVersion(customTabsProviderPackage) +
+                "\n앱 패키지: " + appPackage +
+                "\n패키지 일치: " + EXPECTED_APP_PACKAGE.equals(appPackage) +
+                "\n설치 서명 SHA-256: " + signer +
+                "\n서명 일치: " + EXPECTED_SIGNER_SHA256.equals(signer);
+    }
+
     private void reportError(String message) {
         activity.runOnUiThread(() -> {
-            if (!destroyed) listener.onBridgeError(message);
+            if (destroyed || activity.isFinishing()) return;
+            DiagnosticDialog.show(activity, message);
         });
     }
 
