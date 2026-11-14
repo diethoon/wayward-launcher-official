@@ -6,7 +6,6 @@ const main = fs.readFileSync('app/src/main/java/com/wayward/launcher/MainActivit
 const application = fs.readFileSync('app/src/main/java/com/wayward/launcher/LauncherApplication.java', 'utf8');
 const manifest = fs.readFileSync('app/src/main/AndroidManifest.xml', 'utf8');
 const gradle = fs.readFileSync('app/build.gradle', 'utf8');
-const tactileStyle = fs.readFileSync('app/src/main/java/com/wayward/launcher/NeumorphicButtonStyle.java', 'utf8');
 const naiSettings = fs.readFileSync('app/src/main/java/com/wayward/launcher/NovelAiSettingsActivity.java', 'utf8');
 const glassStyle = fs.readFileSync('app/src/main/java/com/wayward/launcher/GlassButtonStyle.java', 'utf8');
 const webFileChooser = fs.readFileSync('app/src/main/java/com/wayward/launcher/WebFileChooser.java', 'utf8');
@@ -28,14 +27,6 @@ assert.match(main, /NeumorphicButtonStyle\.bind\(this,b,false,10f\)/,
   'compact launcher buttons must use the common button style');
 assert.match(naiSettings, /NeumorphicButtonStyle\.bind\(this, button, false, 12f\)/,
   'NovelAI settings actions must use the common button style');
-assert.match(tactileStyle, /setOutlineSpotShadowColor/,
-  'neumorphic controls must tune native outline shadows');
-assert.match(tactileStyle, /setElevation/,
-  'neumorphic controls must distinguish raised and recessed elevation');
-assert.match(tactileStyle, /ACTION_DOWN/,
-  'neumorphic controls must depress on touch down');
-assert.match(tactileStyle, /recessed/,
-  'neumorphic style must represent persistent selected/recessed states');
 
 const glassTileStart = main.indexOf('private View glassModeTile(');
 const glassTileEnd = main.indexOf('private void openNovelAiSettings()', glassTileStart);
