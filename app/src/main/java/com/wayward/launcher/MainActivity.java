@@ -1854,7 +1854,7 @@ public final class MainActivity extends Activity {
                 value.put("engine",parts.length>=3?parts[2]:"unknown");
                 value.put("message",state.message);
                 return value.toString();
-            }catch(Exception ignored){return "{\\"available\\":false,\\"starting\\":false,\\"ready\\":false,\\"backendVersion\\":\\"\\",\\"engine\\":\\"unknown\\"}";}
+            }catch(Exception ignored){return "{\"available\":false,\"starting\":false,\"ready\":false,\"backendVersion\":\"\",\"engine\":\"unknown\"}";}
         }
         @JavascriptInterface public void logImageProviderDiagnostic(String event,String detailsJson){
             ImagePipelineDiagnostics.recordJson(MainActivity.this,event,detailsJson);
