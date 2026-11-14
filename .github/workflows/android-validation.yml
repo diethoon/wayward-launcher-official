@@ -244,7 +244,7 @@ jobs:
                 return matches[0]
 
             def rect(node):
-                values = [int(value) for value in re.findall(r"-?\\d+", node.attrib["bounds"])]
+                values = [int(value) for value in re.findall(r"-?\d+", node.attrib["bounds"])]
                 assert len(values) == 4, f"Invalid bounds: {node.attrib.get('bounds')}"
                 return values
 
