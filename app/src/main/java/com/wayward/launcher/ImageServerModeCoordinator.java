@@ -34,26 +34,40 @@ final class ImageServerModeCoordinator {
 
         try {
             operations.stopRemote(new Callback() {
-                @Override public void onSuccess() { stopLocal(target, operations); }
-                @Override public void onFailure(String message) { finish(operations, null, message); }
+                @Override public void onSuccess() { stopLocal(target, operations, null); }
+                @Override public void onFailure(String message) {
+                    // Still stop the local server. Never start a new target while
+                    // a previously active remote server failed to acknowledge stop.
+                    stopLocal(target, operations, "원격 서버 중지 실패: " + message);
+                }
             });
         } catch (Throwable error) {
-            finish(operations, null, message(error));
+            stopLocal(target, operations, "원격 서버 중지 예외: " + message(error));
         }
     }
 
-    private void stopLocal(Mode target, Operations operations) {
+    private void stopLocal(Mode target, Operations operations, String previousError) {
         try {
             operations.stopLocal(new Callback() {
                 @Override public void onSuccess() {
-                    if (target == Mode.IMAGE_PACKS_ONLY) {
+                    if (previousError != null) {
+                        finish(operations, null, previousError);
+                    } else if (target == Mode.IMAGE_PACKS_ONLY) {
                         finish(operations, Mode.IMAGE_PACKS_ONLY, null);
-                    } else startTarget(target, operations);
+                    } else {
+                        startTarget(target, operations);
+                    }
                 }
-                @Override public void onFailure(String message) { finish(operations, null, message); }
+                @Override public void onFailure(String message) {
+                    String combined = previousError == null ? "로컬 서버 중지 실패: " + message
+                            : previousError + " · 로컬 서버 중지 실패: " + message;
+                    finish(operations, null, combined);
+                }
             });
         } catch (Throwable error) {
-            finish(operations, null, message(error));
+            String combined = previousError == null ? "로컬 서버 중지 예외: " + message(error)
+                    : previousError + " · 로컬 서버 중지 예외: " + message(error);
+            finish(operations, null, combined);
         }
     }
 

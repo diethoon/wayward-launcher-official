@@ -58,11 +58,19 @@ public final class ImageServerModeCoordinatorTest {
         assertEquals(Arrays.asList("stop-remote","stop-local","start-local",
                 "persist-IMAGE_PACKS_ONLY","error-local-start-failed"), failedStart.events);
 
-        Fake failedStop = new Fake();
-        failedStop.failureAt = "stop-remote";
-        coordinator.switchTo(ImageServerModeCoordinator.Mode.LOCAL_IMAGE_GENERATION, failedStop);
-        assertEquals(Arrays.asList("stop-remote","error-remote-stop-failed"), failedStop.events);
-        if (coordinator.isBusy()) throw new AssertionError("coordinator left busy after stop failure");
+        Fake failedRemoteStop = new Fake();
+        failedRemoteStop.failureAt = "stop-remote";
+        coordinator.switchTo(ImageServerModeCoordinator.Mode.LOCAL_IMAGE_GENERATION, failedRemoteStop);
+        assertEquals(Arrays.asList("stop-remote","stop-local",
+                "error-원격 서버 중지 실패: remote-stop-failed"), failedRemoteStop.events);
+        if (coordinator.isBusy()) throw new AssertionError("coordinator left busy after remote stop failure");
+
+        Fake failedLocalStop = new Fake();
+        failedLocalStop.failureAt = "stop-local";
+        coordinator.switchTo(ImageServerModeCoordinator.Mode.IMAGE_PACKS_ONLY, failedLocalStop);
+        assertEquals(Arrays.asList("stop-remote","stop-local",
+                "error-로컬 서버 중지 실패: local-stop-failed"), failedLocalStop.events);
+        if (coordinator.isBusy()) throw new AssertionError("coordinator left busy after local stop failure");
         System.out.println("ImageServerModeCoordinatorTest passed");
     }
 

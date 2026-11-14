@@ -131,7 +131,7 @@ public final class MainActivity extends Activity {
         long revision=getSharedPreferences(PREFS,MODE_PRIVATE).getLong(KEY_ZIP_REV,0);
         if(web!=null&&revision!=loadedZipRevision){loadedZipRevision=revision;web.reload();}
         if(web!=null&&tree!=null)registerSessionActivity();
-        if(home!=null&&home.getVisibility()==View.VISIBLE){renderProfiles();refreshStatus();}
+        if(home!=null&&home.getVisibility()==View.VISIBLE){renderProfiles();refreshStatus();refreshImageGenStatus();renderImageModePanel();}
     }
     @Override protected void onNewIntent(Intent intent){
         super.onNewIntent(intent);setIntent(intent);
@@ -332,6 +332,7 @@ public final class MainActivity extends Activity {
         if(imageModeStatus!=null){
             String message;
             if(imageModeTransitionInProgress) message="서버 전환 중 · 기존 서버를 종료하고 새 모드를 적용합니다.";
+            else if(imageGenSessionMessage!=null&&imageGenSessionMessage.startsWith("이미지 서버 전환 실패:")) message=imageGenSessionMessage;
             else if(IMAGE_MODE_REMOTE_PC.equals(mode)) message="집 PC 원격 서버 모드 · 원격 연결 기능은 후속 작업에서 연결됩니다.";
             else if(generationSelected&&state.isReady()) message="이미지 생성 서버 실행 중 · 이미지 생성 요청은 런처 서버로 전달됩니다.";
             else if(generationSelected) message="이미지 생성 서버 준비 중 · 생성 경로를 연결하고 있습니다.";
@@ -941,12 +942,17 @@ public final class MainActivity extends Activity {
                     }
                     if(path != null && path.startsWith("/images/__wayward_generated__/"))
                         return serveGeneratedImageRequest(path, imageDiagnostics);
-                    if(FolderHandler.isImageRequestPath(path))return serveImageRequest(folderHandler,path,imageDiagnostics);
+                    if(FolderHandler.isImageRequestPath(path))return serveImageRequestByMode(folderHandler,path,imageDiagnostics);
+                }
+                String requestedPath=u.getPath();
+                if(FolderHandler.isImageRequestPath(requestedPath)&&imageGenerationRoutingActive()){
+                    // ImageGen ON: do not touch image packs or the original CDN.
+                    // All /images/* references are resolved against the managed generation cache.
+                    return serveGeneratedImageRequest("/images/__wayward_generated__/"+requestedPath.substring(8),imageDiagnostics);
                 }
                 if("art.sintention.com".equalsIgnoreCase(u.getHost())){
                     String path=u.getPath();
-                    // Image resources are local-pack-only here. A missing local file must never
-                    // fall through to the original CDN or any external image host.
+                    // ImageGen OFF: only the selected local game folder can supply these images.
                     if(FolderHandler.isImageRequestPath(path))return serveImageRequest(folderHandler,path,imageDiagnostics);
                 }
                 return null;
@@ -1044,6 +1050,19 @@ public final class MainActivity extends Activity {
                 ||lower.endsWith(".png")||lower.endsWith(".jpg")||lower.endsWith(".jpeg")
                 ||lower.endsWith(".webp")||lower.endsWith(".gif")||lower.endsWith(".avif")
                 ||lower.endsWith(".svg");
+    }
+
+    private boolean imageGenerationRoutingActive(){
+        ImageGenStatusStore.State state=ImageGenStatusStore.read(getFilesDir());
+        return state.isReady()||state.isAvailable()||state.isStarting();
+    }
+
+    private WebResourceResponse serveImageRequestByMode(FolderHandler handler,String path,
+            java.util.concurrent.atomic.AtomicInteger samples){
+        if(imageGenerationRoutingActive()){
+            return serveGeneratedImageRequest("/images/__wayward_generated__/"+path.substring(8),samples);
+        }
+        return serveImageRequest(handler,path,samples);
     }
 
     private WebResourceResponse serveImageRequest(FolderHandler handler,String path,

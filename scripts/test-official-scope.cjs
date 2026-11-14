@@ -16,7 +16,7 @@ assert.match(home, /＋ 폴더/, 'home must expose folder registration');
 assert.match(home, /내 게임/, 'home must expose the registered game list');
 assert.match(home, /여러 게임을 독립 세션으로 실행/, 'home must describe independent sessions');
 assert.match(home, /이미지 생성 서버 실행/, 'home must expose the explicit local image-generation server switch');
-assert.match(home, /NAI 설정/, 'home must expose the user's NovelAI token settings');
+assert.match(home, /NAI 설정/, "home must expose the user NovelAI token settings");
 assert.match(home, /이미지팩만 사용/, 'home must expose the all-servers-off image-pack switch');
 assert.match(home, /applySystemBarInsets\(root\)/, 'home and game root must apply safe system-bar insets');
 assert.match(main, /private void applySystemBarInsets\(View target\)/, 'system-bar inset handler must exist');
