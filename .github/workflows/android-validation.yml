@@ -65,7 +65,9 @@ jobs:
           node --check app/src/main/assets/imagegen-studio-bridge.js
 
       - name: Test official launcher scope
-        run: node scripts/test-official-scope.cjs
+        run: |
+          node scripts/test-official-scope.cjs
+          python3 -m py_compile scripts/check-glass-ui-layout.py
 
       - name: Test Google OAuth bridge contract
         run: node scripts/test-google-auth-bridge.cjs
@@ -236,33 +238,7 @@ jobs:
             grep -q "이미지 생성 서버 실행" /tmp/wayward-launcher-home.xml
             grep -q "이미지팩만 사용" /tmp/wayward-launcher-home.xml
             grep -q "NovelAI 토큰 설정" /tmp/wayward-launcher-home.xml
-            python3 - <<'PY'
-            import re
-            import xml.etree.ElementTree as ET
-
-            root = ET.parse("/tmp/wayward-launcher-home.xml").getroot()
-            nodes = list(root.iter("node"))
-
-            def by_description(fragment):
-                matches = [node for node in nodes if fragment in node.attrib.get("content-desc", "")]
-                assert matches, f"UI element not found: {fragment}"
-                return matches[0]
-
-            def rect(node):
-                values = [int(value) for value in re.findall(r"-?\d+", node.attrib["bounds"])]
-                assert len(values) == 4, f"Invalid bounds: {node.attrib.get('bounds')}"
-                return values
-
-            server = by_description("이미지 생성 서버 실행")
-            packs = by_description("이미지팩만 사용")
-            gear = by_description("NovelAI 토큰 설정")
-            sx1, sy1, sx2, sy2 = rect(server)
-            px1, py1, px2, py2 = rect(packs)
-            gx1, gy1, gx2, gy2 = rect(gear)
-            assert (sy2 - sy1) == (py2 - py1), "Server and image-pack buttons must have equal heights"
-            assert sx1 <= gx1 < gx2 <= sx2 and sy1 <= gy1 < gy2 <= sy2, "Settings gear must be inside the server button"
-            print("Glass UI geometry verified: both tiles have equal height and the gear is embedded in the server tile.")
-            PY
+            python3 scripts/check-glass-ui-layout.py /tmp/wayward-launcher-home.xml
             test -s artifacts/android15-launcher-home.png
             echo "Android 15 emulator launched the official launcher and confirmed both image mode controls plus the NovelAI settings gear. Home screenshot captured."
 
