@@ -38,10 +38,14 @@ jobs:
           source_path = Path("app/src/main/java/com/wayward/launcher/MainActivity.java")
           source = source_path.read_text(encoding="utf-8")
 
-          old_host = '''        @JavascriptInterface public void startGoogleDriveAuth(String nonce){
-              if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return;
-              runOnUiThread(()->beginGoogleDriveAuth(nonce));
-          }'''
+          import re
+
+          host_pattern = re.compile(
+              r'(?m)^        @JavascriptInterface public void startGoogleDriveAuth\\(String nonce\\)\\{\\r?\\n'
+              r'            if\\(nonce==null\\|\\|!nonce\\.matches\\("\\[a-f0-9\\]\\{48\\}"\\)\\)return;\\r?\\n'
+              r'            runOnUiThread\\(\\(\\)->beginGoogleDriveAuth\\(nonce\\)\\);\\r?\\n'
+              r'        \\}'
+          )
           new_host = '''        @JavascriptInterface public void startGoogleDriveAuth(String nonce){
               startGoogleDriveAuthWithPolicy(nonce,false);
           }
@@ -49,51 +53,43 @@ jobs:
               if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return;
               runOnUiThread(()->beginGoogleDriveAuth(nonce,forceSelectAccount));
           }'''
+          if "startGoogleDriveAuthWithPolicy(String nonce,boolean forceSelectAccount)" not in source:
+              source, count = host_pattern.subn(lambda _: new_host, source)
+              if count != 1:
+                  raise SystemExit(f"Expected exactly one original HostBridge method; found {count}")
+
           old_method = "    private void beginGoogleDriveAuth(String nonce){"
           new_method = """    private void beginGoogleDriveAuth(String nonce){
               beginGoogleDriveAuth(nonce,false);
           }
 
           private void beginGoogleDriveAuth(String nonce,boolean forceSelectAccount){"""
-          old_request = '''            AuthorizationRequest request=AuthorizationRequest.builder()
-                      .setRequestedScopes(Collections.singletonList(
-                              new Scope("https://www.googleapis.com/auth/drive.appdata")))
-                      .build();'''
-          new_request = '''            AuthorizationRequest.Builder requestBuilder=AuthorizationRequest.builder()
-                      .setRequestedScopes(Collections.singletonList(
-                              new Scope("https://www.googleapis.com/auth/drive.appdata")));
-              if(forceSelectAccount){
-                  requestBuilder.setPrompt(AuthorizationRequest.Prompt.SELECT_ACCOUNT);
-              }
-              AuthorizationRequest request=requestBuilder.build();'''
+          if "beginGoogleDriveAuth(String nonce,boolean forceSelectAccount)" not in source:
+              if source.count(old_method) != 1:
+                  raise SystemExit("Expected exactly one beginGoogleDriveAuth(String nonce) method")
+              source = source.replace(old_method, new_method, 1)
 
-          replacements = [
-              (old_host, new_host, "HostBridge method"),
-              (old_method, new_method, "native auth overload"),
-              (old_request, new_request, "AuthorizationRequest prompt policy"),
-          ]
-          for old, new, label in replacements:
-              count = source.count(old)
-              if count == 0 and label in ("HostBridge method", "native auth overload", "AuthorizationRequest prompt policy"):
-                  if label == "HostBridge method" and "startGoogleDriveAuthWithPolicy(String nonce,boolean forceSelectAccount)" in source:
-                      continue
-                  if label == "native auth overload" and "beginGoogleDriveAuth(String nonce,boolean forceSelectAccount)" in source:
-                      continue
-                  if label == "AuthorizationRequest prompt policy" and "requestBuilder.setPrompt(AuthorizationRequest.Prompt.SELECT_ACCOUNT)" in source:
-                      continue
-              if count > 1:
-                  raise SystemExit(f"Unexpected duplicate {label}: {count}")
-              if count == 1:
-                  source = source.replace(old, new, 1)
-              else:
-                  # A previously patched source is accepted only when its exact new contract is present.
-                  expected = {
-                      "HostBridge method": "startGoogleDriveAuthWithPolicy(String nonce,boolean forceSelectAccount)",
-                      "native auth overload": "beginGoogleDriveAuth(String nonce,boolean forceSelectAccount)",
-                      "AuthorizationRequest prompt policy": "requestBuilder.setPrompt(AuthorizationRequest.Prompt.SELECT_ACCOUNT)",
-                  }[label]
-                  if expected not in source:
-                      raise SystemExit(f"Could not safely locate {label}")
+          request_pattern = re.compile(
+              r'            AuthorizationRequest request=AuthorizationRequest\\.builder\\(\\)\\s*'
+              r'\\.setRequestedScopes\\(Collections\\.singletonList\\(\\s*'
+              r'new Scope\\("https://www\\.googleapis\\.com/auth/drive\\.appdata"\\)\\)\\)\\s*'
+              r'\\.build\\(\\);'
+          )
+          new_request = '''            AuthorizationRequest.Builder requestBuilder=AuthorizationRequest.builder()
+                    .setRequestedScopes(Collections.singletonList(
+                            new Scope("https://www.googleapis.com/auth/drive.appdata")));
+            if(forceSelectAccount){
+                requestBuilder.setPrompt(AuthorizationRequest.Prompt.SELECT_ACCOUNT);
+            }
+            AuthorizationRequest request=requestBuilder.build();'''
+          if "requestBuilder.setPrompt(AuthorizationRequest.Prompt.SELECT_ACCOUNT)" not in source:
+              source, count = request_pattern.subn(lambda _: new_request, source, count=1)
+              if count != 1:
+                  raise SystemExit(f"Expected exactly one original AuthorizationRequest builder; found {count}")
+          if "startGoogleDriveAuthWithPolicy(String nonce,boolean forceSelectAccount)" not in source:
+              raise SystemExit("Native account-selection JavaScript interface was not installed")
+          if "requestBuilder.setPrompt(AuthorizationRequest.Prompt.SELECT_ACCOUNT)" not in source:
+              raise SystemExit("Android SELECT_ACCOUNT prompt was not installed")
           source_path.write_text(source, encoding="utf-8", newline="")
 
           gradle_path = Path("app/build.gradle")
