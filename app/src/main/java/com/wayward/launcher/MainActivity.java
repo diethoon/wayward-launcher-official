@@ -65,9 +65,10 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class MainActivity extends Activity {
-    private static final int PICK_TREE=4101, PICK_MOD_ZIP=4102, REQUEST_GOOGLE_AUTH=4103;
+    private static final int PICK_TREE=4101, PICK_MOD_ZIP=4102, REQUEST_GOOGLE_AUTH=4103, REQUEST_NAI_SETTINGS=4104;
     private static final String PREFS="wayward_launcher";
-    private static final String KEY_TREE="game_tree_uri", KEY_PROFILES="game_profiles", KEY_ZIP_REV="zip_mod_revision", KEY_COMFY_URL="comfy_server_url";
+    private static final String KEY_TREE="game_tree_uri", KEY_PROFILES="game_profiles", KEY_ZIP_REV="zip_mod_revision", KEY_COMFY_URL="comfy_server_url", KEY_IMAGE_MODE="image_server_mode";
+    private static final String IMAGE_MODE_PACKS_ONLY="image-packs-only", IMAGE_MODE_GENERATION="image-generation", IMAGE_MODE_REMOTE_PC="remote-pc";
     private static final String KO="Wayward_WML_ko.html", EN="Wayward_WML.html";
     private static final Pattern ID=Pattern.compile("^[a-z0-9][a-z0-9._-]*$");
     private static final Set<String> RUNNING_SESSIONS=Collections.synchronizedSet(new HashSet<>());
@@ -90,8 +91,18 @@ public final class MainActivity extends Activity {
     private long loadedZipRevision=-1;
     private FrameLayout root;
     private LinearLayout home, profileList, zipModList;
-    private TextView status, folderText, profileSummary, zipSummary, imageGenStatus;
+    private TextView status, folderText, profileSummary, zipSummary, imageGenStatus, imageModeStatus;
+    private LinearLayout imageModePanel;
     private EditText comfyUrlInput;
+    private boolean imageModeTransitionInProgress=false;
+    private boolean startImageServerAfterNaiSettings=false;
+    private final ImageServerModeCoordinator imageServerModeCoordinator=new ImageServerModeCoordinator();
+    public interface RemotePcServerControl {
+        void stop(ImageServerModeCoordinator.Callback callback);
+        void start(ImageServerModeCoordinator.Callback callback);
+    }
+    private static volatile RemotePcServerControl remotePcServerControl;
+    public static void registerRemotePcServerControl(RemotePcServerControl control){ remotePcServerControl=control; }
     private String imageGenSessionMessage = "";
     private boolean imageStudioSessionDetected = false;
     private boolean pendingOpenImageStudioSettings = false;
@@ -120,7 +131,7 @@ public final class MainActivity extends Activity {
         long revision=getSharedPreferences(PREFS,MODE_PRIVATE).getLong(KEY_ZIP_REV,0);
         if(web!=null&&revision!=loadedZipRevision){loadedZipRevision=revision;web.reload();}
         if(web!=null&&tree!=null)registerSessionActivity();
-        if(home!=null&&home.getVisibility()==View.VISIBLE){renderProfiles();refreshStatus();}
+        if(home!=null&&home.getVisibility()==View.VISIBLE){renderProfiles();refreshStatus();refreshImageGenStatus();renderImageModePanel();}
     }
     @Override protected void onNewIntent(Intent intent){
         super.onNewIntent(intent);setIntent(intent);
@@ -226,8 +237,261 @@ public final class MainActivity extends Activity {
         gameHeaderParams.bottomMargin=dp(8);page.addView(gameHeader,gameHeaderParams);
         profileList=new LinearLayout(this);profileList.setOrientation(LinearLayout.VERTICAL);page.addView(profileList);
 
+        LinearLayout imageCard=uiCard();
+        LinearLayout.LayoutParams imageCardParams=new LinearLayout.LayoutParams(-1,-2);
+        imageCardParams.topMargin=dp(14);
+        page.addView(imageCard,imageCardParams);
+        LinearLayout imageHeader=new LinearLayout(this);
+        imageHeader.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        TextView imageTitle=uiText("IMAGE ROUTING",10,Color.rgb(104,119,135),true);
+        imageTitle.setLetterSpacing(0.08f);
+        imageHeader.addView(imageTitle,new LinearLayout.LayoutParams(0,-2,1f));
+        imageHeader.addView(uiText("서버 선택",10,Color.rgb(126,135,145),false));
+        imageCard.addView(imageHeader);
+        imageModeStatus=uiText("이미지 출력 모드 확인 중",11,Color.rgb(102,112,123),false);
+        LinearLayout.LayoutParams imageStatusParams=new LinearLayout.LayoutParams(-1,-2);
+        imageStatusParams.topMargin=dp(7);
+        imageStatusParams.bottomMargin=dp(10);
+        imageCard.addView(imageModeStatus,imageStatusParams);
+        imageModePanel=new LinearLayout(this);
+        imageModePanel.setOrientation(LinearLayout.VERTICAL);
+        imageCard.addView(imageModePanel,new LinearLayout.LayoutParams(-1,-2));
+
         home=page;root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));setContentView(root);applySystemBarInsets(root);
-        renderProfiles();refreshStatus();
+        renderProfiles();refreshStatus();renderImageModePanel();refreshImageGenStatus();
+    }
+
+
+    private String currentImageMode(){
+        return getSharedPreferences(PREFS,MODE_PRIVATE).getString(KEY_IMAGE_MODE,IMAGE_MODE_PACKS_ONLY);
+    }
+
+    private boolean localImageServerActive(){
+        ImageGenStatusStore.State state=ImageGenStatusStore.read(getFilesDir());
+        return state.isReady()||state.isAvailable()||state.isStarting();
+    }
+
+    private View glassModeTile(String title,String subtitle,boolean selected,boolean prominent,Runnable action){
+        LinearLayout tile=new LinearLayout(this);
+        tile.setOrientation(LinearLayout.VERTICAL);
+        tile.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        tile.setPadding(dp(13),dp(11),dp(13),dp(11));
+        int[] colors=selected
+                ? new int[]{Color.argb(248,220,239,248),Color.argb(236,185,220,237),Color.argb(230,228,242,249)}
+                : new int[]{Color.argb(246,255,255,255),Color.argb(220,239,246,251),Color.argb(214,222,233,243)};
+        android.graphics.drawable.GradientDrawable glass=new android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,colors);
+        glass.setCornerRadius(dp(17));
+        glass.setStroke(dp(selected?2:1),selected?Color.argb(220,88,146,177):Color.argb(150,255,255,255));
+        android.graphics.drawable.Drawable ripple=new android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Color.argb(60,85,145,180)),glass,null);
+        tile.setBackground(ripple);
+        tile.setElevation(dp(selected?2:prominent?9:6));
+        tile.setTranslationY(selected?dp(3):0);
+        tile.setClipToOutline(true);
+        tile.setClickable(true);
+        tile.setFocusable(true);
+        TextView state=uiText(selected?"● 선택됨":(prominent?"○ 대기":"설정 열기"),9,
+                selected?Color.rgb(43,111,145):Color.rgb(119,132,145),true);
+        state.setLetterSpacing(0.05f);
+        TextView heading=uiText(title,14,Color.rgb(34,51,66),true);
+        heading.setMaxLines(2);
+        TextView detail=uiText(subtitle,10,Color.rgb(91,110,127),false);
+        detail.setMaxLines(2);
+        LinearLayout.LayoutParams headParams=new LinearLayout.LayoutParams(-1,-2);
+        headParams.topMargin=dp(5);
+        tile.addView(state);
+        tile.addView(heading,headParams);
+        LinearLayout.LayoutParams detailParams=new LinearLayout.LayoutParams(-1,-2);
+        detailParams.topMargin=dp(4);
+        tile.addView(detail,detailParams);
+        tile.setOnTouchListener((view,event)->{
+            int actionCode=event.getActionMasked();
+            if(actionCode==android.view.MotionEvent.ACTION_DOWN){
+                if(!selected)view.animate().translationY(dp(2)).setDuration(70).start();
+            }else if(actionCode==android.view.MotionEvent.ACTION_UP||actionCode==android.view.MotionEvent.ACTION_CANCEL){
+                view.animate().translationY(selected?dp(3):0).setDuration(110).start();
+            }
+            return false;
+        });
+        tile.setOnClickListener(view->action.run());
+        return tile;
+    }
+
+    private void renderImageModePanel(){
+        if(imageModePanel==null)return;
+        imageModePanel.removeAllViews();
+        String mode=currentImageMode();
+        ImageGenStatusStore.State state=ImageGenStatusStore.read(getFilesDir());
+        boolean active=state.isReady()||state.isAvailable()||state.isStarting();
+        boolean generationSelected=IMAGE_MODE_GENERATION.equals(mode)&&active;
+        boolean packsSelected=IMAGE_MODE_PACKS_ONLY.equals(mode);
+        String token="";
+        try{ token=ImageProviderStore.readNovelAiToken(this); }catch(Exception ignored){}
+        boolean tokenReady=token!=null&&!token.isEmpty();
+        if(imageModeStatus!=null){
+            String message;
+            if(imageModeTransitionInProgress) message="서버 전환 중 · 기존 서버를 종료하고 새 모드를 적용합니다.";
+            else if(imageGenSessionMessage!=null&&imageGenSessionMessage.startsWith("이미지 서버 전환 실패:")) message=imageGenSessionMessage;
+            else if(IMAGE_MODE_REMOTE_PC.equals(mode)) message="집 PC 원격 서버 모드 · 원격 연결 기능은 후속 작업에서 연결됩니다.";
+            else if(generationSelected&&state.isReady()) message="이미지 생성 서버 실행 중 · 이미지 생성 요청은 런처 서버로 전달됩니다.";
+            else if(generationSelected) message="이미지 생성 서버 준비 중 · 생성 경로를 연결하고 있습니다.";
+            else if(IMAGE_MODE_GENERATION.equals(mode)&&!active) message="이미지 생성 서버가 중지되었습니다. 다시 실행하거나 이미지팩 모드로 전환하세요.";
+            else message="이미지팩 전용 · 외부 생성 서버를 호출하지 않고 선택한 게임 폴더의 로컬 이미지만 탐색합니다.";
+            imageModeStatus.setText(message);
+        }
+        LinearLayout row=new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams rowParams=new LinearLayout.LayoutParams(-1,-2);
+        imageModePanel.addView(row,rowParams);
+        View server=glassModeTile(generationSelected?"이미지 생성 서버 실행 중":"이미지 생성 서버 실행",
+                generationSelected?"NovelAI 연결 · 다시 터치하면 종료":(tokenReady?"토큰 등록됨 · 터치해 서버 실행":"먼저 NAI 토큰 등록 필요"),
+                generationSelected,true,()->{
+                    if(IMAGE_MODE_GENERATION.equals(currentImageMode())&&localImageServerActive()) switchToImagePacksOnly();
+                    else switchToImageGenerationMode();
+                });
+        row.addView(server,new LinearLayout.LayoutParams(0,dp(112),1f));
+        View nai=glassModeTile("NAI 설정",
+                tokenReady?"개인 토큰 등록됨 · 연결 검증":"Persistent API Token 등록",
+                false,false,this::openNovelAiSettings);
+        LinearLayout.LayoutParams naiParams=new LinearLayout.LayoutParams(0,dp(112),0.78f);
+        naiParams.leftMargin=dp(8);
+        row.addView(nai,naiParams);
+        LinearLayout.LayoutParams packsParams=new LinearLayout.LayoutParams(-1,dp(76));
+        packsParams.topMargin=dp(8);
+        View packs=glassModeTile(packsSelected?"이미지팩만 사용 · 활성":"이미지팩만 사용",
+                "모든 서버 종료 · 로컬 이미지팩만 탐색 · 외부 생성 주소 차단",
+                packsSelected,false,this::switchToImagePacksOnly);
+        imageModePanel.addView(packs,packsParams);
+    }
+
+    private void openNovelAiSettings(){
+        startActivityForResult(new Intent(this,NovelAiSettingsActivity.class),REQUEST_NAI_SETTINGS);
+    }
+
+    private void switchToImageGenerationMode(){
+        String token="";
+        try{ token=ImageProviderStore.readNovelAiToken(this); }
+        catch(Exception error){
+            imageGenSessionMessage="NAI 토큰 저장소를 읽지 못했습니다: "+msg(error);
+            renderImageModePanel();
+            return;
+        }
+        if(token==null||token.isEmpty()){
+            startImageServerAfterNaiSettings=true;
+            openNovelAiSettings();
+            return;
+        }
+        switchImageServerMode(ImageServerModeCoordinator.Mode.LOCAL_IMAGE_GENERATION);
+    }
+
+    private void switchToImagePacksOnly(){
+        switchImageServerMode(ImageServerModeCoordinator.Mode.IMAGE_PACKS_ONLY);
+    }
+
+    /** Future home-PC pairing must call this same transition path before starting its service. */
+    public void switchToRemotePcServer(){
+        switchImageServerMode(ImageServerModeCoordinator.Mode.REMOTE_PC);
+    }
+
+    private void switchImageServerMode(ImageServerModeCoordinator.Mode target){
+        if(imageModeTransitionInProgress)return;
+        imageModeTransitionInProgress=true;
+        renderImageModePanel();
+        imageServerModeCoordinator.switchTo(target,new ImageServerModeCoordinator.Operations(){
+            @Override public void stopRemote(ImageServerModeCoordinator.Callback callback){
+                RemotePcServerControl control=remotePcServerControl;
+                if(control==null){callback.onSuccess();return;}
+                try{control.stop(callback);}catch(Throwable error){callback.onFailure(msg(error));}
+            }
+            @Override public void stopLocal(ImageServerModeCoordinator.Callback callback){
+                stopImageGenServerThen(callback);
+            }
+            @Override public void startLocal(ImageServerModeCoordinator.Callback callback){
+                startLocalImageGenForMode(callback);
+            }
+            @Override public void startRemote(ImageServerModeCoordinator.Callback callback){
+                RemotePcServerControl control=remotePcServerControl;
+                if(control==null){callback.onFailure("집 PC 원격 서버 기능은 후속 작업에서 연결됩니다.");return;}
+                try{control.start(callback);}catch(Throwable error){callback.onFailure(msg(error));}
+            }
+            @Override public void persistMode(ImageServerModeCoordinator.Mode mode){
+                String value=mode==ImageServerModeCoordinator.Mode.LOCAL_IMAGE_GENERATION?IMAGE_MODE_GENERATION
+                        :mode==ImageServerModeCoordinator.Mode.REMOTE_PC?IMAGE_MODE_REMOTE_PC:IMAGE_MODE_PACKS_ONLY;
+                getSharedPreferences(PREFS,MODE_PRIVATE).edit().putString(KEY_IMAGE_MODE,value).apply();
+            }
+            @Override public void onFinished(ImageServerModeCoordinator.Mode mode,String error){
+                runOnUiThread(()->{
+                    imageModeTransitionInProgress=false;
+                    if(error!=null&&!error.isEmpty()){
+                        imageGenSessionMessage="이미지 서버 전환 실패: "+error;
+                        Toast.makeText(MainActivity.this,imageGenSessionMessage,Toast.LENGTH_LONG).show();
+                    }else if(mode==ImageServerModeCoordinator.Mode.IMAGE_PACKS_ONLY){
+                        imageGenSessionMessage="이미지팩 전용 모드 · 모든 등록 서버의 중지 요청을 완료했습니다.";
+                    }else if(mode==ImageServerModeCoordinator.Mode.LOCAL_IMAGE_GENERATION){
+                        imageGenSessionMessage="NovelAI 이미지 생성 서버가 준비되었습니다.";
+                    }else if(mode==ImageServerModeCoordinator.Mode.REMOTE_PC){
+                        imageGenSessionMessage="집 PC 서버 모드로 전환했습니다.";
+                    }
+                    refreshImageGenStatus();
+                    renderImageModePanel();
+                });
+            }
+        });
+    }
+
+    private void stopImageGenServerThen(ImageServerModeCoordinator.Callback callback){
+        ImageGenStatusStore.State state=ImageGenStatusStore.read(getFilesDir());
+        if(!state.isReady()&&!state.isAvailable()&&!state.isStarting()&&!manualImageGenPreparing&&!imageGenCopying){
+            callback.onSuccess();
+            return;
+        }
+        stopImageGenServer();
+        waitForImageGenStopped(callback,0);
+    }
+
+    private void waitForImageGenStopped(ImageServerModeCoordinator.Callback callback,int attempt){
+        ImageGenStatusStore.State state=ImageGenStatusStore.read(getFilesDir());
+        boolean active=state.isReady()||state.isAvailable()||state.isStarting()||manualImageGenPreparing||imageGenCopying;
+        if(!active){callback.onSuccess();return;}
+        if(attempt>=60){
+            callback.onFailure("휴대폰 이미지 생성 서버가 제한 시간 안에 종료되지 않았습니다. 서버 상태를 확인해 주세요.");
+            return;
+        }
+        imageGenHandler.postDelayed(()->waitForImageGenStopped(callback,attempt+1),250);
+    }
+
+    private void startLocalImageGenForMode(ImageServerModeCoordinator.Callback callback){
+        try{
+            String token=ImageProviderStore.readNovelAiToken(this);
+            if(token==null||token.isEmpty()){
+                callback.onFailure("NovelAI 토큰을 먼저 등록해야 합니다.");
+                return;
+            }
+        }catch(Exception error){
+            callback.onFailure("NovelAI 보안 저장소를 읽지 못했습니다: "+msg(error));
+            return;
+        }
+        startManagedImageGenServer("novelai","");
+        waitForImageGenReadyForMode(callback,0);
+    }
+
+    private void waitForImageGenReadyForMode(ImageServerModeCoordinator.Callback callback,int attempt){
+        ImageGenStatusStore.State state=ImageGenStatusStore.read(getFilesDir());
+        if(state.isReady()){callback.onSuccess();return;}
+        if(attempt>=360){
+            stopImageGenServerThen(new ImageServerModeCoordinator.Callback(){
+                @Override public void onSuccess(){callback.onFailure("NovelAI 이미지 생성 서버가 180초 안에 준비되지 않았습니다.");}
+                @Override public void onFailure(String error){callback.onFailure("서버 시작 시간 초과 및 중지 실패: "+error);}
+            });
+            return;
+        }
+        if(!manualImageGenPreparing&&!imageGenCopying&&!state.isStarting()&&!state.isAvailable()){
+            String detail=state.message==null||state.message.isEmpty()?imageGenSessionMessage:state.message;
+            callback.onFailure(detail==null||detail.isEmpty()?"이미지 생성 서버 시작에 실패했습니다.":detail);
+            return;
+        }
+        imageGenHandler.postDelayed(()->waitForImageGenReadyForMode(callback,attempt+1),500);
     }
 
     private void showLauncherInfoDialog(){
@@ -254,6 +518,23 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int req,int result,Intent data){
         super.onActivityResult(req,result,data);
+        if(req==REQUEST_NAI_SETTINGS){
+            boolean requestedStart=startImageServerAfterNaiSettings;
+            startImageServerAfterNaiSettings=false;
+            if(result==RESULT_OK){
+                String token="";
+                try{ token=ImageProviderStore.readNovelAiToken(this); }catch(Exception error){
+                    imageGenSessionMessage="NovelAI 보안 저장소를 읽지 못했습니다: "+msg(error);
+                }
+                if(token.isEmpty()) switchToImagePacksOnly();
+                else if(requestedStart||IMAGE_MODE_GENERATION.equals(currentImageMode())) switchToImageGenerationMode();
+                else renderImageModePanel();
+            }else if(requestedStart){
+                imageGenSessionMessage="NovelAI 설정이 완료되지 않아 이미지팩 전용 모드를 유지합니다.";
+                renderImageModePanel();
+            }
+            return;
+        }
         if(req==REQUEST_GOOGLE_AUTH){
             String nonce=pendingGoogleAuthNonce;pendingGoogleAuthNonce="";
             if(nonce.isEmpty())return;
@@ -554,6 +835,7 @@ public final class MainActivity extends Activity {
         int originPort=sessionPort(activeProfileId);
         web=new WebView(this);WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setDatabaseEnabled(true);s.setUseWideViewPort(true);s.setLoadWithOverviewMode(true);s.setTextZoom(100);s.setSupportZoom(true);s.setBuiltInZoomControls(false);s.setDisplayZoomControls(false);s.setAllowFileAccess(false);s.setAllowContentAccess(false);s.setCacheMode(WebSettings.LOAD_DEFAULT);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);web.addJavascriptInterface(new HostBridge(),"WMLHost");
         installGoogleAuthBridgeScript(origin);
+        installImageGenDocumentStartScript(origin);
         FolderHandler folderHandler=new FolderHandler(tree,getAssets(),zipMods,origin);
         WebViewAssetLoader loader=new WebViewAssetLoader.Builder().setDomain(domain+":"+originPort).addPathHandler("/game/",folderHandler).build();
         final java.util.concurrent.atomic.AtomicInteger imageDiagnostics=new java.util.concurrent.atomic.AtomicInteger();
@@ -660,14 +942,13 @@ public final class MainActivity extends Activity {
                     }
                     if(path != null && path.startsWith("/images/__wayward_generated__/"))
                         return serveGeneratedImageRequest(path, imageDiagnostics);
-                    if(FolderHandler.isImageRequestPath(path))return serveImageRequest(folderHandler,path,imageDiagnostics);
+                    if(FolderHandler.isImageRequestPath(path))return serveImageRequestByMode(folderHandler,path,imageDiagnostics);
                 }
-                if("art.sintention.com".equalsIgnoreCase(u.getHost())){
-                    String path=u.getPath();
-                    // Generated WML character images are local-only; never fall back to the CDN.
-                    if(FolderHandler.isLocalOnlyCharacterImagePath(path))return serveImageRequest(folderHandler,path,imageDiagnostics);
-                    // Preserve the existing CDN fallback for all other image resources.
-                    if(FolderHandler.isImageRequestPath(path))return folderHandler.serveExternalImagePath(path.substring(8));
+                String requestedPath=u.getPath();
+                if(FolderHandler.isImageRequestPath(requestedPath)){
+                    // Every image URL is local-pack-only while OFF and generated-cache-only while ON.
+                    // No host (including the original art CDN) is allowed to become a fallback.
+                    return serveImageRequestByMode(folderHandler,requestedPath,imageDiagnostics);
                 }
                 return null;
             }
@@ -766,6 +1047,19 @@ public final class MainActivity extends Activity {
                 ||lower.endsWith(".svg");
     }
 
+    private boolean imageGenerationRoutingActive(){
+        ImageGenStatusStore.State state=ImageGenStatusStore.read(getFilesDir());
+        return state.isReady()||state.isAvailable()||state.isStarting();
+    }
+
+    private WebResourceResponse serveImageRequestByMode(FolderHandler handler,String path,
+            java.util.concurrent.atomic.AtomicInteger samples){
+        if(imageGenerationRoutingActive()){
+            return serveGeneratedImageRequest("/images/__wayward_generated__/"+path.substring(8),samples);
+        }
+        return serveImageRequest(handler,path,samples);
+    }
+
     private WebResourceResponse serveImageRequest(FolderHandler handler,String path,
                                                        java.util.concurrent.atomic.AtomicInteger samples){
         long started=System.nanoTime();
@@ -860,7 +1154,7 @@ public final class MainActivity extends Activity {
             return;
         }
         try {
-            for (String assetName : new String[] {"imagegen-proxy.js", "image-provider-bridge.js", "imagegen-studio-bridge.js"}) {
+            for (String assetName : new String[] {"imagegen-proxy.js", "imagegen-studio-bridge.js"}) {
                 try (InputStream in = getAssets().open(assetName)) {
                     ByteArrayOutputStream out = new ByteArrayOutputStream();
                     byte[] buffer = new byte[8192];
@@ -1507,7 +1801,7 @@ public final class MainActivity extends Activity {
         file.delete();
     }
 
-    private void showHomePanel(){runOnUiThread(()->{if(web!=null)web.setVisibility(View.GONE);if(home!=null)home.setVisibility(View.VISIBLE);refreshStatus();});}
+    private void showHomePanel(){runOnUiThread(()->{if(web!=null)web.setVisibility(View.GONE);if(home!=null)home.setVisibility(View.VISIBLE);refreshStatus();refreshImageGenStatus();renderImageModePanel();});}
     private void destroyWeb(){if(webFileChooser!=null){webFileChooser.cancelPending();webFileChooser=null;}if(web==null)return;web.removeJavascriptInterface("WMLHost");root.removeView(web);web.stopLoading();web.loadUrl("about:blank");web.destroy();web=null;}
     @Override public void onBackPressed(){if(web!=null&&web.getVisibility()==View.VISIBLE){if(web.canGoBack())web.goBack();else showHomePanel();return;}super.onBackPressed();}
     @Override protected void onDestroy(){
@@ -1544,6 +1838,26 @@ public final class MainActivity extends Activity {
                     DiagnosticsLogger.error(MainActivity.this,"oauth","google_access_token_cache_clear_failed",error);
                 }
             });
+        }
+        @JavascriptInterface public void imageGenProxyFetch(String requestId,String method,String path,String headersJson,String bodyBase64){
+            ImageGenProxy.dispatch(web,requestId,method,path,headersJson,bodyBase64);
+        }
+        @JavascriptInterface public String imageGenRuntimeStatus(){
+            ImageGenStatusStore.State state=ImageGenStatusStore.read(getFilesDir());
+            try{
+                JSONObject value=new JSONObject();
+                value.put("available",state.isAvailable());
+                value.put("starting",state.isStarting());
+                value.put("ready",state.isReady());
+                value.put("backendVersion",state.backendVersion);
+                String[] parts=state.backendVersion.split(":");
+                value.put("engine",parts.length>=3?parts[2]:"unknown");
+                value.put("message",state.message);
+                return value.toString();
+            }catch(Exception ignored){return "{\"available\":false,\"starting\":false,\"ready\":false,\"backendVersion\":\"\",\"engine\":\"unknown\"}";}
+        }
+        @JavascriptInterface public void logImageProviderDiagnostic(String event,String detailsJson){
+            ImagePipelineDiagnostics.recordJson(MainActivity.this,event,detailsJson);
         }
         @JavascriptInterface public String takePendingState(){return "";}
         @JavascriptInterface public String saveFile(String name,String mime,String encoded){try{saveExport(name,mime,encoded);return null;}catch(Exception e){return msg(e);}}

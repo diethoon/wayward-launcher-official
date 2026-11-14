@@ -15,18 +15,22 @@ const home = main.slice(homeStart, homeEnd);
 assert.match(home, /＋ 폴더/, 'home must expose folder registration');
 assert.match(home, /내 게임/, 'home must expose the registered game list');
 assert.match(home, /여러 게임을 독립 세션으로 실행/, 'home must describe independent sessions');
-assert.doesNotMatch(home, /ZIP|ImageGen|이미지 생성|이미지 서비스/, 'home must not expose unfinished features');
+assert.match(home, /이미지 생성 서버 실행/, 'home must expose the explicit local image-generation server switch');
+assert.match(home, /NAI 설정/, "home must expose the user NovelAI token settings");
+assert.match(home, /이미지팩만 사용/, 'home must expose the all-servers-off image-pack switch');
 assert.match(home, /applySystemBarInsets\(root\)/, 'home and game root must apply safe system-bar insets');
 assert.match(main, /private void applySystemBarInsets\(View target\)/, 'system-bar inset handler must exist');
 assert.match(main, /Build\.VERSION\.SDK_INT < 35/, 'inset padding must be limited to Android 15+ edge-to-edge devices');
 assert.match(main, /WindowInsets\.Type\.systemBars\(\)\s*\|\s*WindowInsets\.Type\.displayCutout\(\)/, 'status/navigation bars and display cutout must be protected');
 
-assert.doesNotMatch(main, /installImageGenDocumentStartScript\(origin\);/, 'ImageGen document-start injection must be disabled');
-assert.doesNotMatch(main, /@JavascriptInterface public void imageGenProxyFetch/, 'ImageGen proxy bridge must not be exposed');
+assert.match(main, /installImageGenDocumentStartScript\(origin\);/, 'the managed ImageGen bridge must be installed before the game scripts');
+assert.match(main, /@JavascriptInterface public void imageGenProxyFetch/, 'ImageGen requests must pass through the native loopback proxy');
 assert.doesNotMatch(main, /@JavascriptInterface public String listImageProviders/, 'image provider bridge must not be exposed');
 assert.doesNotMatch(application, /DiagnosticsUploader\.uploadPending/, 'automatic remote diagnostics upload must be disabled');
 
-assert.doesNotMatch(manifest, /ImageGenService|ImageGenPanelActivity|ImageProviderActivity|ImageDiagnosticsActivity/, 'unfinished ImageGen components must not be registered');
+assert.match(manifest, /ImageGenService/, 'the user-started image-generation service must be registered');
+assert.match(manifest, /NovelAiSettingsActivity/, 'the NAI credential screen must be registered');
+assert.doesNotMatch(manifest, /ImageProviderActivity/, 'the legacy generic Cloudflare provider editor must stay out of the official UI');
 assert.match(main, /startGoogleDriveAuth\(String nonce\)/, 'native Drive authorization bridge must exist');
 assert.match(main, /takePendingStateForNonce\(String nonce\)/, 'nonce-scoped one-time result handoff must exist');
 assert.match(main, /clearGoogleAccessToken\(String token\)/, 'invalid native Drive tokens must be clearable');
@@ -44,7 +48,7 @@ assert.doesNotMatch(main.slice(sessionStart, sessionEnd), /ensureImageGenServer\
 const webStart = main.indexOf('private void createWeb(){');
 const webEnd = main.indexOf('private void beginGoogleDriveAuth(', webStart);
 assert(webStart >= 0 && webEnd > webStart, 'WebView construction method must exist');
-assert.doesNotMatch(main.slice(webStart, webEnd), /installImageGenDocumentStartScript\(/,
-  'official game sessions must not install ImageGen document-start scripts');
+assert.match(main.slice(webStart, webEnd), /installImageGenDocumentStartScript\(origin\)/,
+  'the Image Studio adapter must be installed on the game origin');
 
 console.log('Official v1 scope checks passed');
