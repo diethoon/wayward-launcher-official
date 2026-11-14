@@ -1,4 +1,4 @@
-# Wayward Launcher — Official 1.0.0
+# Wayward Launcher — Official 1.0.1
 
 공식 배포 전용 저장소입니다. 개발용 diethoon/wayward 저장소와 독립적으로 유지합니다.
 
@@ -10,7 +10,20 @@
 - 게임 세션 종료 후 런처로 복귀
 - Android 네이티브 Google Identity Services를 통한 Drive App Data 권한 요청
 
-ZIP 모드 관리, ImageGen/ComfyUI/NovelAI/FLUX, 원격 진단 업로드는 최초 UI 및 실행 경로에서 제외했습니다. 관련 개발 소스가 남아 있더라도 공식 1.0.0에서 활성화하거나 지원한다고 간주하지 않습니다.
+이미지 출력은 런처 홈의 명시적 모드 스위치로 제어합니다.
+- 기본 모드: 이미지팩만 사용. 모든 등록된 원격/로컬 이미지 서버를 중지하고, 선택한 게임 폴더의 로컬 이미지팩만 사용합니다.
+- 이미지 생성 서버 실행: 사용자가 직접 눌렀을 때만 런처 내장 ImageGen 서버를 실행합니다. 실행 중에는 인게임 `/images/*` 요청이 생성 이미지 캐시로만 가며, 이미지팩 및 원본 CDN fallback을 사용하지 않습니다.
+- NAI 설정: 사용자가 본인 NovelAI Persistent API Token을 입력합니다. `image.novelai.net/user/subscription` 조회로 토큰을 확인하며, 이미지 생성 요청은 보내지 않습니다. 검증된 토큰은 Android Keystore 기반 AES-GCM 암호화 저장소에 보관합니다. 토큰이나 API 키는 APK에 포함되지 않습니다.
+- 게임 세션을 여는 것만으로 이미지 생성 서버가 자동 실행되지는 않습니다.
+- ComfyUI, Cloudflare Worker/FLUX 및 집 PC 원격 서버 실행 UI는 이번 버전에서 활성화하지 않습니다. 추후 원격 PC 제어기는 같은 서버 전환 관리자에 등록해 기존 로컬 서버를 먼저 종료하도록 연결할 수 있습니다.
+- 원격 진단 업로드는 자동 실행하지 않습니다.
+
+## 이미지 서버 모드와 NovelAI
+이미지 생성 서버는 사용자가 홈 화면의 **이미지 생성 서버 실행** 타일을 눌렀을 때만 시작합니다. 서버 타일을 다시 누르거나 **이미지팩만 사용**을 누르면 서버 중지로 전환됩니다. 모드 전환은 기존 원격 서버 중지 → 로컬 이미지 생성 서버 중지 → 선택한 새 서버 시작 순서로 직렬화합니다. 새 서버 시작이 실패하면 이미지팩 전용 모드로 복귀합니다.
+
+NovelAI Persistent API Token은 NovelAI 웹사이트의 Settings → Account → Get Persistent API Token에서 발급합니다. 런처의 NAI 설정 화면에서 토큰을 입력하면 구독 정보 조회로 인증을 확인한 뒤 이 기기의 Android Keystore 암호화 저장소에 기록합니다. 토큰 검증은 이미지 생성 API를 호출하지 않습니다. 토큰을 바꾸거나 삭제하면 런처의 다음 서버 전환에 반영됩니다.
+
+서버 OFF 상태에서는 기존 게임 설정에 Cloudflare Worker 등 외부 생성 주소가 남아 있어도 인게임 Image Studio 브리지가 외부 생성 주소를 probe하거나 호출하지 않습니다. 서버 ON 상태에서는 생성 API를 런처 내장 ImageGen으로만 연결하고 이미지팩/CDN fallback은 사용하지 않습니다.
 
 ## Google Drive CloudSave
 Android 런처 안에서는 기존 CloudSave 0.4.4의 Vercel 팝업 URL을 네이티브 Google Identity Services AuthorizationClient로 중계합니다. 요청 범위는 Drive App Data(drive.appdata)이며, 결과 토큰은 JS에 전달하기 위한 프로세스 메모리의 nonce별 일회성 결과로만 보관합니다. 게임 모드의 기존 암호화·저장/불러오기 로직은 수정하지 않습니다.
