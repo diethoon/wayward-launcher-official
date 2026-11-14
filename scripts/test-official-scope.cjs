@@ -21,11 +21,11 @@ assert.match(home, /여러 게임을 독립 세션으로 실행/, 'home must des
 assert.match(home, /이미지 생성 서버 실행/, 'home must expose the explicit local image-generation server switch');
 assert.match(main, /setContentDescription\("NovelAI 토큰 설정"\)/, 'the settings gear must be accessible');
 assert.match(main, /⚙/, 'the settings affordance must render as a gear icon');
-assert.match(main, /NeumorphicButtonStyle\.bind\(this,b,false,12f\)/,
+assert.match(main, /GlassButtonStyle\.bind\(this,b,false,12f\)/,
   'standard launcher buttons must use the common button style');
-assert.match(main, /NeumorphicButtonStyle\.bind\(this,b,false,10f\)/,
+assert.match(main, /GlassButtonStyle\.bind\(this,b,false,10f\)/,
   'compact launcher buttons must use the common button style');
-assert.match(naiSettings, /NeumorphicButtonStyle\.bind\(this, button, false, 12f\)/,
+assert.match(naiSettings, /GlassButtonStyle\.bind\(this, button, false, 12f\)/,
   'NovelAI settings actions must use the common button style');
 
 const glassTileStart = main.indexOf('private View glassModeTile(');
