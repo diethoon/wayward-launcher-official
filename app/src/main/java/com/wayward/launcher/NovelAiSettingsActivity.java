@@ -189,10 +189,8 @@ public final class NovelAiSettingsActivity extends Activity {
         button.setText(label);
         button.setAllCaps(false);
         button.setTextSize(13);
-        button.setTextColor(primary ? Color.WHITE : Color.rgb(48, 68, 83));
-        button.setBackground(shape(primary ? Color.rgb(53, 111, 145) : Color.rgb(246, 250, 252),
-                primary ? Color.TRANSPARENT : Color.rgb(191, 211, 225), 12));
-        button.setElevation(dp(primary ? 4 : 2));
+        button.setTextColor(Color.rgb(48, 66, 84));
+        NeumorphicButtonStyle.bind(this, button, false, 12f);
         return button;
     }
 
