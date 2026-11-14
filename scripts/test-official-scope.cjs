@@ -48,9 +48,9 @@ assert(glassTileStart >= 0 && glassTileEnd > glassTileStart, 'glass mode button 
 const glassTileUi = main.slice(glassTileStart, glassTileEnd);
 assert.match(glassTileUi, /GlassButtonStyle\\.bind\\(this,tile,selected,17f\\)/,
   'image mode buttons must use the neutral glass material');
-assert.match(glassTileUi, /Color\\.argb\\(/,
+assert.match(glassStyle, /Color\\.argb\\(/,
   'glass surfaces must use translucent alpha layers');
-assert.match(glassTileUi, /GradientDrawable\\.Orientation\\.TOP_BOTTOM/,
+assert.match(glassStyle, /GradientDrawable\\.Orientation\\.TOP_BOTTOM/,
   'glass surfaces must include a soft specular highlight');
 assert.doesNotMatch(glassStyle, /Color\\.(?:BLUE|CYAN)|#(?:00|33|66)A(?:FF|E6|CC)/i,
   'glass button material must not use a sky-blue gradient');
