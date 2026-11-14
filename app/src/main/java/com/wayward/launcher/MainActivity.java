@@ -1343,8 +1343,7 @@ public final class MainActivity extends Activity {
 
     private static boolean sameImageGenVersion(String running, String requested) {
         if(running==null||requested==null||running.isEmpty()||requested.isEmpty())return false;
-        // The engine mode and, for native providers, profile provider ID are
-        // part of the identity so sessions cannot silently share another profile's service.
+        // The engine mode is part of the identity so sessions cannot share an incompatible server.
         return running.equals(requested);
     }
 

@@ -173,7 +173,6 @@ public final class ImageGenService extends Service {
     }
 
     private void recordFailure(Throwable error) {
-        closeLocalProviderServer();
         DiagnosticsLogger.error(this,"imagegen_service","runtime_start_failed",error);
         serverReady = false;
         serverAvailable = false;
@@ -255,8 +254,6 @@ public final class ImageGenService extends Service {
             throw new IllegalArgumentException("지원하지 않는 이미지 서버 실행 모드입니다.");
         }
         String comfyUrl = "comfy".equals(launchMode) ? ComfyEndpoint.normalizeOptional(requestedComfyUrl) : "";
-        // The authenticated loopback provider adapter is started after the
-        // private config file exists, so its ephemeral key can be shared with Bun.
         File project = new File(backendRoot, "wayward-imagegen");
         if (!new File(project, "package.json").isFile() || !new File(project, "src/cli.ts").isFile()) {
             throw new IllegalStateException("런처 내장 wayward-imagegen/package.json 또는 src/cli.ts가 없습니다.");
@@ -656,7 +653,6 @@ public final class ImageGenService extends Service {
     }
 
     private void stopRuntime() {
-        closeLocalProviderServer();
         synchronized (processLock) {
             serverReady = false;
             serverAvailable = false;
