@@ -1,10 +1,10 @@
 package com.wayward.launcher;
 
 /** Serializes all image server switches: stop remote, stop local, then start one target. */
-final class ImageServerModeCoordinator {
-    enum Mode { IMAGE_PACKS_ONLY, LOCAL_IMAGE_GENERATION, REMOTE_PC }
+public final class ImageServerModeCoordinator {
+    public enum Mode { IMAGE_PACKS_ONLY, LOCAL_IMAGE_GENERATION, REMOTE_PC }
 
-    interface Callback {
+    public interface Callback {
         void onSuccess();
         void onFailure(String message);
     }
