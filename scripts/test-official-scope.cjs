@@ -16,7 +16,14 @@ assert.match(home, /＋ 폴더/, 'home must expose folder registration');
 assert.match(home, /내 게임/, 'home must expose the registered game list');
 assert.match(home, /여러 게임을 독립 세션으로 실행/, 'home must describe independent sessions');
 assert.match(home, /이미지 생성 서버 실행/, 'home must expose the explicit local image-generation server switch');
-assert.match(home, /NAI 설정/, "home must expose the user NovelAI token settings");
+assert.match(main, /glassSettingsButton\(this::openNovelAiSettings\)/, 'the image server row must expose a compact NovelAI settings gear');
+assert.match(main, /setContentDescription\("NovelAI 토큰 설정"\)/, 'the settings gear must be accessible');
+assert.match(main, /⚙/, 'the settings affordance must render as a gear icon');
+const imageModeUiStart = main.indexOf('private void renderImageModePanel()');
+const imageModeUiEnd = main.indexOf('private void openNovelAiSettings()', imageModeUiStart);
+assert(imageModeUiStart >= 0 && imageModeUiEnd > imageModeUiStart, 'image mode panel method must exist');
+assert.doesNotMatch(main.slice(imageModeUiStart, imageModeUiEnd), /glassModeTile\("NAI 설정"/,
+  'the separate NAI settings tile must be removed');
 assert.match(home, /이미지팩만 사용/, 'home must expose the all-servers-off image-pack switch');
 assert.match(home, /applySystemBarInsets\(root\)/, 'home and game root must apply safe system-bar insets');
 assert.match(main, /private void applySystemBarInsets\(View target\)/, 'system-bar inset handler must exist');
@@ -34,6 +41,13 @@ assert.doesNotMatch(manifest, /ImageProviderActivity/, 'the legacy generic Cloud
 assert.match(main, /startGoogleDriveAuth\(String nonce\)/, 'native Drive authorization bridge must exist');
 assert.match(main, /takePendingStateForNonce\(String nonce\)/, 'nonce-scoped one-time result handoff must exist');
 assert.match(main, /clearGoogleAccessToken\(String token\)/, 'invalid native Drive tokens must be clearable');
+assert.match(main, /startImageServerAfterNaiSettings=true;\s*openNovelAiSettings\(\);\s*return;/,
+  'starting generation without a token must open NAI settings and remember the requested start');
+const naiResultStart = main.indexOf('if(req==REQUEST_NAI_SETTINGS)');
+const naiResultEnd = main.indexOf('if(req==REQUEST_GOOGLE_AUTH)', naiResultStart);
+assert(naiResultStart >= 0 && naiResultEnd > naiResultStart, 'NAI settings result handler must exist');
+assert.match(main.slice(naiResultStart, naiResultEnd), /requestedStart\|\|IMAGE_MODE_GENERATION\.equals\(currentImageMode\(\)\)/,
+  'saving a token from a pending server-start flow must resume server startup');
 assert.match(gradle, /play-services-auth:21\.6\.0/, 'Google Identity Services dependency must be pinned');
 assert.match(gradle, /storeType\s+['"]JKS['"]/, 'CI must normalize the PKCS#12 upload key to a Java keystore before Gradle signing');
 assert.match(gradle, /keyPassword\s+System\.getenv\('ANDROID_KEYSTORE_PASSWORD'\)/, 'converted JKS key and store must use the P12 import password');
