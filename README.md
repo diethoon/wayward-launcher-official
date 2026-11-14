@@ -1,4 +1,4 @@
-# Wayward Launcher — Official 1.0.2
+# Wayward Launcher — Official 1.0.3
 
 공식 배포 전용 저장소입니다. 개발용 diethoon/wayward 저장소와 독립적으로 유지합니다.
 
@@ -32,6 +32,7 @@ Android 런처 안에서는 기존 CloudSave 0.4.4의 Vercel 팝업 URL을 네�
 일반 브라우저에서는 기존 Vercel OAuth 팝업 경로를 그대로 사용합니다. Android에서는 기존 Web OAuth 클라이언트와 별도로 같은 Google Cloud 프로젝트에 Android OAuth 클라이언트를 등록해야 합니다.
 
 - Debug: 패키지명 `com.wayward.launcher.official.debug`, SHA-1 `01:A6:82:34:B0:42:25:E9:86:39:99:4C:DC:91:66:D2:FF:6D:25:76`
+- ZIP 모드 파일 선택 결과가 Google 인증 결과 처리와 충돌하던 문제를 수정했습니다.
 - Release: 패키지명 `com.wayward.launcher.official`, SHA-1 `D9:BE:74:43:EB:24:7D:27:C9:58:CC:42:50:D7:F5:D1:E0:78:F7:40`
 
 두 패키지/서명 조합은 각각 별도 Android OAuth 클라이언트로 등록합니다. Android 클라이언트에는 JavaScript 원본이나 리디렉션 URI를 넣지 않습니다. 일반 브라우저용 기존 Web OAuth 클라이언트와 Vercel 콜백은 변경하지 않습니다.
