@@ -8,6 +8,7 @@ const manifest = fs.readFileSync('app/src/main/AndroidManifest.xml', 'utf8');
 const gradle = fs.readFileSync('app/build.gradle', 'utf8');
 const tactileStyle = fs.readFileSync('app/src/main/java/com/wayward/launcher/NeumorphicButtonStyle.java', 'utf8');
 const naiSettings = fs.readFileSync('app/src/main/java/com/wayward/launcher/NovelAiSettingsActivity.java', 'utf8');
+const webFileChooser = fs.readFileSync('app/src/main/java/com/wayward/launcher/WebFileChooser.java', 'utf8');
 
 const homeStart = main.indexOf('private void showHome(){');
 const homeEnd = main.indexOf('private void showLauncherInfoDialog()', homeStart);
@@ -92,3 +93,18 @@ assert.match(main.slice(webStart, webEnd), /installImageGenDocumentStartScript\(
   'the Image Studio adapter must be installed on the game origin');
 
 console.log('Official v1 scope checks passed');
+
+
+// Activity result request codes must be globally unique. A collision caused the
+// WebView ZIP/file picker result (4103) to be consumed by Google auth first.
+const mainRequestCodeNames = ['PICK_TREE', 'PICK_MOD_ZIP', 'REQUEST_GOOGLE_AUTH', 'REQUEST_NAI_SETTINGS'];
+const mainRequestCodes = mainRequestCodeNames.map((name) => {
+  const match = main.match(new RegExp(`\\b${name}\\s*=\\s*(\\d+)`));
+  assert(match, `MainActivity request code ${name} must exist`);
+  return Number(match[1]);
+});
+const chooserRequestMatch = webFileChooser.match(/static final int REQUEST_CODE\\s*=\\s*(\\d+)/);
+assert(chooserRequestMatch, 'WebView file chooser request code must exist');
+const allRequestCodes = [...mainRequestCodes, Number(chooserRequestMatch[1])];
+assert.equal(new Set(allRequestCodes).size, allRequestCodes.length,
+  'MainActivity and WebView file chooser ActivityResult request codes must be unique');
