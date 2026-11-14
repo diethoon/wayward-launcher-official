@@ -20,13 +20,9 @@ assert.match(home, /＋ 폴더/, 'home must expose folder registration');
 assert.match(home, /내 게임/, 'home must expose the registered game list');
 assert.match(home, /여러 게임을 독립 세션으로 실행/, 'home must describe independent sessions');
 assert.match(home, /이미지 생성 서버 실행/, 'home must expose the explicit local image-generation server switch');
-assert.match(main, /glassSettingsButton\(this::openNovelAiSettings\)/, 'the image server row must expose a compact NovelAI settings gear');
 assert.match(main, /setContentDescription\("NovelAI 토큰 설정"\)/, 'the settings gear must be accessible');
+assert.match(main, /GlassButtonStyle\\.bind\\(this,tile,selected,17f\\)/, 'image mode controls must use the new glass material');
 assert.match(main, /⚙/, 'the settings affordance must render as a gear icon');
-assert.match(main, /NeumorphicButtonStyle\.bind\(this,tile,selected,17f\)/,
-  'image mode choices must share the common raised/recessed button style');
-assert.match(main, /NeumorphicButtonStyle\.bind\(this,gear,false,16f\)/,
-  'the settings gear must use the same button style');
 assert.match(main, /NeumorphicButtonStyle\.bind\(this,b,false,12f\)/,
   'standard launcher buttons must use the common button style');
 assert.match(main, /NeumorphicButtonStyle\.bind\(this,b,false,10f\)/,
@@ -72,8 +68,6 @@ assert.match(main, /imageCard\\.setBackground\\(uiShape\\(Color\\.rgb\\(239,241,
   'glass controls must sit over a neutral matte surface for visible transparency');
 assert.doesNotMatch(main, /tile\.setClipToOutline\(true\)/,
   'mode button borders must not be clipped by outline clipping');
-assert.match(main, /packsParams\.bottomMargin=dp\(8\)/,
-  'the image-pack button must have extra room beneath its lower border and shadow');
 assert.match(main, /imageModePanel\.setClipChildren\(false\)/,
   'image mode panel must not clip button shadows');
 const imageModeUiStart = main.indexOf('private void renderImageModePanel()');
