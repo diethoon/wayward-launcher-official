@@ -190,14 +190,14 @@ public final class MainActivity extends Activity {
         Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setTextSize(13);
         b.setTextColor(Color.rgb(48,66,84));
         b.setPadding(dp(12),dp(5),dp(12),dp(5));b.setMinHeight(dp(42));
-        NeumorphicButtonStyle.bind(this,b,false,12f);
+        GlassButtonStyle.bind(this,b,false,12f);
         b.setOnClickListener(v->run.run());return b;
     }
     private Button compactButton(String label,boolean primary,Runnable action){
         Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setTextSize(12);
         b.setTextColor(Color.rgb(48,66,84));b.setPadding(dp(9),dp(3),dp(9),dp(3));
         b.setMinHeight(dp(36));
-        NeumorphicButtonStyle.bind(this,b,false,10f);
+        GlassButtonStyle.bind(this,b,false,10f);
         b.setOnClickListener(v->action.run());return b;
     }
     private void showHome(){
