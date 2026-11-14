@@ -63,8 +63,8 @@
       const localApi = (url.origin === LOCAL_ORIGIN || url.origin === "http://localhost:8189")
         && url.pathname.startsWith("/api/");
       const knownImageApi = /^\/api\/(batch|generation|image|queue)(?:\/|$)/i.test(url.pathname);
-      const directNovelAiGeneration = /(?:^|\\.)novelai\\.net$/i.test(url.hostname)
-        && /^\\/(?:ai\\/(?:generate-image(?:-stream)?|augment-image|upscale)|oa\\/v1\\/images\\/)/i.test(url.pathname);
+      const directNovelAiGeneration = /(?:^|\.)novelai\.net$/i.test(url.hostname)
+        && /^\/(?:ai\/(?:generate-image(?:-stream)?|augment-image|upscale)|oa\/v1\/images\/)/i.test(url.pathname);
 
       // Direct image fetches are routed through the same game-origin path as
       // <img> and CSS requests. OFF => local image pack; ON => generated cache.
