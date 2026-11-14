@@ -188,16 +188,16 @@ public final class MainActivity extends Activity {
     }
     private Button button(String label,boolean primary,Runnable run){
         Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setTextSize(13);
-        b.setTextColor(primary?Color.WHITE:Color.rgb(35,39,43));
+        b.setTextColor(Color.rgb(48,66,84));
         b.setPadding(dp(12),dp(5),dp(12),dp(5));b.setMinHeight(dp(42));
-        b.setBackground(uiShape(primary?Color.rgb(35,39,43):Color.WHITE,primary?0:Color.rgb(218,222,226),12));
+        NeumorphicButtonStyle.bind(this,b,false,12f);
         b.setOnClickListener(v->run.run());return b;
     }
     private Button compactButton(String label,boolean primary,Runnable action){
         Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setTextSize(12);
-        b.setTextColor(primary?Color.WHITE:Color.rgb(43,47,52));b.setPadding(dp(9),dp(3),dp(9),dp(3));
-        b.setMinHeight(dp(36));b.setBackground(uiShape(primary?Color.rgb(43,47,52):Color.rgb(246,247,248),
-                primary?0:Color.rgb(224,227,230),10));
+        b.setTextColor(Color.rgb(48,66,84));b.setPadding(dp(9),dp(3),dp(9),dp(3));
+        b.setMinHeight(dp(36));
+        NeumorphicButtonStyle.bind(this,b,false,10f);
         b.setOnClickListener(v->action.run());return b;
     }
     private void showHome(){
@@ -238,6 +238,8 @@ public final class MainActivity extends Activity {
         profileList=new LinearLayout(this);profileList.setOrientation(LinearLayout.VERTICAL);page.addView(profileList);
 
         LinearLayout imageCard=uiCard();
+        imageCard.setClipChildren(false);
+        imageCard.setClipToPadding(false);
         LinearLayout.LayoutParams imageCardParams=new LinearLayout.LayoutParams(-1,-2);
         imageCardParams.topMargin=dp(14);
         page.addView(imageCard,imageCardParams);
@@ -255,6 +257,8 @@ public final class MainActivity extends Activity {
         imageCard.addView(imageModeStatus,imageStatusParams);
         imageModePanel=new LinearLayout(this);
         imageModePanel.setOrientation(LinearLayout.VERTICAL);
+        imageModePanel.setClipChildren(false);
+        imageModePanel.setClipToPadding(false);
         imageCard.addView(imageModePanel,new LinearLayout.LayoutParams(-1,-2));
 
         home=page;root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));setContentView(root);applySystemBarInsets(root);
@@ -276,19 +280,7 @@ public final class MainActivity extends Activity {
         tile.setOrientation(LinearLayout.VERTICAL);
         tile.setGravity(android.view.Gravity.CENTER_VERTICAL);
         tile.setPadding(dp(13),dp(11),dp(13),dp(11));
-        int[] colors=selected
-                ? new int[]{Color.argb(248,220,239,248),Color.argb(236,185,220,237),Color.argb(230,228,242,249)}
-                : new int[]{Color.argb(246,255,255,255),Color.argb(220,239,246,251),Color.argb(214,222,233,243)};
-        android.graphics.drawable.GradientDrawable glass=new android.graphics.drawable.GradientDrawable(
-                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,colors);
-        glass.setCornerRadius(dp(17));
-        glass.setStroke(dp(selected?2:1),selected?Color.argb(220,88,146,177):Color.argb(150,255,255,255));
-        android.graphics.drawable.Drawable ripple=new android.graphics.drawable.RippleDrawable(
-                android.content.res.ColorStateList.valueOf(Color.argb(60,85,145,180)),glass,null);
-        tile.setBackground(ripple);
-        tile.setElevation(dp(selected?2:prominent?9:6));
-        tile.setTranslationY(selected?dp(3):0);
-        tile.setClipToOutline(true);
+        NeumorphicButtonStyle.bind(this,tile,selected,17f);
         tile.setClickable(true);
         tile.setFocusable(true);
         TextView state=uiText(selected?"● 선택됨":(prominent?"○ 대기":"설정 열기"),9,
@@ -305,15 +297,6 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams detailParams=new LinearLayout.LayoutParams(-1,-2);
         detailParams.topMargin=dp(4);
         tile.addView(detail,detailParams);
-        tile.setOnTouchListener((view,event)->{
-            int actionCode=event.getActionMasked();
-            if(actionCode==android.view.MotionEvent.ACTION_DOWN){
-                if(!selected)view.animate().translationY(dp(2)).setDuration(70).start();
-            }else if(actionCode==android.view.MotionEvent.ACTION_UP||actionCode==android.view.MotionEvent.ACTION_CANCEL){
-                view.animate().translationY(selected?dp(3):0).setDuration(110).start();
-            }
-            return false;
-        });
         tile.setOnClickListener(view->action.run());
         return tile;
     }
@@ -324,25 +307,9 @@ public final class MainActivity extends Activity {
         gear.setContentDescription("NovelAI 토큰 설정");
         gear.setMinimumWidth(dp(54));
         gear.setMinimumHeight(dp(54));
-        android.graphics.drawable.GradientDrawable glass=new android.graphics.drawable.GradientDrawable(
-                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-                new int[]{Color.argb(248,255,255,255),Color.argb(226,232,243,249)});
-        glass.setCornerRadius(dp(16));
-        glass.setStroke(dp(1),Color.argb(165,255,255,255));
-        gear.setBackground(new android.graphics.drawable.RippleDrawable(
-                android.content.res.ColorStateList.valueOf(Color.argb(65,85,145,180)),glass,null));
-        gear.setElevation(dp(6));
         gear.setClickable(true);
         gear.setFocusable(true);
-        gear.setOnTouchListener((view,event)->{
-            int actionCode=event.getActionMasked();
-            if(actionCode==android.view.MotionEvent.ACTION_DOWN){
-                view.animate().translationY(dp(2)).setDuration(70).start();
-            }else if(actionCode==android.view.MotionEvent.ACTION_UP||actionCode==android.view.MotionEvent.ACTION_CANCEL){
-                view.animate().translationY(0).setDuration(110).start();
-            }
-            return false;
-        });
+        NeumorphicButtonStyle.bind(this,gear,false,16f);
         gear.setOnClickListener(view->action.run());
         return gear;
     }
@@ -372,6 +339,8 @@ public final class MainActivity extends Activity {
         LinearLayout row=new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        row.setClipChildren(false);
+        row.setClipToPadding(false);
         LinearLayout.LayoutParams rowParams=new LinearLayout.LayoutParams(-1,-2);
         imageModePanel.addView(row,rowParams);
         View server=glassModeTile(generationSelected?"이미지 생성 서버 실행 중":"이미지 생성 서버 실행",
@@ -386,7 +355,8 @@ public final class MainActivity extends Activity {
         settingsParams.leftMargin=dp(8);
         row.addView(settings,settingsParams);
         LinearLayout.LayoutParams packsParams=new LinearLayout.LayoutParams(-1,dp(76));
-        packsParams.topMargin=dp(8);
+        packsParams.topMargin=dp(10);
+        packsParams.bottomMargin=dp(8);
         View packs=glassModeTile(packsSelected?"이미지팩만 사용 · 활성":"이미지팩만 사용",
                 "모든 서버 종료 · 로컬 이미지팩만 탐색 · 외부 생성 주소 차단",
                 packsSelected,false,this::switchToImagePacksOnly);
