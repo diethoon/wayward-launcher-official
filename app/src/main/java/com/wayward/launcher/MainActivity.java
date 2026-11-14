@@ -345,7 +345,7 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams rowParams=new LinearLayout.LayoutParams(-1,-2);
         imageModePanel.addView(row,rowParams);
         View server=glassModeTile(generationSelected?"이미지 생성 서버 실행 중":"이미지 생성 서버 실행",
-                tokenReady?"NovelAI 계정 토큰 사용 · 다시 터치하면 종료":"먼저 NAI 토큰 등록 필요",
+                generationSelected?"NovelAI 연결 · 다시 터치하면 종료":(tokenReady?"토큰 등록됨 · 터치해 서버 실행":"먼저 NAI 토큰 등록 필요"),
                 generationSelected,true,()->{
                     if(IMAGE_MODE_GENERATION.equals(currentImageMode())&&localImageServerActive()) switchToImagePacksOnly();
                     else switchToImageGenerationMode();

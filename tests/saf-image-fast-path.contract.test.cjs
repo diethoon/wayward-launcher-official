@@ -14,8 +14,10 @@ assert.match(main, /private Node resolveImageViaProvider\(/);
 assert.match(main, /details\.put\("resolverMode",resolverMode\)/);
 assert.match(resolver, /com\.android\.externalstorage\.documents/);
 assert.match(resolver, /normalizedRelativePath\.startsWith\("images\/"\)/);
-assert.match(main, /if\(FolderHandler\.isLocalOnlyCharacterImagePath\(path\)\)return serveImageRequest/);
-assert.match(main, /if\(FolderHandler\.isImageRequestPath\(path\)\)return folderHandler\.serveExternalImagePath/);
+assert.match(main, /if\(FolderHandler\.isImageRequestPath\(path\)\)return serveImageRequestByMode\(folderHandler,path,imageDiagnostics\)/);
+assert.match(main, /if\(FolderHandler\.isImageRequestPath\(requestedPath\)\)[\s\S]*?return serveImageRequestByMode\(folderHandler,requestedPath,imageDiagnostics\)/);
+assert.doesNotMatch(main, /serveExternalImagePath\(path\.substring\(8\)\)/,
+  "image requests must never fall back to the original CDN");
 
 const openImageStart = main.indexOf("InputStream openImage(String p)");
 const openImageEnd = main.indexOf("private void recordImageOpenTiming", openImageStart);
