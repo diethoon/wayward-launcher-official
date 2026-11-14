@@ -8,6 +8,7 @@ const manifest = fs.readFileSync('app/src/main/AndroidManifest.xml', 'utf8');
 const gradle = fs.readFileSync('app/build.gradle', 'utf8');
 const tactileStyle = fs.readFileSync('app/src/main/java/com/wayward/launcher/NeumorphicButtonStyle.java', 'utf8');
 const naiSettings = fs.readFileSync('app/src/main/java/com/wayward/launcher/NovelAiSettingsActivity.java', 'utf8');
+const glassStyle = fs.readFileSync('app/src/main/java/com/wayward/launcher/GlassButtonStyle.java', 'utf8');
 const webFileChooser = fs.readFileSync('app/src/main/java/com/wayward/launcher/WebFileChooser.java', 'utf8');
 
 const homeStart = main.indexOf('private void showHome(){');
@@ -40,6 +41,35 @@ assert.match(tactileStyle, /ACTION_DOWN/,
   'neumorphic controls must depress on touch down');
 assert.match(tactileStyle, /recessed/,
   'neumorphic style must represent persistent selected/recessed states');
+
+const glassTileStart = main.indexOf('private View glassModeTile(');
+const glassTileEnd = main.indexOf('private void openNovelAiSettings()', glassTileStart);
+assert(glassTileStart >= 0 && glassTileEnd > glassTileStart, 'glass mode button builder must exist');
+const glassTileUi = main.slice(glassTileStart, glassTileEnd);
+assert.match(glassTileUi, /GlassButtonStyle\\.bind\\(this,tile,selected,17f\\)/,
+  'image mode buttons must use the neutral glass material');
+assert.match(glassTileUi, /Color\\.argb\\(/,
+  'glass surfaces must use translucent alpha layers');
+assert.match(glassTileUi, /GradientDrawable\\.Orientation\\.TOP_BOTTOM/,
+  'glass surfaces must include a soft specular highlight');
+assert.doesNotMatch(glassStyle, /Color\\.(?:BLUE|CYAN)|#(?:00|33|66)A(?:FF|E6|CC)/i,
+  'glass button material must not use a sky-blue gradient');
+assert.match(glassTileUi, /settingsAction!=null/,
+  'the settings icon must be embedded inside the server glass button');
+assert.match(glassTileUi, /gear\\.setContentDescription\\("NovelAI 토큰 설정"\\)/,
+  'the embedded gear must remain accessible');
+assert.match(glassTileUi, /gear\\.setOnClickListener\\(view->settingsAction\\.run\\(\\)\\)/,
+  'the embedded gear must open token settings independently');
+assert.equal((glassTileUi.match(/new LinearLayout\\.LayoutParams\\(-1,dp\\(76\\)\\)/g) || []).length, 2,
+  'server and image-pack glass buttons must share the same 76dp height');
+assert.match(glassTileUi, /generationSelected,this::openNovelAiSettings/,
+  'only the server glass button must contain the token-settings gear');
+assert.match(glassTileUi, /packsSelected,null,this::switchToImagePacksOnly/,
+  'the image-pack button must not create a second gear or nested control');
+assert.doesNotMatch(glassTileUi, /glassSettingsButton|dp\\(112\\)/,
+  'the separate gear grid and oversized server button must be removed');
+assert.match(main, /imageCard\\.setBackground\\(uiShape\\(Color\\.rgb\\(239,241,243\\)/,
+  'glass controls must sit over a neutral matte surface for visible transparency');
 assert.doesNotMatch(main, /tile\.setClipToOutline\(true\)/,
   'mode button borders must not be clipped by outline clipping');
 assert.match(main, /packsParams\.bottomMargin=dp\(8\)/,
