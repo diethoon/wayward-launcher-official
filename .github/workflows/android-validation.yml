@@ -2,11 +2,12 @@ name: Official Android validation
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, 'work/**']
   push:
     branches:
       - main
       - 'work/**'
+      - 'fix/**'
   workflow_dispatch:
 
 permissions:
@@ -75,7 +76,9 @@ jobs:
       - name: Test Image Studio server/image-pack mode isolation
         run: node tests/imagegen-studio-mode.test.mjs
       - name: Test managed NovelAI provider lock
-        run: node tests/novelai-provider-lock.test.mjs
+        run: |
+          node tests/novelai-provider-lock.test.mjs
+          node tests/novelai-token-persistence.test.mjs
 
       - name: Test image server switch ordering
         run: |
