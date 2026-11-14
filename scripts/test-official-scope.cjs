@@ -92,8 +92,6 @@ assert(webStart >= 0 && webEnd > webStart, 'WebView construction method must exi
 assert.match(main.slice(webStart, webEnd), /installImageGenDocumentStartScript\(origin\)/,
   'the Image Studio adapter must be installed on the game origin');
 
-
-
 // Activity result request codes must be globally unique. A collision caused the
 // WebView ZIP/file picker result (4103) to be consumed by Google auth first.
 const mainRequestCodeNames = ['PICK_TREE', 'PICK_MOD_ZIP', 'REQUEST_GOOGLE_AUTH', 'REQUEST_NAI_SETTINGS'];
