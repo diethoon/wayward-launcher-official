@@ -945,15 +945,10 @@ public final class MainActivity extends Activity {
                     if(FolderHandler.isImageRequestPath(path))return serveImageRequestByMode(folderHandler,path,imageDiagnostics);
                 }
                 String requestedPath=u.getPath();
-                if(FolderHandler.isImageRequestPath(requestedPath)&&imageGenerationRoutingActive()){
-                    // ImageGen ON: do not touch image packs or the original CDN.
-                    // All /images/* references are resolved against the managed generation cache.
-                    return serveGeneratedImageRequest("/images/__wayward_generated__/"+requestedPath.substring(8),imageDiagnostics);
-                }
-                if("art.sintention.com".equalsIgnoreCase(u.getHost())){
-                    String path=u.getPath();
-                    // ImageGen OFF: only the selected local game folder can supply these images.
-                    if(FolderHandler.isImageRequestPath(path))return serveImageRequest(folderHandler,path,imageDiagnostics);
+                if(FolderHandler.isImageRequestPath(requestedPath)){
+                    // Every image URL is local-pack-only while OFF and generated-cache-only while ON.
+                    // No host (including the original art CDN) is allowed to become a fallback.
+                    return serveImageRequestByMode(folderHandler,requestedPath,imageDiagnostics);
                 }
                 return null;
             }
