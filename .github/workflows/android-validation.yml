@@ -41,10 +41,10 @@ jobs:
           import re
 
           host_pattern = re.compile(
-              r'(?m)^        @JavascriptInterface public void startGoogleDriveAuth\\(String nonce\\)\\{\\r?\\n'
-              r'            if\\(nonce==null\\|\\|!nonce\\.matches\\("\\[a-f0-9\\]\\{48\\}"\\)\\)return;\\r?\\n'
-              r'            runOnUiThread\\(\\(\\)->beginGoogleDriveAuth\\(nonce\\)\\);\\r?\\n'
-              r'        \\}'
+              r'(?m)^        @JavascriptInterface public void startGoogleDriveAuth\(String nonce\)\{\r?\n'
+              r'            if\(nonce==null\|\|!nonce\.matches\("\[a-f0-9\]\{48\}"\)\)return;\r?\n'
+              r'            runOnUiThread\(\(\)->beginGoogleDriveAuth\(nonce\)\);\r?\n'
+              r'        \}'
           )
           new_host = '''        @JavascriptInterface public void startGoogleDriveAuth(String nonce){
               startGoogleDriveAuthWithPolicy(nonce,false);
@@ -70,10 +70,10 @@ jobs:
               source = source.replace(old_method, new_method, 1)
 
           request_pattern = re.compile(
-              r'            AuthorizationRequest request=AuthorizationRequest\\.builder\\(\\)\\s*'
-              r'\\.setRequestedScopes\\(Collections\\.singletonList\\(\\s*'
-              r'new Scope\\("https://www\\.googleapis\\.com/auth/drive\\.appdata"\\)\\)\\)\\s*'
-              r'\\.build\\(\\);'
+              r'            AuthorizationRequest request=AuthorizationRequest\.builder\(\)\s*'
+              r'\.setRequestedScopes\(Collections\.singletonList\(\s*'
+              r'new Scope\("https://www\.googleapis\.com/auth/drive\.appdata"\)\)\)\s*'
+              r'\.build\(\);'
           )
           new_request = '''            AuthorizationRequest.Builder requestBuilder=AuthorizationRequest.builder()
                     .setRequestedScopes(Collections.singletonList(
