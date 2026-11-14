@@ -92,7 +92,6 @@ assert(webStart >= 0 && webEnd > webStart, 'WebView construction method must exi
 assert.match(main.slice(webStart, webEnd), /installImageGenDocumentStartScript\(origin\)/,
   'the Image Studio adapter must be installed on the game origin');
 
-console.log('Official v1 scope checks passed');
 
 
 // Activity result request codes must be globally unique. A collision caused the
@@ -103,8 +102,10 @@ const mainRequestCodes = mainRequestCodeNames.map((name) => {
   assert(match, `MainActivity request code ${name} must exist`);
   return Number(match[1]);
 });
-const chooserRequestMatch = webFileChooser.match(/static final int REQUEST_CODE\\s*=\\s*(\\d+)/);
+const chooserRequestMatch = webFileChooser.match(/static final int REQUEST_CODE\s*=\s*(\d+)/);
 assert(chooserRequestMatch, 'WebView file chooser request code must exist');
 const allRequestCodes = [...mainRequestCodes, Number(chooserRequestMatch[1])];
 assert.equal(new Set(allRequestCodes).size, allRequestCodes.length,
   'MainActivity and WebView file chooser ActivityResult request codes must be unique');
+
+console.log('Official v1 scope checks passed');
