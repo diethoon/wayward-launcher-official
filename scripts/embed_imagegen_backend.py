@@ -166,11 +166,11 @@ def extract(archive: Path, output: Path) -> None:
                     "persist-discovered-character-filter",
                 ),
                 (
-                    "  fs.writeFileSync(settingsFile(config), JSON.stringify(settings, null, 2) + '\n')",
+                    "  fs.writeFileSync(settingsFile(config), JSON.stringify(settings, null, 2) + '\\n')",
                     """  // NovelAI credentials are supplied by the launcher from Android Keystore.
   // Keep the active token in memory, but never persist it in this JSON file.
   const persistedSettings = { ...settings, naiToken: '' }
-  fs.writeFileSync(settingsFile(config), JSON.stringify(persistedSettings, null, 2) + '\n')""",
+  fs.writeFileSync(settingsFile(config), JSON.stringify(persistedSettings, null, 2) + '\\n')""",
                     "redact-persisted-novelai-token",
                 ),
             ],
