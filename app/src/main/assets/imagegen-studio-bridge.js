@@ -63,7 +63,23 @@
       const localApi = (url.origin === LOCAL_ORIGIN || url.origin === "http://localhost:8189")
         && url.pathname.startsWith("/api/");
       const knownImageApi = /^\/api\/(batch|generation|image|queue)(?:\/|$)/i.test(url.pathname);
-      if (!targetsSavedBackend && !localApi && !knownImageApi) return previousFetch(input, init);
+      const directNovelAiGeneration = /(?:^|\\.)novelai\\.net$/i.test(url.hostname)
+        && /^\\/(?:ai\\/(?:generate-image(?:-stream)?|augment-image|upscale)|oa\\/v1\\/images\\/)/i.test(url.pathname);
+
+      // Direct image fetches are routed through the same game-origin path as
+      // <img> and CSS requests. OFF => local image pack; ON => generated cache.
+      if (url.pathname.startsWith("/images/")) {
+        const generatedPrefix = "/images/__wayward_generated__/";
+        const relative = url.pathname.startsWith(generatedPrefix)
+          ? url.pathname.slice(generatedPrefix.length)
+          : url.pathname.slice("/images/".length);
+        const serverReady = runtimeStatus().ready;
+        const targetPath = serverReady ? generatedPrefix + relative : "/images/" + relative;
+        const targetUrl = new URL(targetPath + url.search, window.location.origin).toString();
+        return previousFetch(new Request(targetUrl, request));
+      }
+
+      if (!targetsSavedBackend && !localApi && !knownImageApi && !directNovelAiGeneration) return previousFetch(input, init);
 
       const mapped = managedApiEndpoint(url.pathname + url.search);
       if (!runtimeStatus().ready) {

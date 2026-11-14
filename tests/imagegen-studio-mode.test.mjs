@@ -76,9 +76,18 @@ assert.equal(outgoing.some(item => item.probe), false,
 assert.equal(api.fn("imageBackend")().disabled, true);
 assert.equal(api.fn("imageServerUrl")("/api/batch/enqueue"), "http://127.0.0.1:8189/api/batch/enqueue");
 
+const packFetch = await window.fetch("https://art.sintention.com/images/portrait.png");
+assert.equal(packFetch.status, 200);
+assert.equal(outgoing.at(-1).input, "https://localhost:42000/images/portrait.png",
+  "server-off image fetches must resolve through the local image-pack path");
+
 const blocked = await window.fetch("https://my-worker.workers.dev/generate", { method: "POST", body: "{}" });
 assert.equal(blocked.status, 503, "server-off must block direct fetch to the saved generation endpoint");
-assert.equal(outgoing.length, 0, "no request may leave the browser while the server is OFF");
+const directNaiOff = await window.fetch("https://image.novelai.net/ai/generate-image", {
+  method: "POST", body: "{}"
+});
+assert.equal(directNaiOff.status, 503, "server-off must block direct NovelAI generation requests");
+assert.equal(outgoing.length, 1, "external generation endpoints must not receive requests while the server is OFF");
 
 runtime.available = true;
 runtime.ready = true;
@@ -96,6 +105,14 @@ const rewritten = await window.fetch("https://my-worker.workers.dev/api/batch/en
 assert.equal(rewritten.status, 200);
 assert.equal(outgoing.at(-1).input, "http://127.0.0.1:8189/api/batch/enqueue",
   "server-on must rewrite saved external generation hosts to the local managed server");
+const generatedFetch = await window.fetch("https://art.sintention.com/images/portrait.png");
+assert.equal(generatedFetch.status, 200);
+assert.equal(outgoing.at(-1).input, "https://localhost:42000/images/__wayward_generated__/portrait.png",
+  "server-on image fetches must never fall back to image packs or the original CDN");
+const directNaiOn = await window.fetch("https://image.novelai.net/ai/generate-image", {
+  method: "POST", body: "{}"
+});
+assert.equal(directNaiOn.status, 503, "game code must not bypass the managed server with direct NovelAI requests");
 assert.equal(persisted.imageBackendUrl, "https://my-worker.workers.dev/generate",
   "the user's persisted settings must not be overwritten");
 console.log("Image Studio strict image-pack/server mode test passed.");
