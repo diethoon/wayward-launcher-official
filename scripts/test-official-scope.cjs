@@ -21,7 +21,6 @@ assert.match(home, /내 게임/, 'home must expose the registered game list');
 assert.match(home, /여러 게임을 독립 세션으로 실행/, 'home must describe independent sessions');
 assert.match(home, /이미지 생성 서버 실행/, 'home must expose the explicit local image-generation server switch');
 assert.match(main, /setContentDescription\("NovelAI 토큰 설정"\)/, 'the settings gear must be accessible');
-assert.match(main, /GlassButtonStyle\\.bind\\(this,tile,selected,17f\\)/, 'image mode controls must use the new glass material');
 assert.match(main, /⚙/, 'the settings affordance must render as a gear icon');
 assert.match(main, /NeumorphicButtonStyle\.bind\(this,b,false,12f\)/,
   'standard launcher buttons must use the common button style');
@@ -42,29 +41,29 @@ const glassTileStart = main.indexOf('private View glassModeTile(');
 const glassTileEnd = main.indexOf('private void openNovelAiSettings()', glassTileStart);
 assert(glassTileStart >= 0 && glassTileEnd > glassTileStart, 'glass mode button builder must exist');
 const glassTileUi = main.slice(glassTileStart, glassTileEnd);
-assert.match(glassTileUi, /GlassButtonStyle\\.bind\\(this,tile,selected,17f\\)/,
+assert.match(glassTileUi, /GlassButtonStyle\.bind\(this,tile,selected,17f\)/,
   'image mode buttons must use the neutral glass material');
-assert.match(glassStyle, /Color\\.argb\\(/,
+assert.match(glassStyle, /Color\.argb\(/,
   'glass surfaces must use translucent alpha layers');
-assert.match(glassStyle, /GradientDrawable\\.Orientation\\.TOP_BOTTOM/,
+assert.match(glassStyle, /GradientDrawable\.Orientation\.TOP_BOTTOM/,
   'glass surfaces must include a soft specular highlight');
-assert.doesNotMatch(glassStyle, /Color\\.(?:BLUE|CYAN)|#(?:00|33|66)A(?:FF|E6|CC)/i,
+assert.doesNotMatch(glassStyle, /Color\.(?:BLUE|CYAN)|#(?:00|33|66)A(?:FF|E6|CC)/i,
   'glass button material must not use a sky-blue gradient');
 assert.match(glassTileUi, /settingsAction!=null/,
   'the settings icon must be embedded inside the server glass button');
-assert.match(glassTileUi, /gear\\.setContentDescription\\("NovelAI 토큰 설정"\\)/,
+assert.match(glassTileUi, /gear\.setContentDescription\("NovelAI 토큰 설정"\)/,
   'the embedded gear must remain accessible');
-assert.match(glassTileUi, /gear\\.setOnClickListener\\(view->settingsAction\\.run\\(\\)\\)/,
+assert.match(glassTileUi, /gear\.setOnClickListener\(view->settingsAction\.run\(\)\)/,
   'the embedded gear must open token settings independently');
-assert.equal((glassTileUi.match(/new LinearLayout\\.LayoutParams\\(-1,dp\\(76\\)\\)/g) || []).length, 2,
+assert.equal((glassTileUi.match(/new LinearLayout\.LayoutParams\(-1,dp\(76\)\)/g) || []).length, 2,
   'server and image-pack glass buttons must share the same 76dp height');
 assert.match(glassTileUi, /generationSelected,this::openNovelAiSettings/,
   'only the server glass button must contain the token-settings gear');
 assert.match(glassTileUi, /packsSelected,null,this::switchToImagePacksOnly/,
   'the image-pack button must not create a second gear or nested control');
-assert.doesNotMatch(glassTileUi, /glassSettingsButton|dp\\(112\\)/,
+assert.doesNotMatch(glassTileUi, /glassSettingsButton|dp\(112\)/,
   'the separate gear grid and oversized server button must be removed');
-assert.match(main, /imageCard\\.setBackground\\(uiShape\\(Color\\.rgb\\(239,241,243\\)/,
+assert.match(main, /imageCard\.setBackground\(uiShape\(Color\.rgb\(239,241,243\)/,
   'glass controls must sit over a neutral matte surface for visible transparency');
 assert.doesNotMatch(main, /tile\.setClipToOutline\(true\)/,
   'mode button borders must not be clipped by outline clipping');
