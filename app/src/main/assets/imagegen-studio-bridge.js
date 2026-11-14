@@ -62,7 +62,7 @@
       const targetsSavedBackend = !!savedOrigin && url.origin === savedOrigin;
       const localApi = (url.origin === LOCAL_ORIGIN || url.origin === "http://localhost:8189")
         && url.pathname.startsWith("/api/");
-      const knownImageApi = /^\\/api\\/(batch|generation|image|queue)(?:\\/|$)/i.test(url.pathname);
+      const knownImageApi = /^\/api\/(batch|generation|image|queue)(?:\/|$)/i.test(url.pathname);
       if (!targetsSavedBackend && !localApi && !knownImageApi) return previousFetch(input, init);
 
       const mapped = managedApiEndpoint(url.pathname + url.search);

@@ -1845,8 +1845,7 @@ public final class MainActivity extends Activity {
         @JavascriptInterface public void logImageProviderDiagnostic(String event,String detailsJson){
             ImagePipelineDiagnostics.recordJson(MainActivity.this,event,detailsJson);
         }
-        @JavascriptInterface public String takePendingState(){return "";} 
-        @JavascriptInterface public String saveFile(String name,String mime,String encoded){try{saveExport(name,mime,encoded);return null;}catch(Exception e){return msg(e);}}
+        @JavascriptInterface public String takePendingState(){return "";}\n        @JavascriptInterface public String saveFile(String name,String mime,String encoded){try{saveExport(name,mime,encoded);return null;}catch(Exception e){return msg(e);}}
     }
     private void saveExport(String req,String mime,String encoded)throws Exception{
         String name=req==null?"wayward-export.bin":req.replace("/","_").replace("\\\\","_").trim();if(name.isEmpty()||name.equals(".")||name.equals(".."))name="wayward-export.bin";
