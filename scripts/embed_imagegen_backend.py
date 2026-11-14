@@ -194,7 +194,7 @@ def extract(archive: Path, output: Path) -> None:
                 ),
                 (
                     "    imageProvider: file.imageProvider === 'nai' ? 'nai' : file.imageProvider === 'anima' ? 'anima' : 'sdxl',\n    naiToken:",
-                    """    imageProvider: file.imageProvider === 'launcher' ? 'launcher' : file.imageProvider === 'nai' ? 'nai' : file.imageProvider === 'anima' ? 'anima' : 'sdxl',
+                    """    imageProvider: process.env.WAYWARD_FORCE_NOVELAI === '1' ? 'nai' : file.imageProvider === 'launcher' ? 'launcher' : file.imageProvider === 'nai' ? 'nai' : file.imageProvider === 'anima' ? 'anima' : 'sdxl',
     launcherProviderUrl: pick('launcher-provider-url', 'LAUNCHER_PROVIDER_URL', 'launcherProviderUrl', ''),
     launcherProfileId: pick('launcher-profile-id', 'LAUNCHER_PROFILE_ID', 'launcherProfileId', ''),
     launcherProviderId: pick('launcher-provider-id', 'LAUNCHER_PROVIDER_ID', 'launcherProviderId', ''),
@@ -217,7 +217,7 @@ def extract(archive: Path, output: Path) -> None:
                 ),
                 (
                     "    imageProvider: raw.imageProvider === 'nai' ? 'nai' : raw.imageProvider === 'anima' ? 'anima' : 'sdxl',",
-                    """    imageProvider: base.imageProvider === 'launcher' ? 'launcher' : raw.imageProvider === 'nai' ? 'nai' : raw.imageProvider === 'anima' ? 'anima' : 'sdxl',""",
+                    """    imageProvider: process.env.WAYWARD_FORCE_NOVELAI === '1' ? 'nai' : base.imageProvider === 'launcher' ? 'launcher' : raw.imageProvider === 'nai' ? 'nai' : raw.imageProvider === 'anima' ? 'anima' : 'sdxl',""",
                     "preserve-launcher-provider-selection",
                 ),
             ],
