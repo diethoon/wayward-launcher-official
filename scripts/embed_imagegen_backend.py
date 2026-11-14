@@ -145,6 +145,38 @@ def extract(archive: Path, output: Path) -> None:
             backend_patches.extend(label for _, _, label in replacements)
 
         patch_backend_text(
+            "wayward-imagegen/src/config.ts",
+            [
+                (
+                    "    imageProvider: file.imageProvider === 'nai' ? 'nai' : file.imageProvider === 'anima' ? 'anima' : 'sdxl',\\n    naiToken:",
+                    "    imageProvider: process.env.WAYWARD_FORCE_NOVELAI === '1' ? 'nai' : file.imageProvider === 'nai' ? 'nai' : file.imageProvider === 'anima' ? 'anima' : 'sdxl',\\n    naiToken:",
+                    "force-novelai-at-backend-startup",
+                ),
+            ],
+        )
+        patch_backend_text(
+            "wayward-imagegen/src/routes/generationSettings.ts",
+            [
+                (
+                    "  config.characterDirs = settings.characters.map(character => character.id).filter(Boolean)",
+                    """  const discoveredCharacterDirs = settings.characters
+    .map(character => String(character.id || '').trim().toLowerCase())
+    .filter(id => /^[a-z0-9][a-z0-9_-]{0,99}$/.test(id))
+  config.characterDirs = [...new Set([...(config.characterDirs || []), ...discoveredCharacterDirs])]""",
+                    "persist-discovered-character-filter",
+                ),
+                (
+                    "  fs.writeFileSync(settingsFile(config), JSON.stringify(settings, null, 2) + '\\n')",
+                    """  // NovelAI credentials are supplied by the launcher from Android Keystore.
+  // Keep the active token in memory, but never persist it in this JSON file.
+  const persistedSettings = { ...settings, naiToken: '' }
+  fs.writeFileSync(settingsFile(config), JSON.stringify(persistedSettings, null, 2) + '\\n')""",
+                    "redact-persisted-novelai-token",
+                ),
+            ],
+        )
+
+        patch_backend_text(
             "wayward-imagegen/src/routes/generationSettings.ts",
             [
                 (

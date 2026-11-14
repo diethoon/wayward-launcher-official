@@ -2,11 +2,12 @@ name: Official Android validation
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, 'work/**']
   push:
     branches:
       - main
       - 'work/**'
+      - 'fix/**'
   workflow_dispatch:
 
 permissions:

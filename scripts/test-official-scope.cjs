@@ -30,7 +30,7 @@ assert.match(naiSettings, /GlassButtonStyle\.bind\(this, button, false, 12f\)/,
   'NovelAI settings actions must use the common button style');
 assert.match(naiTokenStore, /AndroidKeyStore/,
   'NovelAI credentials must remain in the Android Keystore');
-assert.doesNotMatch(naiTokenStore, /cloudflare-worker|workers\\.dev|openai-compatible/,
+assert.doesNotMatch(naiTokenStore, /cloudflare-worker|workers\.dev|openai-compatible/,
   'the credential store must not double as an external provider registry');
 
 const glassTileStart = main.indexOf('private View glassModeTile(');

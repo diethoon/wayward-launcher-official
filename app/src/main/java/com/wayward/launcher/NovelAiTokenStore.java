@@ -39,8 +39,12 @@ final class NovelAiTokenStore {
         target = new File(context.getFilesDir(), "image-providers.enc");
     }
 
+    private static final Object FILE_LOCK = new Object();
+
     static String readToken(Context context) throws Exception {
-        return new NovelAiTokenStore(context).loadAndMigrate();
+        synchronized (FILE_LOCK) {
+            return new NovelAiTokenStore(context).loadAndMigrate();
+        }
     }
 
     /** Called only by the explicit token save or delete UI, and legacy-token migration. */
@@ -49,7 +53,9 @@ final class NovelAiTokenStore {
         if (safeToken.length() > 4096) {
             throw new IllegalArgumentException("NovelAI 토큰은 4096자 이하여야 합니다.");
         }
-        new NovelAiTokenStore(context).writeToken(safeToken);
+        synchronized (FILE_LOCK) {
+            new NovelAiTokenStore(context).writeToken(safeToken);
+        }
     }
 
     private synchronized String loadAndMigrate() throws Exception {
