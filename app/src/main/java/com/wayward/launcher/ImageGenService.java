@@ -314,15 +314,16 @@ public final class ImageGenService extends Service {
         builder.environment().put("TMPDIR", getCacheDir().getAbsolutePath());
         builder.environment().put("BUN_INSTALL", new File(getFilesDir(), "bun-install").getAbsolutePath());
         if ("novelai".equals(launchMode)) {
+            // Both the backend startup config and its live settings endpoint are
+            // pinned to NovelAI for this launcher mode. The game cannot switch engines.
+            builder.environment().put("WAYWARD_FORCE_NOVELAI", "1");
             String token = ImageProviderStore.readNovelAiToken(this);
             if (token != null && !token.trim().isEmpty()) {
                 builder.environment().put("NAI_TOKEN", token);
                 DiagnosticsLogger.event(this, "INFO", "imagegen_service",
                         "novelai_credential_available_at_start", null);
             } else {
-                // Keep the service alive so the user can open the EasyGen panel
-                // and configure a provider before the first generation request.
-                DiagnosticsLogger.event(this, "INFO", "imagegen_service",
+                DiagnosticsLogger.event(this, "WARN", "imagegen_service",
                         "novelai_credential_not_set_at_start", null);
             }
         }
