@@ -1,4 +1,4 @@
-# Wayward Launcher — Official 1.0.1
+# Wayward Launcher — Official 1.0.2
 
 공식 배포 전용 저장소입니다. 개발용 diethoon/wayward 저장소와 독립적으로 유지합니다.
 
