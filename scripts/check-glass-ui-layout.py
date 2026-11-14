@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Verify image-mode button geometry in an Android uiautomator XML dump."""
 
-import re
 import sys
 import xml.etree.ElementTree as ET
 
