@@ -208,6 +208,16 @@ jobs:
           test "$actual_sha1" = "$expected_sha1"
           echo "Release APK signature matches the registered Android OAuth SHA-1." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Upload Debug and Release APKs
+        uses: actions/upload-artifact@v7
+        with:
+          name: wayward-launcher-official-apks
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Enable KVM for Android emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -216,6 +226,7 @@ jobs:
 
       - name: Android 15 emulator startup smoke test
         id: android15_smoke
+        timeout-minutes: 4
         continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -279,14 +290,12 @@ jobs:
         if: steps.android15_smoke.outcome == 'failure'
         run: echo "::warning::Android 15 emulator/ADB smoke test failed; APK build and deterministic routing tests remain independently reported."
 
-      - name: Upload APKs and UI diagnostics
+      - name: Upload Android 15 UI diagnostics
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: wayward-launcher-official-apks
+          name: wayward-launcher-android15-ui-diagnostics
           path: |
-            app/build/outputs/apk/debug/*.apk
-            app/build/outputs/apk/release/*.apk
             artifacts/android15-launcher-home.png
             artifacts/android15-launcher-home.xml
           if-no-files-found: warn
