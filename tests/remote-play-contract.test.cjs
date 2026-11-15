@@ -33,7 +33,7 @@ assert.match(connection, /verifyPairingApprovalReceipt/,
   'the approval receipt must bind the signed Host, Pairing ID, Device ID, public-key fingerprint and permission bitmask');
 assert.match(client, /verifyPairingApprovalReceipt/,
   'the mobile pairing flow must verify the canonical signed receipt before accepting enrollment');
-assert.match(connection, /permissions.*expectedPermissions/,
+assert.match(connection, /parseSignedLong\(text, "permissions"\)[\s\S]*permissions != expectedPermissions/,
   'the Pairing approval signature must bind the permission bitmask');
 
 assert.match(connection, /certificateSha256/,
@@ -108,7 +108,7 @@ assert.match(comfy, /MessageDigest\.isEqual/,
   'ComfyUI output cache SHA-256 comparison must be constant-time');
 assert.match(files, /Upload-Offset/,
   'resumable file uploads must use the Host-confirmed sequential offset');
-assert.match(files, /DownloadFiles|DownloadFile/,
+assert.match(files, /openDownload/,
   'the Native file client must expose authenticated file download');
 assert.match(files, /UploadFiles|beginUpload|appendUploadChunk|completeUpload/,
   'the Native file client must support the Host resumable upload lifecycle');
