@@ -86,8 +86,14 @@ def main() -> int:
 
     expected_labels = (
         "이미지 생성 서버 실행",
+        "ComfyUI 서버 실행",
         "이미지팩만 사용",
+        "이 기기에 설치된 이미지팩만 탐색",
         "NovelAI 토큰 설정",
+        "PC 폴더",
+        "현재 기기 폴더",
+        "페어링",
+        "원격 PC 파일매니저",
     )
     missing = [label for label in expected_labels if label not in xml]
     if "Pixel Launcher isn't responding" in xml:
