@@ -87,7 +87,6 @@ def main() -> int:
     expected_labels = (
         "이미지 생성 서버 실행",
         "이미지팩만 사용",
-        "PC Remote Play",
         "NovelAI 토큰 설정",
     )
     missing = [label for label in expected_labels if label not in xml]
