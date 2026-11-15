@@ -329,8 +329,6 @@ public final class MainActivity extends Activity {
         boolean active=state.isReady()||state.isAvailable()||state.isStarting();
         boolean generationSelected=IMAGE_MODE_GENERATION.equals(mode)&&active;
         boolean packsSelected=IMAGE_MODE_PACKS_ONLY.equals(mode);
-        boolean remoteReady=RemoteHostStore.isReady(this);
-        boolean remoteSelected=IMAGE_MODE_REMOTE_PC.equals(mode)&&remoteReady;
         String token="";
         try{ token=NovelAiTokenStore.readToken(this); }catch(Exception ignored){}
         boolean tokenReady=token!=null&&!token.isEmpty();
@@ -338,8 +336,7 @@ public final class MainActivity extends Activity {
             String message;
             if(imageModeTransitionInProgress) message="서버 전환 중 · 기존 서버를 종료하고 새 모드를 적용합니다.";
             else if(imageGenSessionMessage!=null&&imageGenSessionMessage.startsWith("이미지 서버 전환 실패:")) message=imageGenSessionMessage;
-            else if(IMAGE_MODE_REMOTE_PC.equals(mode)&&remoteReady) message="PC Remote Play 활성 · "+RemoteHostStore.getSelectedRootLabel(this)+"의 이미지 리소스를 PC에서 가져옵니다.";
-            else if(IMAGE_MODE_REMOTE_PC.equals(mode)) message="PC Remote Play 연결 정보가 필요합니다. PC 등록 및 폴더 설정을 진행하세요.";
+            else if(IMAGE_MODE_REMOTE_PC.equals(mode)) message="집 PC 원격 서버 모드 · 원격 연결 기능은 후속 UI 통합에서 활성화됩니다.";
             else if(generationSelected&&state.isReady()) message="이미지 생성 서버 실행 중 · 이미지 생성 요청은 런처 서버로 전달됩니다.";
             else if(generationSelected) message="이미지 생성 서버 준비 중 · 생성 경로를 연결하고 있습니다.";
             else if(IMAGE_MODE_GENERATION.equals(mode)&&!active) message="이미지 생성 서버가 중지되었습니다. 다시 실행하거나 이미지팩 모드로 전환하세요.";
@@ -364,27 +361,8 @@ public final class MainActivity extends Activity {
         packsParams.bottomMargin=dp(4);
         imageModePanel.addView(packs,packsParams);
 
-        View remote=glassModeTile(remoteSelected?"PC Remote Play · 활성":"PC Remote Play",
-                remoteReady?"PC 허용 폴더 · "+RemoteHostStore.getSelectedRootLabel(this)
-                        :"QR 또는 LAN 검색으로 PC를 등록하고 폴더를 선택하세요.",
-                remoteSelected,null,()->{
-                    if(!remoteReady){openRemoteHostSettings();return;}
-                    if(IMAGE_MODE_REMOTE_PC.equals(currentImageMode())) switchToImagePacksOnly();
-                    else switchToRemotePcServer();
-                });
-        LinearLayout.LayoutParams remoteParams=new LinearLayout.LayoutParams(-1,dp(76));
-        remoteParams.topMargin=dp(9);
-        remoteParams.bottomMargin=dp(4);
-        imageModePanel.addView(remote,remoteParams);
-        Button remoteSettings=compactButton("PC 등록 / 연결 설정",false,this::openRemoteHostSettings);
-        LinearLayout.LayoutParams remoteSettingsParams=new LinearLayout.LayoutParams(-1,dp(40));
-        remoteSettingsParams.topMargin=dp(5);
-        imageModePanel.addView(remoteSettings,remoteSettingsParams);
     }
 
-    private void openRemoteHostSettings(){
-        startActivity(new Intent(this,RemoteHostActivity.class));
-    }
 
     private void registerRemotePcControl(){
         registerRemotePcServerControl(new RemotePcServerControl(){
