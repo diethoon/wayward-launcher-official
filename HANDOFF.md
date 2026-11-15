@@ -150,7 +150,7 @@ Updated: 2026-11-15 (Asia/Seoul)
 - 보안·데이터 무결성·기존 호환성·사용자 승인 경계를 시간 단축을 이유로 생략하지 않는다.
 - 의미 있는 단계마다 HANDOFF를 갱신하고 다음 담당자가 중복 조사 없이 이어갈 증거와 다음 조치를 기록한다.
 
- 
+
 ## Remote Host public endpoint compatibility — 2026-11-16
 
 - Active branch: `work/remote-play-ux-v1-20261115`.
