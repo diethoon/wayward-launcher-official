@@ -224,16 +224,19 @@ public final class MainActivity extends Activity {
         page.setPadding(dp(16),dp(13),dp(16),dp(24));scroll.addView(page);
 
         LinearLayout top=new LinearLayout(this);top.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        TextView title=uiText("WAYWARD",24,Color.rgb(24,27,31),true);title.setLetterSpacing(0.035f);
+        TextView title=uiText("WAYWARD",17,Color.rgb(24,27,31),true);
+        title.setLetterSpacing(0.005f);
+        title.setSingleLine(true);
+        title.setHorizontallyScrolling(true);
         top.addView(title,new LinearLayout.LayoutParams(0,-2,1f));
         Button pcFolder=compactButton("+ PC 폴더",false,this::chooseRemotePcFolder);
-        LinearLayout.LayoutParams pcFolderParams=new LinearLayout.LayoutParams(dp(82),dp(38));
+        LinearLayout.LayoutParams pcFolderParams=new LinearLayout.LayoutParams(dp(76),dp(38));
         pcFolderParams.leftMargin=dp(4);top.addView(pcFolder,pcFolderParams);
         Button addFolder=compactButton("+ 현재 기기 폴더",true,this::chooseFolder);
         LinearLayout.LayoutParams addFolderParams=new LinearLayout.LayoutParams(dp(112),dp(38));
         addFolderParams.leftMargin=dp(4);top.addView(addFolder,addFolderParams);
         pairingButton=compactButton("페어링",false,this::openRemotePairing);
-        LinearLayout.LayoutParams pairingParams=new LinearLayout.LayoutParams(dp(74),dp(38));
+        LinearLayout.LayoutParams pairingParams=new LinearLayout.LayoutParams(dp(76),dp(38));
         pairingParams.leftMargin=dp(4);top.addView(pairingButton,pairingParams);
         LinearLayout.LayoutParams topParams=new LinearLayout.LayoutParams(-1,-2);topParams.bottomMargin=dp(3);
         page.addView(top,topParams);
