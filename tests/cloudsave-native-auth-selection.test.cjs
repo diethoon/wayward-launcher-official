@@ -70,7 +70,7 @@ assert.match(bridge, /const forceSelectAccount = accountPolicy === 'select_accou
 assert.match(bridge, /host\.startGoogleDriveAuthWithPolicy\(nonce, forceSelectAccount\)/);
 assert.match(
   bridge,
-  /else if \(!forceSelectAccount && hasLegacyStart\) \{\s*host\.startGoogleDriveAuth\(nonce\);/
+  /else if \(!forceSelectAccount && hasLegacyStart\) \{\s*(?:\/\/[^\\n]*\\n\\s*)?host\.startGoogleDriveAuth\(nonce\);/
 );
 assert.match(bridge, /deliverStartError\('현재 Android 런처는 Google 계정 선택 API를 제공하지 않습니다\./);
 
