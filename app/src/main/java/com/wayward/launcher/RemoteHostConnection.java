@@ -108,6 +108,28 @@ final class RemoteHostConnection {
         }
     }
 
+    void verifyPairingApprovalReceipt(byte[] payload, byte[] signatureP1363,
+            String expectedRequestId, String expectedDeviceId,
+            String expectedDevicePublicKeyFingerprint, int expectedPermissions) throws Exception {
+        verifyHostSignature(payload, signatureP1363);
+        String text = new String(payload, StandardCharsets.UTF_8);
+        requireSignedLine(text, "Wayward-Remote-Host-Pairing-Approval", true);
+        requireSignedLine(text, "protocol=1", false);
+        requireSignedLine(text, "host=" + hostId, false);
+        requireSignedLine(text, "request=" + UUID.fromString(expectedRequestId), false);
+        requireSignedLine(text, "device=" + UUID.fromString(expectedDeviceId), false);
+        requireSignedLine(text, "fingerprint=" +
+                normalizeFingerprint(expectedDevicePublicKeyFingerprint), false);
+        long permissions = parseSignedLong(text, "permissions");
+        if (permissions != expectedPermissions) {
+            throw new SecurityException("Pairing receipt permission flags do not match the signed Host payload.");
+        }
+        long registeredAt = parseSignedLong(text, "registered");
+        if (registeredAt <= 0L || registeredAt > System.currentTimeMillis() + 5 * 60_000L) {
+            throw new SecurityException("Pairing receipt registration timestamp is invalid.");
+        }
+    }
+
     void verifyHostSignature(byte[] payload, byte[] signatureP1363) throws Exception {
         byte[] encodedPublicKey = Base64.decode(publicKeyBase64, Base64.DEFAULT);
         try {
