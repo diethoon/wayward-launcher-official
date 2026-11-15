@@ -6,7 +6,6 @@ const main = read('app/src/main/java/com/wayward/launcher/MainActivity.java');
 const client = read('app/src/main/java/com/wayward/launcher/RemoteHostClient.java');
 const connection = read('app/src/main/java/com/wayward/launcher/RemoteHostConnection.java');
 const store = read('app/src/main/java/com/wayward/launcher/RemoteHostStore.java');
-const activity = read('app/src/main/java/com/wayward/launcher/RemoteHostActivity.java');
 const bridge = read('app/src/main/java/com/wayward/launcher/RemoteGameResourceBridge.java');
 const manifest = read('app/src/main/AndroidManifest.xml');
 const naiStore = read('app/src/main/java/com/wayward/launcher/NovelAiTokenStore.java');
@@ -46,14 +45,18 @@ assert.doesNotMatch(main, /@JavascriptInterface[^\n]*(?:accessToken|sessionToken
 assert.match(client, /expiresAtUtc/,
   'short-lived Host sessions must observe the server-issued expiry');
 
-assert.match(activity, /_wayward-remote-host\._tcp/,
-  'the official app must discover Remote Hosts using the Host DNS-SD service type');
-assert.match(activity, /verifyAndStoreQr/,
+assert.match(client, /_wayward-remote-host/,
+  'the native client must implement signed mDNS rediscovery for an already trusted Host');
+assert.match(client, /verifyAndStoreQr/,
   'QR registration must verify the signed Host identity before storing it');
-assert.match(activity, /pairAndWaitForApproval/,
+assert.match(client, /pairAndWaitForApproval/,
   'pairing must wait for explicit approval in the Windows Manager');
-assert.match(activity, /getWorkspaceRoots/,
-  'the app must let the user select one Host-approved file root');
+assert.match(client, /getWorkspaceRoots/,
+  'the native client must query Host-approved workspace roots');
+assert.doesNotMatch(main, /PC Remote Play.*glassModeTile|RemoteHostActivity/,
+  'Home-screen UI placement remains deferred until the user provides the UI specification');
+assert.doesNotMatch(manifest, /CAMERA|RemoteHostActivity/,
+  'the launcher manifest must not add camera permission or an unapproved Remote Host screen');
 
 assert.match(bridge, /Range/,
   'remote media requests must forward HTTP Range headers');
@@ -68,7 +71,6 @@ assert.match(bridge, /RemoteHostClient\.openGameResource/,
 
 assert.match(manifest, /usesCleartextTraffic="false"/,
   'cleartext HTTP must remain disabled for the official launcher');
-assert.match(manifest, /android:name="\.RemoteHostActivity"/,
   'the Remote Host pairing screen must be registered');
 assert.match(naiStore, /AES\/GCM\/NoPadding/,
   'the existing NovelAI AES-GCM token envelope must remain intact');
