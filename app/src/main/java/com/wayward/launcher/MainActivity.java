@@ -1203,6 +1203,10 @@ public final class MainActivity extends Activity {
 
 
     private void beginGoogleDriveAuth(String nonce){
+        beginGoogleDriveAuth(nonce,false);
+    }
+
+    private void beginGoogleDriveAuth(String nonce,boolean forceSelectAccount){
         if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return;
         if(!pendingGoogleAuthNonce.isEmpty()){
             storeGoogleAuthResult(nonce,null,"이미 다른 Google 권한 요청이 진행 중입니다.");
@@ -1210,10 +1214,13 @@ public final class MainActivity extends Activity {
         }
         pendingGoogleAuthNonce=nonce;
         try{
-            AuthorizationRequest request=AuthorizationRequest.builder()
+            AuthorizationRequest.Builder requestBuilder=AuthorizationRequest.builder()
                     .setRequestedScopes(Collections.singletonList(
-                            new Scope("https://www.googleapis.com/auth/drive.appdata")))
-                    .build();
+                            new Scope("https://www.googleapis.com/auth/drive.appdata")));
+            if(forceSelectAccount){
+                requestBuilder.setPrompt(AuthorizationRequest.Prompt.SELECT_ACCOUNT);
+            }
+            AuthorizationRequest request=requestBuilder.build();
             Identity.getAuthorizationClient(this).authorize(request)
                     .addOnSuccessListener(authorizationResult->{
                         if(!nonce.equals(pendingGoogleAuthNonce))return;
@@ -2014,8 +2021,11 @@ public final class MainActivity extends Activity {
         }
         @JavascriptInterface public void menu(){showHomePanel();}
         @JavascriptInterface public void startGoogleDriveAuth(String nonce){
+            startGoogleDriveAuthWithPolicy(nonce,false);
+        }
+        @JavascriptInterface public void startGoogleDriveAuthWithPolicy(String nonce,boolean forceSelectAccount){
             if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return;
-            runOnUiThread(()->beginGoogleDriveAuth(nonce));
+            runOnUiThread(()->beginGoogleDriveAuth(nonce,forceSelectAccount));
         }
         @JavascriptInterface public String takePendingStateForNonce(String nonce){
             if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return "";
