@@ -170,14 +170,21 @@ final class RemoteHostClient {
             switch (pairingState(state.opt("state"))) {
                 case "Approved":
                     JSONObject receipt = state.getJSONObject("receipt");
+                    String expectedDeviceFingerprint =
+                            RemoteHostConnection.sha256Hex(keyPair.getPublic().getEncoded());
+                    int approvedPermissions = receipt.getInt("permissions");
                     if (!host.hostId.equalsIgnoreCase(receipt.getString("hostId")) ||
-                            !deviceId.equalsIgnoreCase(receipt.getString("deviceId"))) {
-                        throw new SecurityException("Pairing 승인 영수증의 Host/Device ID가 일치하지 않습니다.");
+                            !requestId.equalsIgnoreCase(receipt.getString("requestId")) ||
+                            !deviceId.equalsIgnoreCase(receipt.getString("deviceId")) ||
+                            !expectedDeviceFingerprint.equalsIgnoreCase(receipt.getString("publicKeyFingerprint"))) {
+                        throw new SecurityException("Pairing 승인 영수증의 Host/Request/Device/공개키 지문이 일치하지 않습니다.");
                     }
                     byte[] receiptPayload = Base64.decode(receipt.getString("signedPayloadBase64"), Base64.DEFAULT);
                     byte[] receiptSignature = Base64.decode(receipt.getString("signatureBase64"), Base64.DEFAULT);
                     try {
-                        host.verifyHostSignature(receiptPayload, receiptSignature);
+                        host.verifyPairingApprovalReceipt(
+                                receiptPayload, receiptSignature, requestId, deviceId,
+                                expectedDeviceFingerprint, approvedPermissions);
                     } finally {
                         java.util.Arrays.fill(receiptPayload, (byte) 0);
                         java.util.Arrays.fill(receiptSignature, (byte) 0);
