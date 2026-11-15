@@ -62,12 +62,13 @@ final class RemoteGameResourceBridge {
             Map<String, String> upstreamHeaders = requestHeaders == null
                     ? new HashMap<>() : new HashMap<>(requestHeaders);
             if (cached != null && !rangeRequest) {
-                if (cached.etag != null && !cached.etag.isEmpty() &&
-                        header(upstreamHeaders, "If-None-Match") == null) {
+                // The validator must describe this exact disk body, not a different
+                // WebView in-memory copy; otherwise 304 could reuse mismatched bytes.
+                removeHeaderIgnoreCase(upstreamHeaders, "If-None-Match");
+                removeHeaderIgnoreCase(upstreamHeaders, "If-Modified-Since");
+                if (cached.etag != null && !cached.etag.isEmpty()) {
                     upstreamHeaders.put("If-None-Match", cached.etag);
-                } else if ((cached.etag == null || cached.etag.isEmpty()) &&
-                        cached.lastModified != null && !cached.lastModified.isEmpty() &&
-                        header(upstreamHeaders, "If-Modified-Since") == null) {
+                } else if (cached.lastModified != null && !cached.lastModified.isEmpty()) {
                     upstreamHeaders.put("If-Modified-Since", cached.lastModified);
                 }
             }
@@ -85,8 +86,12 @@ final class RemoteGameResourceBridge {
             // A 304 without a local copy cannot be served. Retry once without validators.
             if (status == 304) {
                 connection.disconnect();
+                Map<String, String> unconditionalHeaders = requestHeaders == null
+                        ? new HashMap<>() : new HashMap<>(requestHeaders);
+                removeHeaderIgnoreCase(unconditionalHeaders, "If-None-Match");
+                removeHeaderIgnoreCase(unconditionalHeaders, "If-Modified-Since");
                 connection = RemoteHostClient.openGameResource(context, host, rootId, relativePath,
-                        requestHeaders == null ? new HashMap<>() : new HashMap<>(requestHeaders));
+                        unconditionalHeaders);
                 status = connection.getResponseCode();
             }
 
@@ -243,6 +248,15 @@ final class RemoteGameResourceBridge {
             }
         }
         return "/images/" + relative;
+    }
+
+    private static void removeHeaderIgnoreCase(Map<String, String> headers, String name) {
+        if (headers == null) return;
+        String remove = null;
+        for (String key : headers.keySet()) {
+            if (key != null && key.equalsIgnoreCase(name)) { remove = key; break; }
+        }
+        if (remove != null) headers.remove(remove);
     }
 
     private static String header(Map<String, String> headers, String name) {
