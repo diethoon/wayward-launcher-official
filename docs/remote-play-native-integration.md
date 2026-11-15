@@ -81,7 +81,7 @@ PC Manager approval defaults to ReadOnly. The user must explicitly enable UseCom
 - No physical Android device / Windows PC session has been completed by these repository-only tasks.
 - The official Home screen remains unchanged until the user provides the UI design.
 
- 
+
 ## Signed external endpoint fallback — 2026-11-16
 
 The Windows Host may include an optional `externalBaseUrl` in its QR JSON when its best-effort PCP, NAT-PMP or UPnP mapping reports a globally routable IPv4 address and allocated TCP port. The Host Identity signature covers the exact `externalBaseUrl=` line, including an empty value. Older signed manifests without this optional line remain accepted for backward compatibility.
