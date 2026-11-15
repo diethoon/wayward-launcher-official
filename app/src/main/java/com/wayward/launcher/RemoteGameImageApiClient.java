@@ -37,6 +37,9 @@ final class RemoteGameImageApiClient {
         if ("/api/image/health".equals(path)) {
             target = "/v1/game-image-api/health?" + rootQuery;
             expectedMethod = "GET";
+        } else if ("/api/pack".equals(path)) {
+            target = "/v1/game-image-api/pack?" + rootQuery;
+            expectedMethod = "GET";
         } else if ("/api/image/generate".equals(path)) {
             target = "/v1/game-image-api/image/generate?" + rootQuery;
             expectedMethod = "POST";
@@ -44,7 +47,7 @@ final class RemoteGameImageApiClient {
             target = "/v1/game-image-api/image/cancel?" + rootQuery;
             expectedMethod = "POST";
         } else if ("/api/image-hit".equals(path)) {
-            target = "/v1/game-image-api/image-hit";
+            target = "/v1/game-image-api/image-hit?" + rootQuery;
             expectedMethod = "POST";
         } else if ("/api/batch/enqueue".equals(path)) {
             target = "/v1/game-image-api/batch/enqueue?" + rootQuery;
