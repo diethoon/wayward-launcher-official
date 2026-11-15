@@ -77,31 +77,43 @@ final class RemoteHostClient {
         return "PC Host 신원과 TLS 인증서 핀 검증 완료\nHost ID: " + host.hostId;
     }
 
-    static RemoteHostConnection discoverHost(RemoteHostMdnsCandidate candidate) throws Exception {
+    static RemoteHostConnection discoverHost(
+            RemoteHostMdnsCandidate candidate,
+            RemoteHostConnection trustedHost) throws Exception {
+        if (candidate == null || trustedHost == null) {
+            throw new SecurityException("먼저 실제 PC 화면의 QR을 스캔해 Host를 등록해야 합니다.");
+        }
+        if (!trustedHost.hostId.equalsIgnoreCase(candidate.hostId) ||
+                !trustedHost.publicKeyFingerprint.equalsIgnoreCase(candidate.publicKeyFingerprint) ||
+                !trustedHost.certificateSha256.equalsIgnoreCase(candidate.certificateSha256)) {
+            throw new SecurityException("mDNS에서 발견한 PC가 이미 등록된 Host Identity와 일치하지 않습니다.");
+        }
+
         String address = candidate.address.getHostAddress();
         String baseUrl = "https://" + address + ":" + candidate.port + "/";
-        JSONObject identity = requestJsonPinned(baseUrl, candidate.certificateSha256,
+        // Pin with the previously scanned Host certificate, not the untrusted mDNS TXT
+        // fingerprint. A hostile LAN peer therefore cannot replace the trust anchor.
+        JSONObject identity = requestJsonPinned(baseUrl, trustedHost.certificateSha256,
                 "/v1/host/identity", "GET", null, null);
-        String hostId = identity.getString("hostId");
-        String publicKeyFingerprint = identity.getString("publicKeyFingerprint");
-        String certificateFingerprint = identity.getString("certificateSha256");
-        if (!hostId.equalsIgnoreCase(candidate.hostId) ||
-                !publicKeyFingerprint.equalsIgnoreCase(candidate.publicKeyFingerprint) ||
-                !certificateFingerprint.equalsIgnoreCase(candidate.certificateSha256)) {
-            throw new SecurityException("mDNS Host ID/public key/TLS fingerprint가 HTTPS Host와 일치하지 않습니다.");
+        verifyIdentityResponse(trustedHost, identity);
+        if (!trustedHost.hostId.equalsIgnoreCase(identity.getString("hostId")) ||
+                !trustedHost.publicKeyFingerprint.equalsIgnoreCase(candidate.publicKeyFingerprint)) {
+            throw new SecurityException("mDNS 주소에서 응답한 HTTPS Host가 기존 등록 Host와 다릅니다.");
         }
 
         String query = "/v1/host/qr?address=" + URLEncoder.encode(address, "UTF-8");
-        JSONObject qr = requestJsonPinned(baseUrl, candidate.certificateSha256,
+        JSONObject qr = requestJsonPinned(baseUrl, trustedHost.certificateSha256,
                 query, "GET", null, null);
-        RemoteHostConnection host = RemoteHostConnection.fromQrJson(qr.toString());
-        host.verifySignedManifest();
-        if (!host.hostId.equalsIgnoreCase(candidate.hostId) ||
-                !host.certificateSha256.equalsIgnoreCase(candidate.certificateSha256) ||
-                !host.publicKeyFingerprint.equalsIgnoreCase(candidate.publicKeyFingerprint)) {
-            throw new SecurityException("검색된 Host와 QR 서명 신원이 서로 다릅니다.");
+        RemoteHostConnection refreshed = RemoteHostConnection.fromQrJson(qr.toString());
+        refreshed.verifySignedManifest();
+        if (!refreshed.hostId.equalsIgnoreCase(trustedHost.hostId) ||
+                !refreshed.certificateSha256.equalsIgnoreCase(trustedHost.certificateSha256) ||
+                !refreshed.publicKeyFingerprint.equalsIgnoreCase(trustedHost.publicKeyFingerprint) ||
+                !refreshed.publicKeyBase64.equals(trustedHost.publicKeyBase64) ||
+                !refreshed.baseUrl.equalsIgnoreCase(baseUrl)) {
+            throw new SecurityException("새 IP 주소가 기존 Host Identity 및 서명된 연결 매니페스트와 일치하지 않습니다.");
         }
-        return host;
+        return refreshed;
     }
 
     private static void verifyIdentityResponse(RemoteHostConnection host, JSONObject identity) throws Exception {
