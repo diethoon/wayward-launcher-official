@@ -282,6 +282,59 @@ final class RemoteHostClient {
         return connection;
     }
 
+    static HttpsURLConnection openAuthenticatedConnection(Context context, RemoteHostConnection host,
+            String path, String method, Map<String, String> requestHeaders) throws Exception {
+        String token = authenticate(context, host);
+        HttpsURLConnection connection = openPinned(
+                host, path, method, null, "Bearer " + token, requestHeaders);
+        if (connection.getResponseCode() == HttpURLConnection.HTTP_UNAUTHORIZED) {
+            connection.disconnect();
+            clearSession();
+            token = authenticate(context, host);
+            connection = openPinned(host, path, method, null, "Bearer " + token, requestHeaders);
+        }
+        return connection;
+    }
+
+    static HttpsURLConnection openAuthenticatedUpload(Context context, RemoteHostConnection host,
+            String path, String contentType, long contentLength, InputStream source) throws Exception {
+        if (contentLength <= 0 || source == null) {
+            throw new IllegalArgumentException("A non-empty upload stream and length are required.");
+        }
+        String token = authenticate(context, host);
+        HttpsURLConnection connection = openPinned(host, path, "PUT", null, "Bearer " + token, null);
+        try {
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Content-Type", contentType);
+            connection.setFixedLengthStreamingMode(contentLength);
+            try (OutputStream output = connection.getOutputStream()) {
+                byte[] buffer = new byte[64 * 1024];
+                long written = 0;
+                int count;
+                while ((count = source.read(buffer)) != -1) {
+                    if (count == 0) continue;
+                    written += count;
+                    if (written > contentLength) {
+                        throw new IOException("Upload stream exceeded the declared Content-Length.");
+                    }
+                    output.write(buffer, 0, count);
+                }
+                if (written != contentLength) {
+                    throw new IOException("Upload stream length did not match the declared Content-Length.");
+                }
+                output.flush();
+            }
+            return connection;
+        } catch (Exception error) {
+            connection.disconnect();
+            throw error;
+        }
+    }
+
+    static JSONObject readJsonResponse(HttpsURLConnection connection) throws Exception {
+        return new JSONObject(readResponseText(connection, MAX_JSON_RESPONSE_BYTES));
+    }
+
     private static JSONObject requestJsonPinned(String baseUrl, String certificatePin,
             String path, String method, JSONObject body, String authorization) throws Exception {
         HttpsURLConnection connection = openPinned(baseUrl, certificatePin, path, method, body, authorization, null);
