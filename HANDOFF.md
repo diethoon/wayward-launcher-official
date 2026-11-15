@@ -76,3 +76,62 @@ Updated: 2026-11-15 (Asia/Seoul)
 - Verification status: pre-existing Remote Play/NovelAI/SAF CI results remain valid for the previous code baseline, not this latest CloudSave patch. The new CI run/build has not yet been surfaced by the available Actions-run lookup (the queried commit status and PR-run lookup returned no records). Therefore this patch's automated tests, Debug/Release APK build, artifact and SHA-256 remain unverified here.
 - Real Google account sign-in, forced account chooser after logout, switching to a different account, and CloudSave sync/save/restore on a physical Android device remain unverified. Do not mark the overall task complete until those steps and the latest CI/APK are verified.
 - Protected scope: no CloudSave encryption/storage/sync code, user backup/data format, NovelAI provider/token behavior, Remote Play pairing/TLS/image/file functionality, WebView origin, SAF behavior or installed model/workflow assets were modified.
+
+
+## CloudSave native account-selection bridge wiring — 2026-11-16
+
+### 기준선 및 변경 범위
+- 시작 기준: `work/remote-play-ux-v1-20261115` @ `128ee994c059fcb82c649f2527806be5adf606cc`.
+- 검증 대상 코드 HEAD: `96387e622fe2cf8c36e222f8840d3a72f6dee961`.
+- 변경 파일은 다음 세 개로 제한했다.
+  - `app/src/main/assets/wayward-google-auth-bridge.js`
+  - `scripts/test-google-auth-bridge.cjs`
+  - `tests/cloudsave-native-auth-selection.test.cjs`
+- `MainActivity.java`, WebView Origin/초기화, SAF, NovelAI, Remote Play 페어링/TLS/이미지 생성, CloudSave 암호화/세이브 형식/동기화 코드는 변경하지 않았다.
+
+### 구현한 인증 경로
+- CloudSave의 기존 브리지 호출이 전달하는 `login=remember` 또는 `login=select_account`을 Android document-start bridge에서 읽는다.
+- 새 API가 있으면 모든 요청을 `startGoogleDriveAuthWithPolicy(nonce, forceSelectAccount)`로 전달한다.
+  - 일반 연결: `forceSelectAccount=false`.
+  - 명시적 로그아웃 후 재인증: `forceSelectAccount=true`.
+- 새 API가 없는 구형 런처는 일반 `remember` 연결에 한해 기존 `startGoogleDriveAuth(nonce)`를 사용한다. 강제 계정 선택 요청은 legacy API로 조용히 대체하지 않고 명시적인 오류를 반환한다.
+- 기존 `takePendingStateForNonce(nonce)` polling, nonce 검사, WebView `message` source/origin 반환, timeout 및 iframe 정리 흐름은 재사용했다.
+- 인증 허용 Origin 목록은 기존 `https://wayward-cloud-auth.vercel.app`을 유지하면서 현재 CloudSave Pages Origin `https://jeiky224.github.io`를 추가했다. URL Origin이 목록에 없으면 원래 `window.open` 동작을 유지한다.
+- Native 측은 기존 `startGoogleDriveAuthWithPolicy` → `beginGoogleDriveAuth(nonce, forceSelectAccount)` → Google Identity `authorize` → `REQUEST_GOOGLE_AUTH` 결과 처리 → nonce별 결과 회수 경로를 그대로 사용한다. `forceSelectAccount=true`일 때 기존 Native 코드가 `AuthorizationRequest.Prompt.SELECT_ACCOUNT`를 설정한다.
+- 로그아웃 시 기존 CloudSave 모드의 WebView 상태 초기화와 `clearGoogleAccessToken(token)` 호출, 기존 bridge의 CloudSave 로그아웃 감지/네이티브 토큰 캐시 정리 로직을 재사용했다. 이는 access-token cache clear이며 Google 앱 권한 철회 성공을 의미하지 않는다.
+
+### 회귀 테스트 및 Android CI
+- GitHub Actions [Android validation run #43728860155](https://github.com/diethoon/wayward-launcher-official/actions/runs/43728860155) — `96387e622fe2cf8c36e222f8840d3a72f6dee961`, **completed / success**.
+- 성공 단계:
+  - JavaScript 문법 및 diff whitespace 검사.
+  - Official launcher scope 및 Remote Play native bridge contract.
+  - 기존 Google OAuth bridge contract.
+  - CloudSave native account-selection policy contract.
+  - Image Studio server/image-pack isolation, NovelAI provider lock/token persistence.
+  - image-server mode ordering 및 SAF image resolver.
+  - Debug/Release APK 빌드.
+  - Release APK 서명 인증서의 등록된 OAuth SHA-1 일치 검증.
+  - Android 15 emulator launcher startup/accessibility smoke 및 기존 native crypto instrumentation.
+- 신규 런타임 모의 테스트는 `select_account`에서 새 API에 `true` 전달, 일반 로그인에서 `false` 전달, legacy API 일반 로그인 호환, legacy-only 런처에서 강제 선택을 안전하게 거부하는 네 경로를 검사한다. 기존 로그아웃 캐시 정리, reload 후 저장 토큰 정리, Drive 401 invalidation 및 비대상 URL 보호 테스트도 통과했다.
+- Android 15 emulator smoke는 Debug APK 설치/실행, 런처 프로세스 생존, 홈 화면 accessibility labels 및 screenshot, 기존 Remote Play/Keystore native crypto instrumentation을 검사했다. 이 smoke는 Google 계정 UI 인증이나 CloudSave Drive save/restore를 실행하지 않는다.
+
+### APK 산출물 및 SHA-256
+- APK artifact ID: `14167223207`, name: `wayward-launcher-official-apks`.
+- GitHub artifact archive SHA-256: `31c7436b2ba5aa1b22c17164f43439cb5e2df7ac8db30bea15a17ae00f5685d9`.
+- Extracted Debug APK: `app-debug.apk`, SHA-256: `2ed089fcbdddc566fb32770e2597623b3ae86a93de2359353944c134ae804e49`.
+- Extracted Release APK: `app-release.apk`, SHA-256: `875ab8bd7a65f7c66a4bb9827b6e9edddb6bfbea67c643f1f497846f429c7613`.
+- Android 15 diagnostics artifact ID: `14166499804`, archive SHA-256: `73115fd426931eac4ab26fe3cb1a2f819b1463631e1e60148a9fc97263e30589`.
+- Local verified copies were extracted as `Wayward_Launcher_1.0.7-debug.apk`, `Wayward_Launcher_1.0.7-release.apk`, and `Wayward_Launcher_1.0.7_APK_SHA256SUMS.txt`. The uploaded APK artifact remains the authoritative CI artifact.
+
+### 아직 실환경에서 검증하지 않은 항목
+- 실제 물리 Android 기기에서 기존 Google 계정으로 Drive 저장목록이 열리는지.
+- CloudSave 명시적 로그아웃 후 Google 계정 선택 화면이 실제로 열리는지.
+- 다른 Google 계정을 선택한 뒤 새 계정으로 저장목록 조회·세이브·복원이 되는지.
+- 기존 계정 재선택 및 기존 계정의 저장 데이터가 유지되는지.
+- 사용자 WebView의 실제 세션/로컬 상태와 Native Google access-token cache가 기기에서 모두 정리되는지.
+- 위 항목은 Android CI/에뮬레이터 및 모의 브리지 테스트만으로 완료 판정하지 않는다. 실제 handset + Google account + Drive를 이용한 별도 acceptance test가 남아 있다.
+
+### 보호 경계
+- 현재 Remote Play 브랜치만 수정했으며 main 병합, PR 병합, 정식 릴리스, 운영 배포 또는 사용자 기기 설치는 하지 않았다.
+- 기존 CloudSave save/restore/encryption format, NovelAI, SAF, WebView Origin, Remote Play pairing/TLS/image generation 영역은 변경하지 않았다.
+- 다음 검증자는 APK를 실기기에 설치해 기존 계정 sync → CloudSave logout → 다른 계정 선택 → 재인증 → 새 계정 save/load 및 기존 계정 재선택 경로를 확인하고, 결과와 실제 Google 계정 화면 증거를 이 HANDOFF에 추가해야 한다.
