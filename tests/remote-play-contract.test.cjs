@@ -133,6 +133,10 @@ assert.match(imageProxy, /RemoteHostStore\.isReady\(appContext\)/,
   'Remote PC generation must require a paired Host and selected approved workspace root');
 assert.match(remoteImageApi, /\/v1\/game-image-api\/image\/generate/,
   'the original single-image endpoint must map to the authenticated PC Host adapter');
+assert.match(remoteImageApi, /\/api\/pack[\s\S]*?\/v1\/game-image-api\/pack/,
+  'the original Wayward server image-pack index must be restored through the authenticated PC Host adapter');
+assert.match(remoteImageApi, /\/v1\/game-image-api\/image-hit\?\" \+ rootQuery/,
+  'image-hit accounting must be scoped to the currently selected approved workspace root');
 assert.match(remoteImageApi, /\/v1\/game-image-api\/batch\/enqueue/,
   'the original pre-generation batch endpoint must map to the authenticated PC Host adapter');
 assert.match(remoteImageApi, /\/v1\/game-image-api\/image\/status/,
