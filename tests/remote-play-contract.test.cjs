@@ -27,7 +27,7 @@ const generatedAnchorRoute = main.indexOf('path.startsWith("/images/__wayward_ge
 assert.ok(generatedAnchorRoute >= 0 &&
   main.indexOf('serveGeneratedImageRequest(path, imageDiagnostics)', generatedAnchorRoute) > generatedAnchorRoute,
   'the app-private generated-image anchor must remain available in local generation mode');
-assert.match(main, /IMAGE_MODE_REMOTE_PC\.equals\(currentImageMode\(\)\)[\\s\\S]*?RemoteGameResourceBridge\.serve\(MainActivity\.this,u\.getEncodedPath\(\)/,
+assert.match(main, /IMAGE_MODE_REMOTE_PC\.equals\(currentImageMode\(\)\)[\s\S]*?RemoteGameResourceBridge\.serve\(MainActivity\.this,u\.getEncodedPath\(\)/,
   'Remote PC generated-image anchors must be fetched from the approved PC root through the pinned Host');
 assert.match(main, /IMAGE_MODE_REMOTE_PC/,
   'the existing serialized image routing manager must retain a Remote PC mode contract');
@@ -127,7 +127,7 @@ assert.match(bridge, /RemoteHostClient\.openGameResource/,
 
 assert.match(main, /ImageGenProxy\.dispatch\(web,requestId,method,path,headersJson,bodyBase64,remotePcMode\)/,
   'the existing WebView bridge must choose the remote transport from the selected image mode');
-assert.match(imageProxy, /if \(remotePcMode\)[\\s\\S]*?RemoteGameImageApiClient\.execute/,
+assert.match(imageProxy, /if \(remotePcMode\)[\s\S]*?RemoteGameImageApiClient\.execute/,
   'Remote PC image API calls must use the native authenticated transport instead of the local ImageGen port');
 assert.match(imageProxy, /RemoteHostStore\.isReady\(appContext\)/,
   'Remote PC generation must require a paired Host and selected approved workspace root');
