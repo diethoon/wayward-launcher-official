@@ -24,11 +24,19 @@ Updated: 2026-11-15 (Asia/Seoul)
 - `948ab8bd02e3d063bf3b990ebe7f77eba6f97543`: static contract tests cover original API route allowlist and native-only authentication.
 - Existing scanner/file manager UI, QR signature/nonce validation, PC folder picker and Keystore pairing remain reused.
 
-## Current validation and remaining work
-- Active CI run `43720579709` on `948ab8bd02e3d063bf3b990ebe7f77eba6f97543` is the validation authority; await its full Debug/Release APK, Android 15 emulator and instrumentation result.
-- Prior current-branch run `43717310911` passed on pre-bridge commit `543a0c6e5d51b5c7b7a2e29ed8c3f78cb1c54103`; this does not validate the new bridge.
-- Physical Android-to-Windows Wi-Fi, actual GPU inference, final portrait registration through real game IndexedDB, and reconnect under PC reboot remain unverified.
-- Ensure local NovelAI/CloudSave/SAF/WebView routing remains unchanged; no token is stored in JS or persistent preferences.
+## 최종 구현·검증 기준선 — 2026-11-15
+- Active branch: work/remote-play-ux-v1-20261115
+- Final Android source HEAD: e9307b75131809aba70ee6072bd37ee820b06532
+- Native legacy API mapping: a54a3192f73b8c8eb3de237c897b2d326e98779e; authenticated response envelope: 0eeac29c5b00776d0f4ed3247e375f1b21f8dd3f; Remote PC proxy branch: ecf3dd23bc8da4acdfa464b73b6b5aa7f9a584c7; generated anchor routing: 9f29c18bd09b15200a27df9f5b09ff01a7464539; pack mapping: 5a0648c4c441cb67ad79a5a67b7e4f5c198b41e3; route contract tests: e9307b75131809aba70ee6072bd37ee820b06532.
+- Android CI 43723628767 passed on the final Android source HEAD: JS contracts, Official scope, Google OAuth, NovelAI, SAF, Debug/Release APK build, Release signing verification and Android 15 emulator/instrumentation.
+- Android native instrumentation: 4 passed, 0 failed, 0 errors, 0 skipped. Includes Windows Manager camelCase QR nonce parsing/tamper checks, stable Android Keystore P-256 identity, HTTPS/private IPv4 enforcement and expiry-safe Host identity validation.
+- APK artifact 14165572345 SHA-256: 6763a4299beb20f50817f0dabde6196da7b3faa85e3da391cf308e8e592a0a11. Release APK SHA-256: 5df1cb7ef04000077cb2932a156b87c0f0a9c3e1434fc5297c91bc4f5d7a2023. Debug APK SHA-256: 4930140154a3e2555a9971cd281851220d85ee2f8ded83d22d082b32eed9df48.
+- Android 15 diagnostics artifact 14166185507 SHA-256: 054b8e7f315e39473c5572e5af6e10e73f26c7c0f522c4f4f8c25faf20d526fe.
+- Existing Android QR pairing, PC approved-root picker, separate Remote PC file manager, native TLS pin/auth/session and resource cache were reused. Legacy game paths /api/image/health, /api/pack, /api/image/generate, /api/image/status/{id}, /api/image/cancel, /api/image-hit and /api/batch/* route through native code; bearer tokens are not exposed to page JavaScript.
+- Remote image resource anchors under /images/__wayward_generated__/ are fetched from the selected approved PC root through the pinned HTTPS Native resource bridge. The per-game HTTPS localhost WebView origin/storage remains unchanged.
+- Device approval defaults to ReadOnly. PC Manager must explicitly grant UseComfyUi to the paired Android device for image generation; BrowseGameLibrary is also needed for resource fetches.
+- No physical Android handset, user's Windows Host, ComfyUI process or GPU is connected in this environment. Real Wi-Fi request, real GPU inference, handset image receipt and rendered portrait/IndexedDB behavior remain unverified. Android CI is not a substitute for those steps.
+- Next engineer: install the delivered APK on the physical handset, pair with the delivered Host over private Wi-Fi, select the approved game root, grant UseComfyUi in Manager, generate one known portrait, then verify image hash/length on Android and its rendered game portrait. Do not change models/LoRAs/workflows or open public ports.
 
 ## Constraints
 - No merge, official release, public endpoints, port opening or firewall changes.
@@ -46,10 +54,3 @@ Updated: 2026-11-15 (Asia/Seoul)
 - 완료는 실제 동작과 증거로만 판정한다. 커밋 SHA, 실행한 테스트/CI 링크 및 결과, 생성 산출물, 미검증·차단 항목을 기록한다. Mock/정적 테스트를 실환경 성공으로 표현하지 않는다.
 - 다음 작업자가 즉시 이어갈 수 있도록 이 HANDOFF를 각 의미 있는 단계마다 갱신한다.
 
-## 최신 검증 상태 및 즉시 다음 작업 (2026-11-15 14:xx UTC)
-- Android CI `43720845568` passed on code commit `9123a7c541d970468a81e859a5afb021cbc7ca80`: Remote Play routing contract, Google OAuth bridge, existing feature guards, Debug/Release APK build/signature verification, artifact upload, Android 15 emulator startup and native crypto tests all passed.
-- Earlier run `43720579709` failed only at the Remote Play routing contract regex; fixed in `9123a7c` and the full workflow then passed. Do not repeat this investigation or rerun CI without a code change.
-- The docs-only HEAD commit `8d3f55c` triggered another workflow (`43722031661`); it adds no code coverage. Treat `43720845568` as the latest meaningful code-validation result.
-- Remaining critical proof: physical Android ↔ Windows Host Wi-Fi request, real ComfyUI GPU generation, returned image bytes reaching Android, and actual game IndexedDB/portrait anchor update. These are not proven by static contract tests or emulator crypto tests.
-- Next: use the already-built APK and existing Host package; execute one deterministic end-to-end scenario with one known image request. Capture request ID, Host response/status, image hash/size, Android receive/cache result, and game anchor/IndexedDB result. Fix only the first failing boundary; do not redesign or repeat successful CI stages.
-- If physical PC/GPU/device access is unavailable, complete the deterministic integration harness and provide the exact missing hardware action as a blocker; do not idle or label mock success as real-device success.
