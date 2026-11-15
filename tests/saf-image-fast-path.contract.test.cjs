@@ -14,8 +14,12 @@ assert.match(main, /private Node resolveImageViaProvider\(/);
 assert.match(main, /details\.put\("resolverMode",resolverMode\)/);
 assert.match(resolver, /com\.android\.externalstorage\.documents/);
 assert.match(resolver, /normalizedRelativePath\.startsWith\("images\/"\)/);
-assert.match(main, /if\(FolderHandler\.isImageRequestPath\(path\)\)return serveImageRequestByMode\(folderHandler,path,imageDiagnostics\)/);
-assert.match(main, /if\(FolderHandler\.isImageRequestPath\(requestedPath\)\)[\s\S]*?return serveImageRequestByMode\(folderHandler,requestedPath,imageDiagnostics\)/);
+assert.match(main, /if\(FolderHandler\.isImageRequestPath\(path\)\)return serveImageRequestByMode\(folderHandler,path,u\.getEncodedPath\(\),r\.getRequestHeaders\(\),imageDiagnostics\)/);
+assert.match(main, /if\(FolderHandler\.isImageRequestPath\(requestedPath\)\)[\s\S]*?return serveImageRequestByMode\(folderHandler,requestedPath,u\.getEncodedPath\(\),r\.getRequestHeaders\(\),imageDiagnostics\)/);
+assert.match(main, /return serveImageRequest\(handler,path,samples\)/,
+  "the existing local SAF image path must remain the non-Remote-Play fallback");
+assert.match(main, /RemoteGameResourceBridge\.serve\(this,encodedPath,requestHeaders,samples\)/,
+  "only explicit PC Remote Play mode may route game image requests through the PC Host");
 assert.doesNotMatch(main, /serveExternalImagePath\(path\.substring\(8\)\)/,
   "image requests must never fall back to the original CDN");
 
