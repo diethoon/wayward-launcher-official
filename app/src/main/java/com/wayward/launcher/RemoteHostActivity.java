@@ -191,6 +191,16 @@ public final class RemoteHostActivity extends Activity {
     private void startLanDiscovery() {
         stopLanDiscovery(false);
         synchronized (discoveredHosts) { discoveredHosts.clear(); }
+        try {
+            connection = RemoteHostStore.loadConnection(this);
+        } catch (Exception error) {
+            setStatus("저장된 PC Host 신원 검증 실패: " + error.getMessage());
+            return;
+        }
+        if (connection == null) {
+            setStatus("mDNS는 최초 등록 수단이 아닙니다. Windows Manager에서 표시한 PC Host QR을 먼저 스캔하세요.");
+            return;
+        }
         nsdManager = getSystemService(NsdManager.class);
         if (nsdManager == null) {
             setStatus("Android NSD 검색을 사용할 수 없습니다.");
@@ -222,10 +232,19 @@ public final class RemoteHostActivity extends Activity {
                                     certificateFingerprint == null || !"1".equals(protocol)) return;
                             RemoteHostMdnsCandidate candidate = new RemoteHostMdnsCandidate(
                                     hostId, address, resolved.getPort(), keyFingerprint, certificateFingerprint);
+                            RemoteHostConnection trusted = connection;
+                            if (trusted == null ||
+                                    !trusted.hostId.equalsIgnoreCase(candidate.hostId) ||
+                                    !trusted.publicKeyFingerprint.equalsIgnoreCase(candidate.publicKeyFingerprint) ||
+                                    !trusted.certificateSha256.equalsIgnoreCase(candidate.certificateSha256)) {
+                                // mDNS is untrusted discovery metadata. Ignore every Host except
+                                // the one whose public key and TLS certificate were verified by QR.
+                                return;
+                            }
                             synchronized (discoveredHosts) {
                                 discoveredHosts.put(candidate.hostId, candidate);
                             }
-                            setStatus("LAN PC Host 검색됨: " + candidate.hostId + " · " + address.getHostAddress());
+                            setStatus("기존에 등록한 PC Host 발견: " + candidate.hostId + " · " + address.getHostAddress());
                         } catch (Exception error) {
                             setStatus("LAN Host 검색 응답을 무시했습니다: " + error.getMessage());
                         }
@@ -276,8 +295,13 @@ public final class RemoteHostActivity extends Activity {
     private void showDiscoveredHosts() {
         List<RemoteHostMdnsCandidate> entries;
         synchronized (discoveredHosts) { entries = new ArrayList<>(discoveredHosts.values()); }
+        RemoteHostConnection trusted = connection;
+        if (trusted == null) {
+            setStatus("최초 연결은 PC 화면의 QR 스캔이 필요합니다. mDNS 결과만으로 Host를 신뢰하지 않습니다.");
+            return;
+        }
         if (entries.isEmpty()) {
-            setStatus("같은 LAN에서 PC Host를 찾지 못했습니다. Windows Manager에서 LAN 접속을 켰는지 확인하세요.");
+            setStatus("등록한 PC Host를 같은 LAN에서 찾지 못했습니다. Windows Manager에서 LAN 접속을 켜고 같은 Wi-Fi를 사용하세요.");
             return;
         }
         String[] labels = new String[entries.size()];
@@ -289,7 +313,7 @@ public final class RemoteHostActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle("검색된 PC Host")
                 .setItems(labels, (dialog, which) -> runTask("LAN Host 서명 검증", () -> {
-                    RemoteHostConnection found = RemoteHostClient.discoverHost(entries.get(which));
+                    RemoteHostConnection found = RemoteHostClient.discoverHost(entries.get(which), trusted);
                     RemoteHostStore.saveConnection(this, found);
                     connection = found;
                     runOnUiThread(this::refreshConnectionUi);
