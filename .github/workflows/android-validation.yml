@@ -230,9 +230,9 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Android 15 emulator startup smoke test
+      - name: Android 15 emulator startup and Native crypto tests
         id: android15_smoke
-        timeout-minutes: 4
+        timeout-minutes: 8
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -254,5 +254,7 @@ jobs:
           path: |
             artifacts/android15-launcher-home.png
             artifacts/android15-launcher-home.xml
+            app/build/reports/androidTests/connected/debug
+            app/build/outputs/androidTest-results/connected/debug
           if-no-files-found: warn
           retention-days: 14
