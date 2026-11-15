@@ -1,7 +1,9 @@
 # Wayward Launcher 1.0.6 — Remote Play Native integration
 
-**Status:** backend/client modules in progress; UI intentionally deferred  
-**Base:** `fix/novelai-only-persistent-token-20261114` at `fc4a6618e7ae4e37a55ee9c679ef201634b72831`  
+**Status:** backend/client modules in progress; UI intentionally deferred
+
+**Base:** `fix/novelai-only-persistent-token-20261114` at `fc4a6618e7ae4e37a55ee9c679ef201634b72831`
+
 **Work branch:** `work/remote-play-integration-20261115`
 
 This work adds Native Remote Host integration modules without changing the existing launcher home layout, NovelAI token storage/provider policy, Google Drive CloudSave flow, SAF tree registration, per-game WebView Origin, or per-game localStorage/IndexedDB.
