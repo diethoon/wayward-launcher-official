@@ -28,7 +28,8 @@ final class ImageGenProxy {
     private ImageGenProxy() {}
 
     static void dispatch(WebView web, String requestId, String method,
-                         String pathAndQuery, String headersJson, String bodyBase64) {
+                         String pathAndQuery, String headersJson, String bodyBase64,
+                         boolean remotePcMode) {
         if (web == null || requestId == null || !requestId.matches("[A-Za-z0-9._-]{1,80}")) return;
         final String safeMethod = method == null ? "GET" : method.toUpperCase(Locale.ROOT);
         final String safePath = validatePath(pathAndQuery);
@@ -38,6 +39,49 @@ final class ImageGenProxy {
         }
         final android.content.Context appContext=web.getContext().getApplicationContext();
         final String apiPath=Uri.parse(safePath).getPath();
+        if (remotePcMode) {
+            if (!RemoteHostStore.isReady(appContext)) {
+                deliver(web, requestId, errorResponse(503,
+                        "PC 페어링과 승인된 PC 폴더 선택이 필요합니다."));
+                return;
+            }
+            new Thread(() -> {
+                byte[] requestBody = null;
+                try {
+                    requestBody = bodyBase64 == null || bodyBase64.isEmpty()
+                            ? new byte[0] : Base64.decode(bodyBase64, Base64.DEFAULT);
+                    if (requestBody.length > 4 * 1024 * 1024) {
+                        deliver(web, requestId, errorResponse(413, "Remote ImageGen 요청이 4 MiB 제한을 초과했습니다."));
+                        return;
+                    }
+                    JSONObject envelope = RemoteGameImageApiClient.execute(
+                            appContext, safeMethod, safePath, requestBody);
+                    deliver(web, requestId, envelope.toString());
+                    JSONObject diagnostic = new JSONObject();
+                    try {
+                        diagnostic.put("method", safeMethod);
+                        diagnostic.put("path", apiPath);
+                        diagnostic.put("status", envelope.optInt("status", 502));
+                    } catch (Exception ignored) {}
+                    DiagnosticsLogger.event(appContext, "INFO", "remote_game_image_api",
+                            "authenticated_host_api_response", diagnostic);
+                } catch (Exception error) {
+                    JSONObject diagnostic = new JSONObject();
+                    try {
+                        diagnostic.put("method", safeMethod);
+                        diagnostic.put("path", apiPath);
+                        diagnostic.put("exception", error.getClass().getSimpleName());
+                    } catch (Exception ignored) {}
+                    DiagnosticsLogger.event(appContext, "ERROR", "remote_game_image_api",
+                            "authenticated_host_api_error", diagnostic);
+                    deliver(web, requestId, RemoteGameImageApiClient.offlineResponse(
+                            error.getMessage() == null ? "Remote PC 이미지 API에 연결하지 못했습니다." : error.getMessage()).toString());
+                } finally {
+                    if (requestBody != null) java.util.Arrays.fill(requestBody, (byte) 0);
+                }
+            }, "wayward-remote-game-image-api").start();
+            return;
+        }
         ImageGenStatusStore.State runtime=ImageGenStatusStore.read(appContext.getFilesDir());
         boolean healthRequest="/api/image/health".equals(apiPath);
         if(healthRequest){
