@@ -156,12 +156,17 @@ public final class RemoteComfyClient {
         File target = new File(directory, key + ".image");
         Object lock = CACHE_LOCKS.computeIfAbsent(key, ignored -> new Object());
         synchronized (lock) {
-            if (target.isFile() && target.length() > 0 && target.length() <= MAX_IMAGE_DOWNLOAD_BYTES) {
+            File checksumFile = new File(directory, key + ".sha256");
+            if (target.isFile() && target.length() > 0 && target.length() <= MAX_IMAGE_DOWNLOAD_BYTES &&
+                    verifyCachedImage(target, checksumFile)) {
                 target.setLastModified(System.currentTimeMillis());
                 return target;
             }
+            delete(target);
+            delete(checksumFile);
 
             File temporary = new File(directory, key + "." + android.os.Process.myPid() + ".part");
+            delete(temporary);
             long downloaded = 0;
             java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
             try (ImageResponse response = openImage(context, host, safeName, safeSubfolder, safeType);
@@ -190,7 +195,6 @@ public final class RemoteComfyClient {
                 if (!temporary.renameTo(target)) throw new IOException("Could not finalize ComfyUI image cache file.");
                 target.setLastModified(System.currentTimeMillis());
                 String checksum = hex(digest.digest());
-                File checksumFile = new File(directory, key + ".sha256");
                 File checksumTemp = new File(directory, key + ".sha256.part");
                 try (FileOutputStream checksumOutput = new FileOutputStream(checksumTemp, false)) {
                     checksumOutput.write(checksum.getBytes(StandardCharsets.US_ASCII));
@@ -198,13 +202,57 @@ public final class RemoteComfyClient {
                     checksumOutput.getFD().sync();
                 }
                 delete(checksumFile);
-                if (!checksumTemp.renameTo(checksumFile)) delete(checksumTemp);
+                if (!checksumTemp.renameTo(checksumFile)) {
+                    delete(target);
+                    delete(checksumTemp);
+                    throw new IOException("Could not finalize ComfyUI image checksum.");
+                }
+                if (!verifyCachedImage(target, checksumFile)) {
+                    delete(target);
+                    delete(checksumFile);
+                    throw new IOException("Generated ComfyUI image cache checksum verification failed.");
+                }
                 purgeComfyCache(directory, target);
                 return target;
             } catch (Exception error) {
                 delete(temporary);
                 throw error;
             }
+        }
+    }
+
+    private static boolean verifyCachedImage(File image, File checksumFile) {
+        if (image == null || checksumFile == null || !image.isFile() || !checksumFile.isFile()) return false;
+        try {
+            String expected;
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(new FileInputStream(checksumFile), StandardCharsets.US_ASCII))) {
+                expected = reader.readLine();
+            }
+            if (expected == null || !expected.matches("(?i)[0-9a-f]{64}")) return false;
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            try (InputStream input = new FileInputStream(image)) {
+                byte[] buffer = new byte[64 * 1024];
+                int read;
+                long total = 0;
+                while ((read = input.read(buffer)) != -1) {
+                    if (read == 0) continue;
+                    total += read;
+                    if (total > MAX_IMAGE_DOWNLOAD_BYTES) return false;
+                    digest.update(buffer, 0, read);
+                }
+            }
+            byte[] actual = digest.digest();
+            byte[] expectedBytes = expected.getBytes(StandardCharsets.US_ASCII);
+            try {
+                return java.security.MessageDigest.isEqual(
+                        hex(actual).getBytes(StandardCharsets.US_ASCII), expectedBytes);
+            } finally {
+                java.util.Arrays.fill(actual, (byte) 0);
+                java.util.Arrays.fill(expectedBytes, (byte) 0);
+            }
+        } catch (Exception ignored) {
+            return false;
         }
     }
 
