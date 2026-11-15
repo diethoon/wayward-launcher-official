@@ -107,6 +107,11 @@ def main() -> int:
     if (ARTIFACTS / "android15-launcher-home.png").stat().st_size == 0:
         raise RuntimeError("Android 15 home screenshot is empty.")
 
+    # Run real Android-runtime crypto tests for Android Keystore, ECDSA P1363
+    # conversion, QR signature expiry, Host identity binding and signed Pairing
+    # approval receipt field/permission binding.
+    run(["gradle", "--no-daemon", "connectedDebugAndroidTest"])
+
     print("PASS: Android 15 emulator launched the official launcher and confirmed:")
     for label in expected_labels:
         print(f"  - {label}")
