@@ -76,9 +76,13 @@
     }
 
     const host = window.WMLHost;
+    const hasPolicyStart = !!(host &&
+      typeof host.startGoogleDriveAuthWithPolicy === 'function');
+    const hasLegacyStart = !!(host &&
+      typeof host.startGoogleDriveAuth === 'function');
     if (parsed.origin !== AUTH_ORIGIN ||
         !host ||
-        typeof host.startGoogleDriveAuth !== 'function' ||
+        (!hasPolicyStart && !hasLegacyStart) ||
         typeof host.takePendingStateForNonce !== 'function') {
       return originalOpen ? originalOpen(url, target, features) : null;
     }
@@ -87,6 +91,14 @@
     if (!/^[a-f0-9]{48}$/.test(nonce)) {
       return originalOpen ? originalOpen(url, target, features) : null;
     }
+
+    // The CloudSave page communicates explicit account selection through
+    // login=select_account. Missing login keeps the legacy remembered-account
+    // behavior for older callers.
+    const accountPolicy = parsed.searchParams.get('login') || 'remember';
+    const policyIsValid = accountPolicy === 'remember' ||
+      accountPolicy === 'select_account';
+    const forceSelectAccount = accountPolicy === 'select_account';
 
     const parent = document.documentElement || document.body;
     if (!parent) return originalOpen ? originalOpen(url, target, features) : null;
@@ -162,14 +174,34 @@
       }
     }, 250);
 
-    try {
-      host.startGoogleDriveAuth(nonce);
-    } catch (error) {
-      deliver({
+    const deliverStartError = message => {
+      // window.open's caller assigns the returned WindowProxy before it
+      // handles postMessage. Defer errors one task so event.source matches.
+      window.setTimeout(() => deliver({
         type: 'wayward-cloud-auth-error',
         nonce,
-        message: String(error && error.message || error)
-      });
+        message
+      }), 0);
+    };
+
+    if (!policyIsValid) {
+      deliverStartError('Google 계정 선택 정책 값이 올바르지 않습니다.');
+      return source;
+    }
+
+    try {
+      if (hasPolicyStart) {
+        // New launchers receive both the normal and forced account policies.
+        host.startGoogleDriveAuthWithPolicy(nonce, forceSelectAccount);
+      } else if (!forceSelectAccount && hasLegacyStart) {
+        // Older launchers remain compatible for ordinary remembered-account auth.
+        host.startGoogleDriveAuth(nonce);
+      } else {
+        // Never silently ignore a requested account picker on an old launcher.
+        deliverStartError('현재 Android 런처는 Google 계정 선택 API를 제공하지 않습니다. 런처를 업데이트한 뒤 다시 시도하세요.');
+      }
+    } catch (error) {
+      deliverStartError(String(error && error.message || error));
     }
 
     return source;
