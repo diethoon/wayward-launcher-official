@@ -54,24 +54,25 @@ The bridge does not change SAF local folder access. When Remote PC mode is not s
 
 The Host decides whether the Device has `BrowseGameLibrary`, `ListFiles`, `DownloadFiles` and `UploadFiles` permissions. Default pairing permissions are read-only.
 
-## ComfyUI operations
+## ComfyUI and original game ImageGen operations
 
-The Native Comfy client supports:
-- system status, installed node info and queue;
-- workflow submission and Prompt ID tracking;
-- history lookup and job cancellation;
-- streaming input image upload;
-- output image download and app-private cache keyed by Host + Prompt ID + file identity.
+The current Remote PC mode routes the original game HTML ImageGen API through the existing WebView proxy, then through RemoteGameImageApiClient and the certificate-pinned Host session. The mapped routes are:
+- GET /api/image/health and GET /api/pack;
+- POST /api/image/generate, GET /api/image/status/{promptId}, POST /api/image/cancel;
+- POST /api/image-hit;
+- POST /api/batch/enqueue, GET /api/batch/status and POST /api/batch/{pause|resume|clear}.
 
-Generated image cache files have a SHA-256 sidecar and must pass a hash check before reuse. The PC Host still owns the only upstream connection to `127.0.0.1:8188`. Mobile process start/stop/restart is not available in API v1; the Windows Manager remains responsible for ComfyUI process lifecycle.
+The bearer token remains inside native Android code. The game JavaScript sees only the original JSON request and response shape. A completed PC output is stored under the selected approved root at __wayward_generated__/img-{promptId}.{ext}; the Host atomically updates __wayward_generated__/pack-index.json and serves the image through the existing authenticated game-resource endpoint. The original game then adds the portrait through its existing image-index path and fetches the same /images/__wayward_generated__/... anchor. Android serves the anchor from the pinned Host through its bounded app-private cache. The per-game HTTPS localhost WebView origin and IndexedDB/localStorage namespace are unchanged.
 
-The Native Comfy API is not yet connected to the existing game's ImageGen response contract. It does not alter the NovelAI-only local ImageGen server.
+The separate native Comfy client also supports status, object-info, queue, workflow submission/history/cancel, input uploads and output downloads with SHA-256-verified private caching. The PC Host remains the sole upstream client to 127.0.0.1:8188; Android cannot start or stop ComfyUI.
 
-## UI deliberately not included
+Current compatibility limitations: the Host uses a built-in ComfyUI graph and the requested or first available installed checkpoint. The original workflow field is a profile label, not a ComfyUI node graph. The request includes loraStrength but no LoRA asset identifier, so this adapter does not apply LoRA strength or custom workflow selection. No model, LoRA, custom node or workflow files are altered. These points require confirmation against the actual user ComfyUI installation.
 
-No Remote Play home tile, settings Activity, camera permission, QR scanner dependency, new button location or screen layout is included. The user has reserved the final UI design for a separate instruction.
+## Existing Remote Play UI and permission requirements
 
-When the UI design is supplied, the new Activity/screen should call these Native modules. It should not duplicate QR verification, certificate pinning, session management, file API or ComfyUI transport. The UI must use the existing serialized `ImageServerModeCoordinator` and `RemotePcServerControl` contract, then invoke `switchToRemotePcServer()` only when the selected Host/root has been validated.
+The current working branch already reuses the launcher Home actions for QR pairing, approved PC folder selection, image mode selection and the separate Remote PC file manager. RemotePairingActivity and RemotePcFileManagerActivity call the existing native crypto/file clients; do not add a second TLS/session/network implementation. The selected image mode is serialized through ImageServerModeCoordinator and RemotePcServerControl.
+
+PC Manager approval defaults to ReadOnly. The user must explicitly enable UseComfyUi for the paired Android device before generation requests are accepted. BrowseGameLibrary is separately required for PC image resource retrieval.
 
 ## Current verification limits
 
