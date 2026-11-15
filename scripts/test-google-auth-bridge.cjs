@@ -7,7 +7,7 @@ const { URL } = require('node:url');
 
 function runNativeAuthCase(source, options) {
   const nonce = options.nonce;
-  const origin = 'https://wayward-cloud-auth.vercel.app';
+  const origin = options.origin || 'https://wayward-cloud-auth.vercel.app';
   const frame = {
     style: {},
     contentWindow: { closed: false, close() {} },
@@ -92,7 +92,7 @@ function runNativeAuthCase(source, options) {
 async function testNativeAccountSelectionDispatch(source) {
   const nonce = 'a'.repeat(48);
   const forced = runNativeAuthCase(source, {
-    nonce, login: 'select_account', policyApi: true, legacyApi: true
+    nonce, login: 'select_account', origin: 'https://jeiky224.github.io', policyApi: true, legacyApi: true
   });
   assert.deepEqual(forced.calls, [['policy', nonce, true]],
     'logout re-auth must forward forceSelectAccount=true through the policy API');
