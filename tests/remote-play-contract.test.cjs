@@ -6,6 +6,7 @@ const main = read('app/src/main/java/com/wayward/launcher/MainActivity.java');
 const client = read('app/src/main/java/com/wayward/launcher/RemoteHostClient.java');
 const connection = read('app/src/main/java/com/wayward/launcher/RemoteHostConnection.java');
 const store = read('app/src/main/java/com/wayward/launcher/RemoteHostStore.java');
+const discovery = read('app/src/main/java/com/wayward/launcher/RemoteHostDiscovery.java');
 const bridge = read('app/src/main/java/com/wayward/launcher/RemoteGameResourceBridge.java');
 const manifest = read('app/src/main/AndroidManifest.xml');
 const naiStore = read('app/src/main/java/com/wayward/launcher/NovelAiTokenStore.java');
@@ -45,8 +46,12 @@ assert.doesNotMatch(main, /@JavascriptInterface[^\n]*(?:accessToken|sessionToken
 assert.match(client, /expiresAtUtc/,
   'short-lived Host sessions must observe the server-issued expiry');
 
-assert.match(client, /_wayward-remote-host/,
-  'the native client must implement signed mDNS rediscovery for an already trusted Host');
+assert.match(discovery, /_wayward-remote-host\\._tcp/,
+  'the non-UI discovery service must use the Host DNS-SD service type');
+assert.match(discovery, /RemoteHostStore\\.loadConnection/,
+  'mDNS rediscovery must require an existing QR-trusted Host');
+assert.match(discovery, /RemoteHostClient\\.discoverHost/,
+  'a discovered endpoint must be validated through the saved Host certificate pin');
 assert.match(client, /verifyAndStoreQr/,
   'QR registration must verify the signed Host identity before storing it');
 assert.match(client, /pairAndWaitForApproval/,
