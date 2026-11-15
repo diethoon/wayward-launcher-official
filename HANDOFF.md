@@ -162,3 +162,16 @@ Updated: 2026-11-15 (Asia/Seoul)
 - APK artifact ID: `14169294143`, `wayward-launcher-official-apks`, archive SHA-256: `a727385675c866433be0ff3d88a9841fb10fb669003f62f79187c6c01461febc`.
 - Android 15 diagnostics artifact ID: `14170075280`, archive SHA-256: `56498ee0826a38ffaeddc5ac16eedabd543ef10303c31149ec16e9199a7454fe`.
 - No physical Android handset, physical Windows Host or WAN router path was exercised. The Manager still creates the QR from an active private IPv4 Host listener. Once the QR payload is shared, its signed public endpoint can also carry initial Host identity/pairing requests if the private route is unreachable; the existing nonce and explicit Manager approval remain mandatory. Later reconnect can also use that signed endpoint where router mapping and upstream access allow it.
+
+## WebView SAF image-pack directory picker — 2026-11-16
+
+- Latest Android implementation baseline before this fix: `work/remote-play-ux-v1-20261115` @ `ab185a4005b6ac86784c49b76e454d9a86d2c1e4`. Default `main` was newer by a documentation-only commit; the active product-code branch above was used.
+- Code commit: `5f8303ae1bcda8fea697a19410b07c5d6e152035`.
+- `WebFileChooser` now separates WebView `MODE_OPEN_FOLDER` (public value 2) from ordinary/single/multiple file requests. Folder requests launch `ACTION_OPEN_DOCUMENT_TREE` without `CATEGORY_OPENABLE`; the read + persistable + prefix grant is requested.
+- On successful selection, the result must be a `content://` tree URI with a read grant. Manager calls `takePersistableUriPermission` before returning that tree URI via the existing `ValueCallback<Uri[]>`, allowing the WebView File System Access directory handle to read the chosen folder after restart. Invalid/cancelled/unpersistable selections are returned as cancellation.
+- Ordinary file and multiple ZIP flows remain on the original `ACTION_OPEN_DOCUMENT` path. No changes to Faith/game code, `MainActivity` game file loading, `SafTree`, `SafImageDocumentResolver`, `SafImageCache`, image URL routing, directory scans, or cache behavior.
+- Added regression contract assertions for the distinct intents, tree URI validation, persistable read permission and callback URI return; added the test to Android Actions.
+- Android Actions [run #43773814527](https://github.com/diethoon/wayward-launcher-official/actions/runs/43773814527): **completed / success** on the code commit. All contract tests passed, Debug/Release APK builds passed, Release APK OAuth signing SHA-1 verification passed, and Android 15 emulator startup/native instrumentation passed (7 instrumentation tests completed).
+- APK artifact ID `14185278869`, name `wayward-launcher-official-apks`, archive SHA-256 `be64cfcc097c1d50364f26f4f6c6669472ef8ed35453912e8c3bbc2c59bedfd9`.
+- Android 15 UI diagnostics artifact ID `14184968422`, archive SHA-256 `d9feaab00d7fb7b7212e5c7df21126e662a910bffe46d256b9902136c56a334e`.
+- Not verified in CI or on a physical handset: the live DocumentsUI screen showing the Korean `이 폴더 사용` button, selection of a real `image-packs` directory, reading its actual contents from Faith, and persistence after a physical app restart. The emulator smoke validates app startup/health and existing instrumentation, not this user-driven SAF dialog. The branch has not been merged to `main` or released.
