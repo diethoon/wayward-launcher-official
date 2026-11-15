@@ -13,6 +13,10 @@ import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /** Bounded, app-private disk cache for PC game image resources. */
 final class RemoteResourceCache {
@@ -20,6 +24,7 @@ final class RemoteResourceCache {
     private static final long MAX_TOTAL_BYTES = 256L * 1024 * 1024;
     private static final long FRESH_MILLIS = 3_000L;
     private static final String CACHE_DIR = "wayward-remote-game-v1";
+    private static final ConcurrentHashMap<String, CompletableFuture<Boolean>> IN_FLIGHT = new ConcurrentHashMap<>();
 
     private RemoteResourceCache() {}
 
@@ -54,6 +59,16 @@ final class RemoteResourceCache {
         return entry != null && System.currentTimeMillis() - entry.storedAtMillis <= FRESH_MILLIS;
     }
 
+    static String cacheKey(String hostId, String rootId, String relativePath) throws Exception {
+        return key(hostId, rootId, relativePath);
+    }
+
+    static FetchFlight acquireFlight(String key) {
+        CompletableFuture<Boolean> created = new CompletableFuture<>();
+        CompletableFuture<Boolean> active = IN_FLIGHT.putIfAbsent(key, created);
+        return active == null ? new FetchFlight(key, created, true) : new FetchFlight(key, active, false);
+    }
+
     static CacheWriter beginWrite(Context context, String hostId, String rootId, String relativePath,
             String contentType, String etag, String lastModified) {
         try {
@@ -62,6 +77,35 @@ final class RemoteResourceCache {
             return new CacheWriter(directory, key, contentType, etag, lastModified);
         } catch (Exception ignored) {
             return null;
+        }
+    }
+
+    static final class FetchFlight {
+        private final String key;
+        private final CompletableFuture<Boolean> completion;
+        private final boolean owner;
+        private boolean completed;
+
+        FetchFlight(String key, CompletableFuture<Boolean> completion, boolean owner) {
+            this.key = key;
+            this.completion = completion;
+            this.owner = owner;
+        }
+
+        boolean isOwner() { return owner; }
+
+        boolean await(long timeoutMillis) throws InterruptedException {
+            if (owner) return false;
+            try { return Boolean.TRUE.equals(completion.get(timeoutMillis, TimeUnit.MILLISECONDS)); }
+            catch (TimeoutException ignored) { return false; }
+            catch (java.util.concurrent.ExecutionException ignored) { return false; }
+        }
+
+        synchronized void complete(boolean cached) {
+            if (!owner || completed) return;
+            completed = true;
+            completion.complete(cached);
+            IN_FLIGHT.remove(key, completion);
         }
     }
 
