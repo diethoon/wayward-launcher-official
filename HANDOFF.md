@@ -45,3 +45,11 @@ Updated: 2026-11-15 (Asia/Seoul)
 - 속도 최적화가 보안, 인증, 데이터 무결성, 기존 기능 호환성 또는 실제 기기 검증을 희생해서는 안 된다.
 - 완료는 실제 동작과 증거로만 판정한다. 커밋 SHA, 실행한 테스트/CI 링크 및 결과, 생성 산출물, 미검증·차단 항목을 기록한다. Mock/정적 테스트를 실환경 성공으로 표현하지 않는다.
 - 다음 작업자가 즉시 이어갈 수 있도록 이 HANDOFF를 각 의미 있는 단계마다 갱신한다.
+
+## 최신 검증 상태 및 즉시 다음 작업 (2026-11-15 14:xx UTC)
+- Android CI `43720845568` passed on code commit `9123a7c541d970468a81e859a5afb021cbc7ca80`: Remote Play routing contract, Google OAuth bridge, existing feature guards, Debug/Release APK build/signature verification, artifact upload, Android 15 emulator startup and native crypto tests all passed.
+- Earlier run `43720579709` failed only at the Remote Play routing contract regex; fixed in `9123a7c` and the full workflow then passed. Do not repeat this investigation or rerun CI without a code change.
+- The docs-only HEAD commit `8d3f55c` triggered another workflow (`43722031661`); it adds no code coverage. Treat `43720845568` as the latest meaningful code-validation result.
+- Remaining critical proof: physical Android ↔ Windows Host Wi-Fi request, real ComfyUI GPU generation, returned image bytes reaching Android, and actual game IndexedDB/portrait anchor update. These are not proven by static contract tests or emulator crypto tests.
+- Next: use the already-built APK and existing Host package; execute one deterministic end-to-end scenario with one known image request. Capture request ID, Host response/status, image hash/size, Android receive/cache result, and game anchor/IndexedDB result. Fix only the first failing boundary; do not redesign or repeat successful CI stages.
+- If physical PC/GPU/device access is unavailable, complete the deterministic integration harness and provide the exact missing hardware action as a blocker; do not idle or label mock success as real-device success.
