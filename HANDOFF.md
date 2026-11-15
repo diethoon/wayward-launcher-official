@@ -16,16 +16,19 @@ Updated: 2026-11-15 (Asia/Seoul)
 - Latest commit b682b3f retains locally generated images behind the generated-image anchor after the local image server stops; it adds an instrumentation test for Windows Manager camelCase QR JSON nonce parsing and tamper/missing/malformed cases.
 - Preserve NovelAI, CloudSave, SAF and current WebView routing.
 
-## Work remaining
-1. Audit local image anchor routing and QR nonce compatibility against the current Windows Manager payload.
-2. Complete Android pairing UX, PC folder browsing and separate Remote PC file manager using existing native clients. Do not duplicate crypto/network clients.
-3. Identify exact original game HTML /api/image/*, /api/batch/* and image-pack contracts before implementing adapters. Keep generated results app-private; never expose Host credentials to JavaScript.
-4. Run JS/unit, Android Debug/Release, Android 15 emulator and instrumentation CI on the final active branch commit.
+## Current implementation commits
+- `a54a3192f73b8c8eb3de237c897b2d326e98779e`: native `RemoteGameImageApiClient` maps the original game API to allowlisted Host routes.
+- `0eeac29c5b00776d0f4ed3247e375f1b21f8dd3f`: native authenticated JSON response envelope with in-memory bearer token and 401 re-auth.
+- `ecf3dd23bc8da4acdfa464b73b6b5aa7f9a584c7`: `ImageGenProxy` remote-PC transport branch.
+- `9f29c18bd09b15200a27df9f5b09ff01a7464539`: generated portrait anchor routes to the PC Host in Remote PC mode; runtime mode metadata exposes `remote-pc`.
+- `948ab8bd02e3d063bf3b990ebe7f77eba6f97543`: static contract tests cover original API route allowlist and native-only authentication.
+- Existing scanner/file manager UI, QR signature/nonce validation, PC folder picker and Keystore pairing remain reused.
 
-## Inherited verification (earlier branch only)
-- CI run 43682267815 passed on 39ac66aa6d6d15a706b079197f42543561f33fec, including Debug/Release APK build and 3 Android instrumentation tests.
-- This does not validate current branch b682b3f or later commits. Re-run CI on the active branch.
-- No physical Android-to-Windows Wi-Fi test is available.
+## Current validation and remaining work
+- Active CI run `43720579709` on `948ab8bd02e3d063bf3b990ebe7f77eba6f97543` is the validation authority; await its full Debug/Release APK, Android 15 emulator and instrumentation result.
+- Prior current-branch run `43717310911` passed on pre-bridge commit `543a0c6e5d51b5c7b7a2e29ed8c3f78cb1c54103`; this does not validate the new bridge.
+- Physical Android-to-Windows Wi-Fi, actual GPU inference, final portrait registration through real game IndexedDB, and reconnect under PC reboot remain unverified.
+- Ensure local NovelAI/CloudSave/SAF/WebView routing remains unchanged; no token is stored in JS or persistent preferences.
 
 ## Constraints
 - No merge, official release, public endpoints, port opening or firewall changes.
