@@ -117,6 +117,7 @@ public final class MainActivity extends Activity {
     @Override public void onCreate(Bundle b){
         super.onCreate(b);
         DiagnosticsLogger.event(this,"INFO","launcher","activity_create",null);
+        registerRemotePcControl();
         zipMods=new ZipModStore(getFilesDir());
         loadProfiles();
         showHome();
@@ -328,6 +329,8 @@ public final class MainActivity extends Activity {
         boolean active=state.isReady()||state.isAvailable()||state.isStarting();
         boolean generationSelected=IMAGE_MODE_GENERATION.equals(mode)&&active;
         boolean packsSelected=IMAGE_MODE_PACKS_ONLY.equals(mode);
+        boolean remoteReady=RemoteHostStore.isReady(this);
+        boolean remoteSelected=IMAGE_MODE_REMOTE_PC.equals(mode)&&remoteReady;
         String token="";
         try{ token=NovelAiTokenStore.readToken(this); }catch(Exception ignored){}
         boolean tokenReady=token!=null&&!token.isEmpty();
@@ -335,7 +338,8 @@ public final class MainActivity extends Activity {
             String message;
             if(imageModeTransitionInProgress) message="서버 전환 중 · 기존 서버를 종료하고 새 모드를 적용합니다.";
             else if(imageGenSessionMessage!=null&&imageGenSessionMessage.startsWith("이미지 서버 전환 실패:")) message=imageGenSessionMessage;
-            else if(IMAGE_MODE_REMOTE_PC.equals(mode)) message="집 PC 원격 서버 모드 · 원격 연결 기능은 후속 작업에서 연결됩니다.";
+            else if(IMAGE_MODE_REMOTE_PC.equals(mode)&&remoteReady) message="PC Remote Play 활성 · "+RemoteHostStore.getSelectedRootLabel(this)+"의 이미지 리소스를 PC에서 가져옵니다.";
+            else if(IMAGE_MODE_REMOTE_PC.equals(mode)) message="PC Remote Play 연결 정보가 필요합니다. PC 등록 및 폴더 설정을 진행하세요.";
             else if(generationSelected&&state.isReady()) message="이미지 생성 서버 실행 중 · 이미지 생성 요청은 런처 서버로 전달됩니다.";
             else if(generationSelected) message="이미지 생성 서버 준비 중 · 생성 경로를 연결하고 있습니다.";
             else if(IMAGE_MODE_GENERATION.equals(mode)&&!active) message="이미지 생성 서버가 중지되었습니다. 다시 실행하거나 이미지팩 모드로 전환하세요.";
@@ -359,6 +363,57 @@ public final class MainActivity extends Activity {
         packsParams.topMargin=dp(9);
         packsParams.bottomMargin=dp(4);
         imageModePanel.addView(packs,packsParams);
+
+        View remote=glassModeTile(remoteSelected?"PC Remote Play · 활성":"PC Remote Play",
+                remoteReady?"PC 허용 폴더 · "+RemoteHostStore.getSelectedRootLabel(this)
+                        :"QR 또는 LAN 검색으로 PC를 등록하고 폴더를 선택하세요.",
+                remoteSelected,null,()->{
+                    if(!remoteReady){openRemoteHostSettings();return;}
+                    if(IMAGE_MODE_REMOTE_PC.equals(currentImageMode())) switchToImagePacksOnly();
+                    else switchToRemotePcServer();
+                });
+        LinearLayout.LayoutParams remoteParams=new LinearLayout.LayoutParams(-1,dp(76));
+        remoteParams.topMargin=dp(9);
+        remoteParams.bottomMargin=dp(4);
+        imageModePanel.addView(remote,remoteParams);
+        Button remoteSettings=compactButton("PC 등록 / 연결 설정",false,this::openRemoteHostSettings);
+        LinearLayout.LayoutParams remoteSettingsParams=new LinearLayout.LayoutParams(-1,dp(40));
+        remoteSettingsParams.topMargin=dp(5);
+        imageModePanel.addView(remoteSettings,remoteSettingsParams);
+    }
+
+    private void openRemoteHostSettings(){
+        startActivity(new Intent(this,RemoteHostActivity.class));
+    }
+
+    private void registerRemotePcControl(){
+        registerRemotePcServerControl(new RemotePcServerControl(){
+            @Override public void stop(ImageServerModeCoordinator.Callback callback){
+                RemoteHostClient.clearSession();
+                callback.onSuccess();
+            }
+            @Override public void start(ImageServerModeCoordinator.Callback callback){
+                new Thread(()->{
+                    try{
+                        RemoteHostConnection host=RemoteHostStore.loadConnection(MainActivity.this);
+                        if(host==null)throw new IllegalStateException("먼저 PC Remote Host를 등록하세요.");
+                        String rootId=RemoteHostStore.getSelectedRootId(MainActivity.this);
+                        if(rootId==null||rootId.isEmpty())throw new IllegalStateException("PC 게임 폴더를 선택하세요.");
+                        RemoteHostClient.authenticate(MainActivity.this,host);
+                        org.json.JSONArray roots=RemoteHostClient.getWorkspaceRoots(MainActivity.this,host);
+                        boolean found=false;
+                        for(int i=0;i<roots.length();i++){
+                            org.json.JSONObject root=roots.optJSONObject(i);
+                            if(root!=null&&rootId.equals(root.optString("rootId",""))){found=true;break;}
+                        }
+                        if(!found)throw new IllegalStateException("PC에서 선택한 허용 폴더를 더 이상 찾을 수 없습니다. 폴더를 다시 선택하세요.");
+                        runOnUiThread(callback::onSuccess);
+                    }catch(Throwable error){
+                        runOnUiThread(()->callback.onFailure(msg(error)));
+                    }
+                },"Wayward-RemoteHost-Connect").start();
+            }
+        });
     }
 
     private void openNovelAiSettings(){
@@ -938,13 +993,13 @@ public final class MainActivity extends Activity {
                     }
                     if(path != null && path.startsWith("/images/__wayward_generated__/"))
                         return serveGeneratedImageRequest(path, imageDiagnostics);
-                    if(FolderHandler.isImageRequestPath(path))return serveImageRequestByMode(folderHandler,path,imageDiagnostics);
+                    if(FolderHandler.isImageRequestPath(path))return serveImageRequestByMode(folderHandler,path,u.getEncodedPath(),r.getRequestHeaders(),imageDiagnostics);
                 }
                 String requestedPath=u.getPath();
                 if(FolderHandler.isImageRequestPath(requestedPath)){
                     // Every image URL is local-pack-only while OFF and generated-cache-only while ON.
                     // No host (including the original art CDN) is allowed to become a fallback.
-                    return serveImageRequestByMode(folderHandler,requestedPath,imageDiagnostics);
+                    return serveImageRequestByMode(folderHandler,requestedPath,u.getEncodedPath(),r.getRequestHeaders(),imageDiagnostics);
                 }
                 return null;
             }
@@ -1049,7 +1104,11 @@ public final class MainActivity extends Activity {
     }
 
     private WebResourceResponse serveImageRequestByMode(FolderHandler handler,String path,
+            String encodedPath,java.util.Map<String,String> requestHeaders,
             java.util.concurrent.atomic.AtomicInteger samples){
+        if(IMAGE_MODE_REMOTE_PC.equals(currentImageMode())){
+            return RemoteGameResourceBridge.serve(this,encodedPath,requestHeaders,samples);
+        }
         if(imageGenerationRoutingActive()){
             return serveGeneratedImageRequest("/images/__wayward_generated__/"+path.substring(8),samples);
         }
