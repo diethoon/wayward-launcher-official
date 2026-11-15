@@ -121,7 +121,9 @@ public final class RemoteHostDiscovery implements AutoCloseable {
             @Override public void onServiceLost(NsdServiceInfo serviceInfo) {
                 RemoteHostConnection trusted;
                 synchronized (RemoteHostDiscovery.this) { trusted = trustedHost; }
-                if (trusted != null && serviceInfo != null) {
+                if (trusted == null || serviceInfo == null) return;
+                String lostHostId = txt(serviceInfo.getAttributes(), "hostid");
+                if (lostHostId != null && trusted.hostId.equalsIgnoreCase(lostHostId)) {
                     reportHostLost(trusted.hostId);
                 }
             }
