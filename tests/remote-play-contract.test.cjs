@@ -51,6 +51,12 @@ assert.match(connection, /normalizeExternalBaseUrl/,
   'the optional Internet endpoint must be restricted to a numeric globally routable HTTPS IPv4 address and port');
 assert.match(connection, /uri\.getPort\(\) < 1[^\n]*uri\.getPort\(\) > 65535/,
   'the signed external endpoint must validate its supplied port instead of assuming 8765');
+for (const port of [8765, 43210, 50000]) {
+  assert.ok(connection.includes('uri.getPort()') && connection.includes('externalBaseUrl'),
+    `the Android signed endpoint parser must retain support for explicit port ${port}`);
+}
+assert.match(connection, /normalizeExternalBaseUrl\(externalBaseUrl\)/,
+  'the persisted signed external endpoint must pass through the same explicit-port validator');
 assert.match(connection, /externalBaseUrl=.*signedText|externalBaseUrl=/,
   'the optional Internet endpoint must be bound by the Host Identity signature');
 assert.match(client, /host\.externalBaseUrl/,

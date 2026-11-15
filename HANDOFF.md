@@ -150,7 +150,7 @@ Updated: 2026-11-15 (Asia/Seoul)
 - 보안·데이터 무결성·기존 호환성·사용자 승인 경계를 시간 단축을 이유로 생략하지 않는다.
 - 의미 있는 단계마다 HANDOFF를 갱신하고 다음 담당자가 중복 조사 없이 이어갈 증거와 다음 조치를 기록한다.
 
-
+ 
 ## Remote Host public endpoint compatibility — 2026-11-16
 
 - Active branch: `work/remote-play-ux-v1-20261115`.
@@ -162,12 +162,3 @@ Updated: 2026-11-15 (Asia/Seoul)
 - APK artifact ID: `14169294143`, `wayward-launcher-official-apks`, archive SHA-256: `a727385675c866433be0ff3d88a9841fb10fb669003f62f79187c6c01461febc`.
 - Android 15 diagnostics artifact ID: `14170075280`, archive SHA-256: `56498ee0826a38ffaeddc5ac16eedabd543ef10303c31149ec16e9199a7454fe`.
 - No physical Android handset, physical Windows Host or WAN router path was exercised. The Manager still creates the QR from an active private IPv4 Host listener. Once the QR payload is shared, its signed public endpoint can also carry initial Host identity/pairing requests if the private route is unreachable; the existing nonce and explicit Manager approval remain mandatory. Later reconnect can also use that signed endpoint where router mapping and upstream access allow it.
-
-## Dynamic external TCP port regression coverage — 2026-11-16
-
-- Added regression coverage for signed external endpoint ports `8765`, `43210`, and `50000` without changing Android runtime implementation.
-- The instrumented signed-manifest fixture now uses `https://8.8.8.8:43210/`; it continues to exercise signature verification and certificate pinning on the same Host identity.
-- Added a source contract assertion that the external URL validator checks the explicit port range rather than assuming the default listener port.
-- Android CI run #43762326672 failed before tests/build because the repository-wide whitespace check found trailing spaces in the pre-existing HANDOFF and native integration document. Those trailing spaces were removed in commit `f687361b1e924d6d03289628392660dea2dda89b`.
-- The updated workflow must be rerun on the current HEAD before treating these new tests as validated. No Android application/runtime source was modified for this port-forwarding task.
-- No physical handset or live WAN route was tested.
