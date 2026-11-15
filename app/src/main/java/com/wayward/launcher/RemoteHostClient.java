@@ -231,7 +231,6 @@ final class RemoteHostClient {
 
     static JSONArray getWorkspaceRoots(Context context, RemoteHostConnection host) throws Exception {
         String token = authenticate(context, host);
-        JSONObject unused = null;
         HttpsURLConnection connection = openPinned(host, "/v1/files/roots", "GET", null, "Bearer " + token, null);
         try {
             return new JSONArray(readResponseText(connection, MAX_JSON_RESPONSE_BYTES));
@@ -306,7 +305,13 @@ final class RemoteHostClient {
         if (authorization != null) connection.setRequestProperty("Authorization", authorization);
         if (forwardedHeaders != null) {
             for (String name : new String[] {"Range", "If-Range", "If-None-Match", "If-Modified-Since", "Cache-Control", "Accept"}) {
-                String value = forwardedHeaders.get(name);
+                String value = null;
+                for (Map.Entry<String, String> entry : forwardedHeaders.entrySet()) {
+                    if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(name)) {
+                        value = entry.getValue();
+                        break;
+                    }
+                }
                 if (value != null && !value.isEmpty()) connection.setRequestProperty(name, value);
             }
         }
@@ -393,59 +398,65 @@ final class RemoteHostClient {
     }
 
     private static byte[] derToP1363(byte[] der) {
-        int offset = 0;
-        if ((der[offset++] & 0xff) != 0x30) throw new SecurityException("Invalid ECDSA DER sequence.");
-        int sequenceLength = readDerLength(der, offset);
-        offset = sequenceLength >>> 16;
-        int expectedLength = sequenceLength & 0xffff;
-        if (expectedLength != der.length - offset) throw new SecurityException("Invalid ECDSA DER sequence length.");
-        byte[] output = new byte[64];
-        byte[] r = readDerInteger(der, offset);
-        offset = r[0] & 0xff; // marker filled by helper below
-        return parseDerIntegers(der);
-    }
-
-    private static byte[] parseDerIntegers(byte[] der) {
-        int offset = 1;
-        int first = der[offset++] & 0xff;
-        if (first >= 0x80) {
-            int count = first & 0x7f;
-            offset += count;
+        if (der == null || der.length < 8) {
+            throw new SecurityException("Invalid Android Keystore ECDSA signature.");
         }
-        byte[] r = readIntegerValue(der, offset);
-        offset = nextIntegerOffset(der, offset);
-        byte[] s = readIntegerValue(der, offset);
+        int[] offset = new int[] {0};
+        if ((der[offset[0]++] & 0xff) != 0x30) {
+            throw new SecurityException("Invalid ECDSA DER sequence.");
+        }
+        int sequenceLength = readDerLength(der, offset);
+        if (sequenceLength != der.length - offset[0]) {
+            throw new SecurityException("Invalid ECDSA DER sequence length.");
+        }
+
+        byte[] r = readDerInteger(der, offset);
+        byte[] s = readDerInteger(der, offset);
+        if (offset[0] != der.length) {
+            throw new SecurityException("Unexpected trailing data in ECDSA signature.");
+        }
         byte[] result = new byte[64];
         copyFixed(r, result, 0);
         copyFixed(s, result, 32);
+        java.util.Arrays.fill(r, (byte) 0);
+        java.util.Arrays.fill(s, (byte) 0);
         return result;
     }
 
-    private static int readDerLength(byte[] bytes, int offset) {
-        int first = bytes[offset] & 0xff;
-        if (first < 0x80) return ((offset + 1) << 16) | first;
+    private static int readDerLength(byte[] bytes, int[] offset) {
+        if (offset[0] >= bytes.length) throw new SecurityException("Truncated DER length.");
+        int first = bytes[offset[0]++] & 0xff;
+        if (first < 0x80) return first;
         int count = first & 0x7f;
+        if (count < 1 || count > 2 || offset[0] + count > bytes.length) {
+            throw new SecurityException("Invalid DER length encoding.");
+        }
         int value = 0;
-        for (int i = 0; i < count; i++) value = (value << 8) | (bytes[offset + 1 + i] & 0xff);
-        return ((offset + 1 + count) << 16) | value;
+        for (int i = 0; i < count; i++) {
+            value = (value << 8) | (bytes[offset[0]++] & 0xff);
+        }
+        if (value < 0x80) throw new SecurityException("Non-canonical DER length.");
+        return value;
     }
 
-    private static byte[] readDerInteger(byte[] bytes, int offset) {
-        return readIntegerValue(bytes, offset);
-    }
-
-    private static byte[] readIntegerValue(byte[] bytes, int offset) {
-        if ((bytes[offset++] & 0xff) != 0x02) throw new SecurityException("Invalid ECDSA integer.");
-        int length = bytes[offset++] & 0xff;
-        if (length >= 0x80) throw new SecurityException("Unexpected large ECDSA integer.");
-        int first = offset;
-        while (first < offset + length - 1 && bytes[first] == 0) first++;
-        return java.util.Arrays.copyOfRange(bytes, first, offset + length);
-    }
-
-    private static int nextIntegerOffset(byte[] bytes, int offset) {
-        int length = bytes[offset + 1] & 0xff;
-        return offset + 2 + length;
+    private static byte[] readDerInteger(byte[] bytes, int[] offset) {
+        if (offset[0] >= bytes.length || (bytes[offset[0]++] & 0xff) != 0x02) {
+            throw new SecurityException("Invalid ECDSA DER integer.");
+        }
+        int length = readDerLength(bytes, offset);
+        if (length < 1 || offset[0] + length > bytes.length) {
+            throw new SecurityException("Truncated ECDSA DER integer.");
+        }
+        int first = offset[0];
+        int end = first + length;
+        if ((bytes[first] & 0x80) != 0) {
+            throw new SecurityException("ECDSA DER integer must be positive.");
+        }
+        while (first < end - 1 && bytes[first] == 0) first++;
+        byte[] value = java.util.Arrays.copyOfRange(bytes, first, end);
+        offset[0] = end;
+        if (value.length > 32) throw new SecurityException("ECDSA P-256 integer is too large.");
+        return value;
     }
 
     private static void copyFixed(byte[] value, byte[] target, int destination) {
