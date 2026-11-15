@@ -149,3 +149,16 @@ Updated: 2026-11-15 (Asia/Seoul)
 - Mock/정적 테스트/에뮬레이터/실기기/실서비스 결과를 구분한다. 실환경 검증이 없으면 미검증으로 명시한다.
 - 보안·데이터 무결성·기존 호환성·사용자 승인 경계를 시간 단축을 이유로 생략하지 않는다.
 - 의미 있는 단계마다 HANDOFF를 갱신하고 다음 담당자가 중복 조사 없이 이어갈 증거와 다음 조치를 기록한다.
+
+ 
+## Remote Host public endpoint compatibility — 2026-11-16
+
+- Active branch: `work/remote-play-ux-v1-20261115`.
+- Android implementation commit: `6349b92d535a89ee80b461c445e85ac77b13d532`.
+- Changes: `RemoteHostConnection` persists an optional Host-signed `externalBaseUrl`; its validator accepts only HTTPS + numeric globally routable IPv4 + explicit port and rejects private/loopback/link-local/CGNAT/hostname/cleartext values. Legacy signed manifests without the field remain accepted.
+- `RemoteHostClient` uses the original private LAN URL first and tries the optional signed public endpoint only for connection-establishment failures. Both endpoints use the same pinned TLS certificate SHA-256 and Host identity. SSL/pin failures and HTTP application/auth responses fail closed; request bodies are not replayed after a write starts.
+- Added Android instrumentation coverage for the signed external QR field, JSON persistence/recovery, signature tampering and rejected URLs; the existing QR nonce, P-256 proof, signed Host challenge and receipt checks remain in place.
+- Android Actions [run #43733766512](https://github.com/diethoon/wayward-launcher-official/actions/runs/43733766512): completed / success. Contract checks, Debug/Release builds, Release signing identity validation, Android 15 emulator startup and Native crypto instrumentation passed.
+- APK artifact ID: `14169294143`, `wayward-launcher-official-apks`, archive SHA-256: `a727385675c866433be0ff3d88a9841fb10fb669003f62f79187c6c01461febc`.
+- Android 15 diagnostics artifact ID: `14170075280`, archive SHA-256: `56498ee0826a38ffaeddc5ac16eedabd543ef10303c31149ec16e9199a7454fe`.
+- No physical Android handset, physical Windows Host or WAN router path was exercised. First pairing is still expected over the LAN; later reconnect can use the signed external endpoint where router mapping and upstream access allow it.

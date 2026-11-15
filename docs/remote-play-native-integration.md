@@ -80,3 +80,16 @@ PC Manager approval defaults to ReadOnly. The user must explicitly enable UseCom
 - These tests do not prove a real Windows Host connection, PC mDNS on physical Wi-Fi, QR scan, Manager approval, file download/upload, game image rendering or actual ComfyUI inference.
 - No physical Android device / Windows PC session has been completed by these repository-only tasks.
 - The official Home screen remains unchanged until the user provides the UI design.
+
+ 
+## Signed external endpoint fallback — 2026-11-16
+
+The Windows Host may include an optional `externalBaseUrl` in its QR JSON when its best-effort PCP, NAT-PMP or UPnP mapping reports a globally routable IPv4 address and allocated TCP port. The Host Identity signature covers the exact `externalBaseUrl=` line, including an empty value. Older signed manifests without this optional line remain accepted for backward compatibility.
+
+Android normalizes the optional value to HTTPS with an explicit port and a numeric globally routable IPv4 address. Hostnames, private LAN addresses, loopback, link-local, shared CGNAT and non-HTTPS URLs are rejected. The normalized endpoint is persisted with the trusted Host record and revalidated against the Host signature when a QR is scanned.
+
+For every Remote Host request, the client tries the previously trusted private `baseUrl` first. Only if connection establishment fails for a network/reachability reason does it try the signed `externalBaseUrl`. Both endpoints use the exact same QR-bound certificate SHA-256 pin and Host identity. TLS/certificate-pin failures, HTTP authentication failures and application responses never trigger a second endpoint. Request bodies are sent only after connection establishment; a body-write failure is not replayed against the second endpoint, avoiding duplicate generation/pairing operations.
+
+Initial pairing continues to use the local Host URL and the existing signed QR, nonce and approval flow. The external URL does not bypass pairing, device permissions, TLS pinning or the LAN-only mDNS trust step. mDNS is not assumed to work across the public Internet. External endpoint availability still depends on actual router mapping, upstream NAT, Windows Firewall policy and ISP reachability.
+
+The current Android CI validates signed-field parsing/tamper rejection, URL allowlisting, persistence and the existing native crypto paths. It does not prove a real WAN route or physical router behavior.
