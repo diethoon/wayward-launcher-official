@@ -18,6 +18,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.google.zxing.integration.android.IntentIntegrator;
+import com.google.zxing.integration.android.IntentResult;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -171,7 +172,7 @@ public final class RemoteHostActivity extends Activity {
     @Deprecated
     @Override protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        IntentIntegrator.IntentResult result = IntentIntegrator.parseActivityResult(requestCode, resultCode, data);
+        IntentResult result = IntentIntegrator.parseActivityResult(requestCode, resultCode, data);
         if (result == null) return;
         String contents = result.getContents();
         if (contents == null || contents.trim().isEmpty()) {
