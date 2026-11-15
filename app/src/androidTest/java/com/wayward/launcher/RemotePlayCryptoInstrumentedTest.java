@@ -16,7 +16,6 @@ import java.util.UUID;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -109,8 +108,6 @@ public final class RemotePlayCryptoInstrumentedTest {
         KeyPair keyPair = RemoteHostStore.getDeviceKeyPair(context);
         String fingerprint = RemoteHostConnection.sha256Hex(keyPair.getPublic().getEncoded());
         String hostId = UUID.randomUUID().toString();
-        long now = System.currentTimeMillis();
-
         assertThrows(IllegalArgumentException.class, () -> new RemoteHostConnection(
                 "http://192.168.1.90:8765/", hostId,
                 Base64.encodeToString(keyPair.getPublic().getEncoded(), Base64.NO_WRAP),
@@ -119,7 +116,6 @@ public final class RemotePlayCryptoInstrumentedTest {
                 "https://8.8.8.8:8765/", hostId,
                 Base64.encodeToString(keyPair.getPublic().getEncoded(), Base64.NO_WRAP),
                 fingerprint, "C".repeat(64), "payload", "signature"));
-        assertNotEquals(now, 0L);
     }
 
     private static RemoteHostConnection createSignedHostManifest(KeyPair signer, String hostId,
