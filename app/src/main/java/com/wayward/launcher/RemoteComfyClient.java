@@ -32,18 +32,15 @@ public final class RemoteComfyClient {
     private RemoteComfyClient() {}
 
     public static JSONObject getStatus(Context context, RemoteHostConnection host) throws Exception {
-        return RemoteHostClient.requestJson(host, "/v1/comfy/status", "GET", null,
-                "Bearer " + RemoteHostClient.authenticate(context, host));
+        return RemoteHostClient.requestAuthenticatedJson(context, host, "/v1/comfy/status", "GET", null);
     }
 
     public static JSONObject getObjectInfo(Context context, RemoteHostConnection host) throws Exception {
-        return RemoteHostClient.requestJson(host, "/v1/comfy/object-info", "GET", null,
-                "Bearer " + RemoteHostClient.authenticate(context, host));
+        return RemoteHostClient.requestAuthenticatedJson(context, host, "/v1/comfy/object-info", "GET", null);
     }
 
     public static JSONObject getQueue(Context context, RemoteHostConnection host) throws Exception {
-        return RemoteHostClient.requestJson(host, "/v1/comfy/queue", "GET", null,
-                "Bearer " + RemoteHostClient.authenticate(context, host));
+        return RemoteHostClient.requestAuthenticatedJson(context, host, "/v1/comfy/queue", "GET", null);
     }
 
     public static JSONObject submitWorkflow(Context context, RemoteHostConnection host,
@@ -60,24 +57,22 @@ public final class RemoteComfyClient {
             java.util.Arrays.fill(encoded, (byte) 0);
         }
         JSONObject request = new JSONObject().put("workflow", workflow);
-        return RemoteHostClient.requestJson(host, "/v1/comfy/jobs", "POST", request,
-                "Bearer " + RemoteHostClient.authenticate(context, host));
+        return RemoteHostClient.requestAuthenticatedJson(context, host, "/v1/comfy/jobs", "POST", request);
     }
 
     public static JSONObject getJob(Context context, RemoteHostConnection host, String promptId)
             throws Exception {
         String id = validatePromptId(promptId);
-        return RemoteHostClient.requestJson(host,
-                "/v1/comfy/jobs/" + URLEncoder.encode(id, StandardCharsets.UTF_8.name()),
-                "GET", null, "Bearer " + RemoteHostClient.authenticate(context, host));
+        return RemoteHostClient.requestAuthenticatedJson(context, host,
+                "/v1/comfy/jobs/" + URLEncoder.encode(id, StandardCharsets.UTF_8.name()), "GET", null);
     }
 
     public static JSONObject cancelJob(Context context, RemoteHostConnection host, String promptId)
             throws Exception {
         String id = validatePromptId(promptId);
-        return RemoteHostClient.requestJson(host,
+        return RemoteHostClient.requestAuthenticatedJson(context, host,
                 "/v1/comfy/jobs/" + URLEncoder.encode(id, StandardCharsets.UTF_8.name()) + "/cancel",
-                "POST", new JSONObject(), "Bearer " + RemoteHostClient.authenticate(context, host));
+                "POST", new JSONObject());
     }
 
     public static JSONObject uploadInputImage(Context context, RemoteHostConnection host,
