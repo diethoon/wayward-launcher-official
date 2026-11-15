@@ -8,6 +8,8 @@ const connection = read('app/src/main/java/com/wayward/launcher/RemoteHostConnec
 const store = read('app/src/main/java/com/wayward/launcher/RemoteHostStore.java');
 const discovery = read('app/src/main/java/com/wayward/launcher/RemoteHostDiscovery.java');
 const bridge = read('app/src/main/java/com/wayward/launcher/RemoteGameResourceBridge.java');
+const resourceCache = read('app/src/main/java/com/wayward/launcher/RemoteResourceCache.java');
+const comfy = read('app/src/main/java/com/wayward/launcher/RemoteComfyClient.java');
 const manifest = read('app/src/main/AndroidManifest.xml');
 const naiStore = read('app/src/main/java/com/wayward/launcher/NovelAiTokenStore.java');
 
@@ -18,7 +20,7 @@ assert.match(main, /setDomain\(domain\+":"\+originPort\)/,
 assert.match(main, /RemoteGameResourceBridge\.serve\(this,encodedPath,requestHeaders,samples\)/,
   'Remote Play image requests must be proxied by the Native WebView resource interceptor');
 assert.match(main, /IMAGE_MODE_REMOTE_PC/,
-  'the existing serialized image routing manager must own the Remote Play mode');
+  'the existing serialized image routing manager must retain a Remote PC mode contract');
 assert.match(main, /registerRemotePcServerControl\(/,
   'Remote Play must use the existing server-mode transition coordinator');
 
@@ -46,11 +48,11 @@ assert.doesNotMatch(main, /@JavascriptInterface[^\n]*(?:accessToken|sessionToken
 assert.match(client, /expiresAtUtc/,
   'short-lived Host sessions must observe the server-issued expiry');
 
-assert.match(discovery, /_wayward-remote-host\\._tcp/,
+assert.match(discovery, /_wayward-remote-host\._tcp/,
   'the non-UI discovery service must use the Host DNS-SD service type');
-assert.match(discovery, /RemoteHostStore\\.loadConnection/,
+assert.match(discovery, /RemoteHostStore\.loadConnection/,
   'mDNS rediscovery must require an existing QR-trusted Host');
-assert.match(discovery, /RemoteHostClient\\.discoverHost/,
+assert.match(discovery, /RemoteHostClient\.discoverHost/,
   'a discovered endpoint must be validated through the saved Host certificate pin');
 assert.match(client, /verifyAndStoreQr/,
   'QR registration must verify the signed Host identity before storing it');
@@ -65,8 +67,18 @@ assert.doesNotMatch(manifest, /CAMERA|RemoteHostActivity/,
 
 assert.match(bridge, /Range/,
   'remote media requests must forward HTTP Range headers');
-assert.match(client, /"If-None-Match"/,
-  'remote media requests must forward ETag revalidation headers');
+assert.match(bridge, /If-None-Match/,
+  'remote media requests must revalidate the exact local disk-cache ETag');
+assert.match(bridge, /status == 304/,
+  'remote media requests must reuse cached bytes after a valid 304 response');
+assert.match(bridge, /RemoteResourceCache\.CacheWriter/,
+  'full image responses must be streamed into app-private cache storage');
+assert.match(bridge, /FetchFlight/,
+  'concurrent duplicate image requests must coalesce while the first cache fill is active');
+assert.match(bridge, /CacheTeeInputStream/,
+  'canceled WebView reads must close the upstream HTTPS stream and abort partial cache files');
+assert.match(resourceCache, /MAX_ENTRY_BYTES/);
+assert.match(resourceCache, /MAX_TOTAL_BYTES/);
 assert.match(bridge, /Content-Range/,
   'partial-content metadata must be returned to the WebView');
 assert.match(bridge, /ETag/,
@@ -74,12 +86,19 @@ assert.match(bridge, /ETag/,
 assert.match(bridge, /RemoteHostClient\.openGameResource/,
   'game resources must be fetched through the certificate-pinned native API client');
 
+assert.match(comfy, /\/v1\/comfy\/status/,
+  'Native ComfyUI status must use the authenticated Remote Host gateway');
+assert.match(comfy, /\/v1\/comfy\/jobs/,
+  'Native ComfyUI workflow submission and job inspection must use Remote Host API v1');
+assert.match(comfy, /\/v1\/comfy\/images/,
+  'ComfyUI input and output images must travel through the Remote Host gateway');
+assert.match(comfy, /getCachedImage/,
+  'ComfyUI output images must support an app-private cache');
 assert.match(manifest, /usesCleartextTraffic="false"/,
   'cleartext HTTP must remain disabled for the official launcher');
-  'the Remote Host pairing screen must be registered');
 assert.match(naiStore, /AES\/GCM\/NoPadding/,
   'the existing NovelAI AES-GCM token envelope must remain intact');
 assert.match(naiStore, /wayward\.image\.providers\.v1/,
   'the existing NovelAI Keystore alias must remain intact');
 
-console.log('Remote Play native bridge and security contract checks passed');
+console.log('Remote Play native bridge, cache, ComfyUI and security contract checks passed');
