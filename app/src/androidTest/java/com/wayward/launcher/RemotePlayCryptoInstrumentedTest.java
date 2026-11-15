@@ -131,6 +131,21 @@ public final class RemotePlayCryptoInstrumentedTest {
     }
 
     @Test
+    public void externalEndpointRejectsMissingAndOutOfRangePorts() {
+        for (String external : new String[] {
+                "https://8.8.8.8/", "https://8.8.8.8:0/", "https://8.8.8.8:65536/"
+        }) {
+            boolean rejected = false;
+            try {
+                RemoteHostConnection.normalizeExternalBaseUrl(external);
+            } catch (IllegalArgumentException expected) {
+                rejected = true;
+            }
+            assertTrue("Invalid external port must be rejected: " + external, rejected);
+        }
+    }
+
+    @Test
     public void externalEndpointIsHostSignedAndStillUsesThePinnedCertificate() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         KeyPair keyPair = RemoteHostStore.getDeviceKeyPair(context);
