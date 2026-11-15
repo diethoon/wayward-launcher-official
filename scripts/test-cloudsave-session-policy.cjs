@@ -17,6 +17,12 @@ assert.match(source, /Identity\.getAuthorizationClient\(MainActivity\.this\)\.re
 assert.match(source, /storeGoogleRevokeResult\(nonce,true,null\)/);
 assert.match(source, /storeGoogleRevokeResult\(nonce,false,msg\(error\)\)/);
 assert.match(source, /clearGoogleAccessToken\(String token\)/);
+assert.match(source, /@JavascriptInterface public void cancelGoogleDriveAuth\(String nonce\)/);
+assert.match(source, /pendingGoogleAuthRequestNonces\.remove\(req\)/);
+assert.match(source, /reserveGoogleAuthRequestCode\(nonce\)/);
+assert.match(source, /startIntentSenderForResult\(pending\.getIntentSender\(\),requestCode,/);
+assert.match(source, /clearGoogleDriveAuthRequest\(nonce\)/);
+assert.match(source, /PENDING_GOOGLE_AUTH_RESULTS\.remove\(nonce\)/);
 
 // A one-argument compatibility entry point remains for older WML builds.
 assert.match(source, /startGoogleDriveAuth\(String nonce\)\s*\{\s*startGoogleDriveAuthWithPolicy\(nonce,false\);/);
