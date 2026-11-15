@@ -52,6 +52,17 @@ final class RemoteHostConnection {
     }
 
     void verifySignedManifest() throws Exception {
+        verifySignedManifest(true);
+    }
+
+    void verifyStoredIdentity() throws Exception {
+        // The QR has a short registration lifetime; once the user has verified and
+        // stored this Host identity, the signed Host/key/certificate binding remains
+        // useful after the QR itself expires.
+        verifySignedManifest(false);
+    }
+
+    private void verifySignedManifest(boolean requireFreshQr) throws Exception {
         byte[] encodedPublicKey = Base64.decode(publicKeyBase64, Base64.DEFAULT);
         byte[] signedPayload = Base64.decode(signedPayloadBase64, Base64.DEFAULT);
         byte[] signatureBytes = Base64.decode(signatureBase64, Base64.DEFAULT);
@@ -86,8 +97,8 @@ final class RemoteHostConnection {
             long issued = parseSignedLong(signedText, "issued");
             long expires = parseSignedLong(signedText, "expires");
             long now = System.currentTimeMillis();
-            if (issued > now + 5 * 60_000L || expires <= now || expires <= issued ||
-                    expires - issued > 10 * 60_000L) {
+            if (issued > now + 5 * 60_000L || expires <= issued ||
+                    (requireFreshQr && expires <= now) || expires - issued > 10 * 60_000L) {
                 throw new SecurityException("Host QR이 만료되었거나 유효 시간 범위가 잘못되었습니다.");
             }
         } finally {
