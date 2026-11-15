@@ -16,7 +16,10 @@ const homeEnd = main.indexOf('private void showLauncherInfoDialog()', homeStart)
 assert(homeStart >= 0 && homeEnd > homeStart, 'home screen method must exist');
 const home = main.slice(homeStart, homeEnd);
 
-assert.match(home, /＋ 폴더/, 'home must expose folder registration');
+assert.match(home, /\+ PC 폴더/, 'home must expose an approved PC workspace picker');
+assert.match(home, /\+ 현재 기기 폴더/, 'home must retain current-device folder registration');
+assert.match(home, /페어링/, 'home must expose internal QR pairing instead of the old info action');
+assert.match(home, /원격 PC 파일매니저/, 'home must keep remote file management below image routing');
 assert.match(home, /내 게임/, 'home must expose the registered game list');
 assert.match(home, /여러 게임을 독립 세션으로 실행/, 'home must describe independent sessions');
 assert.match(home, /이미지 생성 서버 실행/, 'home must expose the explicit local image-generation server switch');
@@ -51,14 +54,18 @@ assert.match(glassTileUi, /gear\.setContentDescription\("NovelAI 토큰 설정"\
   'the embedded gear must remain accessible');
 assert.match(glassTileUi, /gear\.setOnClickListener\(view->settingsAction\.run\(\)\)/,
   'the embedded gear must open token settings independently');
-assert.equal((glassTileUi.match(/new LinearLayout\.LayoutParams\(-1,dp\(76\)\)/g) || []).length, 2,
-  'the existing NovelAI server and image-pack glass buttons must retain their original 76dp height');
+assert.equal((glassTileUi.match(/new LinearLayout\.LayoutParams\(0,dp\(82\),1f\)/g) || []).length, 2,
+  'local image generation and ComfyUI controls must remain on one equal-width row');
+assert.match(glassTileUi, /new LinearLayout\.LayoutParams\(-1,dp\(72\)\)/,
+  'the locally installed image-pack switch must remain a full-width separate row');
 assert.match(glassTileUi, /generationSelected,this::openNovelAiSettings/,
   'only the server glass button must contain the token-settings gear');
 assert.match(glassTileUi, /packsSelected,null,this::switchToImagePacksOnly/,
   'the image-pack button must not create a second gear or nested control');
-assert.doesNotMatch(glassTileUi, /PC Remote Play|PC 등록 \/ 연결 설정/,
-  'Remote Play must not change the launcher home layout before the user supplies the UI design');
+assert.match(glassTileUi, /ComfyUI 서버 실행/,
+  'the second image routing action must launch/use the paired PC ComfyUI service');
+assert.match(glassTileUi, /이 기기에 설치된 이미지팩만 탐색/,
+  'image-pack routing must explicitly describe local-only image packs');
 assert.doesNotMatch(glassTileUi, /glassSettingsButton|dp\(112\)/,
   'the separate gear grid and oversized server button must be removed');
 assert.match(main, /imageCard\.setBackground\(uiShape\(Color\.rgb\(239,241,243\)/,

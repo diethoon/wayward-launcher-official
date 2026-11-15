@@ -36,9 +36,13 @@ final class RemoteHostStore {
                 if(previous!=null)previousHostId=new JSONObject(previous).optString("hostId","");
             }catch(Exception ignored){}
             SharedPreferences.Editor editor=prefs.edit()
-                    .putString(KEY_HOST,connection.toJson().toString())
-                    .remove(KEY_PAIRED_HOST_ID);
-            if(!previousHostId.isEmpty()&&!previousHostId.equalsIgnoreCase(connection.hostId)){
+                    .putString(KEY_HOST,connection.toJson().toString());
+            boolean differentHost=!previousHostId.isEmpty()&&
+                    !previousHostId.equalsIgnoreCase(connection.hostId);
+            if(previousHostId.isEmpty()||differentHost){
+                editor.remove(KEY_PAIRED_HOST_ID);
+            }
+            if(differentHost){
                 editor.remove(KEY_ROOT_ID).remove(KEY_ROOT_LABEL);
             }
             if(!editor.commit())throw new IllegalStateException("PC Host 연결 정보를 안전하게 저장하지 못했습니다.");
