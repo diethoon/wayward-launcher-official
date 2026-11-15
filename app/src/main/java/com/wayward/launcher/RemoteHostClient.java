@@ -318,11 +318,18 @@ final class RemoteHostClient {
 
     static HttpsURLConnection openAuthenticatedUpload(Context context, RemoteHostConnection host,
             String path, String contentType, long contentLength, InputStream source) throws Exception {
+        return openAuthenticatedUpload(context, host, path, contentType, contentLength, source, null);
+    }
+
+    static HttpsURLConnection openAuthenticatedUpload(Context context, RemoteHostConnection host,
+            String path, String contentType, long contentLength, InputStream source,
+            Map<String, String> requestHeaders) throws Exception {
         if (contentLength <= 0 || source == null) {
             throw new IllegalArgumentException("A non-empty upload stream and length are required.");
         }
         String token = authenticate(context, host);
-        HttpsURLConnection connection = openPinned(host, path, "PUT", null, "Bearer " + token, null);
+        HttpsURLConnection connection = openPinned(host, path, "PUT", null,
+                "Bearer " + token, requestHeaders);
         try {
             connection.setDoOutput(true);
             connection.setRequestProperty("Content-Type", contentType);
@@ -353,6 +360,10 @@ final class RemoteHostClient {
 
     static JSONObject readJsonResponse(HttpsURLConnection connection) throws Exception {
         return new JSONObject(readResponseText(connection, MAX_JSON_RESPONSE_BYTES));
+    }
+
+    static org.json.JSONArray readJsonArrayResponse(HttpsURLConnection connection) throws Exception {
+        return new org.json.JSONArray(readResponseText(connection, MAX_JSON_RESPONSE_BYTES));
     }
 
     private static JSONObject requestJsonPinned(String baseUrl, String certificatePin,
@@ -389,7 +400,7 @@ final class RemoteHostClient {
         configurePinnedTls(connection, certificatePin);
         if (authorization != null) connection.setRequestProperty("Authorization", authorization);
         if (forwardedHeaders != null) {
-            for (String name : new String[] {"Range", "If-Range", "If-None-Match", "If-Modified-Since", "Cache-Control", "Accept"}) {
+            for (String name : new String[] {"Range", "If-Range", "If-None-Match", "If-Modified-Since", "Cache-Control", "Accept", "Upload-Offset"}) {
                 String value = null;
                 for (Map.Entry<String, String> entry : forwardedHeaders.entrySet()) {
                     if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(name)) {
