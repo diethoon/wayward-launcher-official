@@ -84,6 +84,9 @@ jobs:
       - name: Test Google OAuth bridge contract
         run: node scripts/test-google-auth-bridge.cjs
 
+      - name: Test CloudSave native account-selection policy
+        run: node tests/cloudsave-native-auth-selection.test.cjs
+
       - name: Test Image Studio server/image-pack mode isolation
         run: node tests/imagegen-studio-mode.test.mjs
       - name: Test managed NovelAI provider lock
