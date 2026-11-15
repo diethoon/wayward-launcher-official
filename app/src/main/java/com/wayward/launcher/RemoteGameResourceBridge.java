@@ -64,21 +64,23 @@ final class RemoteGameResourceBridge {
                 };
                 connection = null; // the stream now owns the connection
             } else {
+                // Do not forward Host-side exception text or Windows paths into game content.
                 InputStream source = connection.getErrorStream();
-                byte[] message = source == null ? new byte[0] : readSmallError(source);
-                body = new ByteArrayInputStream(message);
-                java.util.Arrays.fill(message, (byte) 0);
+                if (source != null) {
+                    try { source.close(); } catch (IOException ignored) { }
+                }
+                body = new ByteArrayInputStream(
+                        "Remote image unavailable".getBytes(java.nio.charset.StandardCharsets.UTF_8));
             }
 
             if (status >= 400 && diagnostics != null && diagnostics.getAndIncrement() < 16) {
-                android.util.Log.w("WaywardRemotePlay",
-                        "Remote image response status=" + status + " path=" + safeDiagnosticPath(relativePath));
+                android.util.Log.w("WaywardRemotePlay", "Remote image response status=" + status);
             }
             return new WebResourceResponse(mime, encoding, status, reason, headers, body);
         } catch (Exception error) {
             if (diagnostics != null && diagnostics.getAndIncrement() < 16) {
-                android.util.Log.w("WaywardRemotePlay", "Remote image request failed: " +
-                        error.getClass().getSimpleName() + " path=" + safeDiagnosticPath(requestPath));
+                android.util.Log.w("WaywardRemotePlay",
+                        "Remote image request failed: " + error.getClass().getSimpleName());
             }
             return error(502, "Bad Gateway", "PC 이미지 리소스를 가져오지 못했습니다.");
         } finally {
@@ -119,29 +121,6 @@ final class RemoteGameResourceBridge {
             if (value != null && value.length() <= 4096) result.put(name, value);
         }
         return result;
-    }
-
-    private static byte[] readSmallError(InputStream input) throws IOException {
-        try (InputStream in = input; java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream()) {
-            byte[] buffer = new byte[1024];
-            int total = 0;
-            int count;
-            while ((count = in.read(buffer)) >= 0) {
-                if (count == 0) continue;
-                total += count;
-                if (total > 8192) break;
-                output.write(buffer, 0, count);
-            }
-            return output.toByteArray();
-        }
-    }
-
-    private static String safeDiagnosticPath(String value) {
-        if (value == null) return "";
-        String normalized = value.replace('\\', '/');
-        int query = normalized.indexOf('?');
-        if (query >= 0) normalized = normalized.substring(0, query);
-        return normalized.length() > 160 ? normalized.substring(0, 160) : normalized;
     }
 
     private static String reasonPhrase(int status) {
