@@ -526,12 +526,12 @@ public final class MainActivity extends Activity {
                     if(imageModeStatus!=null)imageModeStatus.setText("PC 연결이 일시적으로 끊겼습니다. 동일 Host의 LAN 재검색을 계속합니다.");
                 }
                 @Override public void onDiscoveryError(String operation,Exception error){
-                    DiagnosticsLogger.event(MainActivity.this,"WARN","remote-host","mdns_"+operation,error);
+                    DiagnosticsLogger.error(MainActivity.this,"remote-host","mdns_"+operation,error);
                 }
             });
             remoteHostDiscovery=discovery;
         }catch(Exception error){
-            DiagnosticsLogger.event(this,"WARN","remote-host","mdns_start",error);
+            DiagnosticsLogger.error(this,"remote-host","mdns_start",error);
         }
     }
 
