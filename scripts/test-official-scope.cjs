@@ -51,12 +51,16 @@ assert.match(glassTileUi, /gear\.setContentDescription\("NovelAI 토큰 설정"\
   'the embedded gear must remain accessible');
 assert.match(glassTileUi, /gear\.setOnClickListener\(view->settingsAction\.run\(\)\)/,
   'the embedded gear must open token settings independently');
-assert.equal((glassTileUi.match(/new LinearLayout\.LayoutParams\(-1,dp\(76\)\)/g) || []).length, 2,
-  'server and image-pack glass buttons must share the same 76dp height');
+assert.equal((glassTileUi.match(/new LinearLayout\.LayoutParams\(-1,dp\(76\)\)/g) || []).length, 3,
+  'NovelAI, image-pack and PC Remote Play glass buttons must share the same 76dp height');
 assert.match(glassTileUi, /generationSelected,this::openNovelAiSettings/,
   'only the server glass button must contain the token-settings gear');
 assert.match(glassTileUi, /packsSelected,null,this::switchToImagePacksOnly/,
   'the image-pack button must not create a second gear or nested control');
+assert.match(glassTileUi, /remoteSelected,null/,
+  'PC Remote Play must be a third mode tile without reusing the NovelAI settings gear');
+assert.match(glassTileUi, /PC Remote Play/,
+  'the official launcher must expose PC Remote Play in its existing image routing panel');
 assert.doesNotMatch(glassTileUi, /glassSettingsButton|dp\(112\)/,
   'the separate gear grid and oversized server button must be removed');
 assert.match(main, /imageCard\.setBackground\(uiShape\(Color\.rgb\(239,241,243\)/,
