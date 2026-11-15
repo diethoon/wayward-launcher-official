@@ -18,7 +18,7 @@ def by_description(nodes, fragment):
 
 def rect(node):
     bounds = node.attrib.get("bounds", "")
-    values = [int(value) for value in re.findall(r"-?\\d+", bounds)]
+    values = [int(value) for value in re.findall(r"-?\d+", bounds)]
     if len(values) != 4:
         raise AssertionError(f"Invalid UI bounds: {bounds}")
     return values
