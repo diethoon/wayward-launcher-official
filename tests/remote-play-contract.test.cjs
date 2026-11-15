@@ -10,6 +10,7 @@ const discovery = read('app/src/main/java/com/wayward/launcher/RemoteHostDiscove
 const bridge = read('app/src/main/java/com/wayward/launcher/RemoteGameResourceBridge.java');
 const resourceCache = read('app/src/main/java/com/wayward/launcher/RemoteResourceCache.java');
 const comfy = read('app/src/main/java/com/wayward/launcher/RemoteComfyClient.java');
+const files = read('app/src/main/java/com/wayward/launcher/RemoteFilesClient.java');
 const manifest = read('app/src/main/AndroidManifest.xml');
 const naiStore = read('app/src/main/java/com/wayward/launcher/NovelAiTokenStore.java');
 
@@ -32,6 +33,9 @@ assert.match(connection, /verifyPairingApprovalReceipt/,
   'the approval receipt must bind the signed Host, Pairing ID, Device ID, public-key fingerprint and permission bitmask');
 assert.match(client, /verifyPairingApprovalReceipt/,
   'the mobile pairing flow must verify the canonical signed receipt before accepting enrollment');
+assert.match(connection, /permissions.*expectedPermissions/,
+  'the Pairing approval signature must bind the permission bitmask');
+
 assert.match(connection, /certificateSha256/,
   'the signed Host manifest must bind the TLS certificate fingerprint');
 assert.match(client, /checkServerTrusted/,
@@ -100,6 +104,17 @@ assert.match(comfy, /getCachedImage/,
   'ComfyUI output images must support an app-private cache');
 assert.match(comfy, /verifyCachedImage/,
   'ComfyUI cache files must pass SHA-256 verification before reuse');
+assert.match(comfy, /MessageDigest\.isEqual/,
+  'ComfyUI output cache SHA-256 comparison must be constant-time');
+assert.match(files, /Upload-Offset/,
+  'resumable file uploads must use the Host-confirmed sequential offset');
+assert.match(files, /DownloadFiles|DownloadFile/,
+  'the Native file client must expose authenticated file download');
+assert.match(files, /UploadFiles|beginUpload|appendUploadChunk|completeUpload/,
+  'the Native file client must support the Host resumable upload lifecycle');
+assert.match(files, /X-Wayward-Content-SHA256/,
+  'download responses must require the Host file SHA-256 header');
+
 assert.match(manifest, /usesCleartextTraffic="false"/,
   'cleartext HTTP must remain disabled for the official launcher');
 assert.match(naiStore, /AES\/GCM\/NoPadding/,
