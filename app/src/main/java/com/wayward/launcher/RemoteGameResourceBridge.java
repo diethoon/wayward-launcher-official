@@ -21,6 +21,7 @@ final class RemoteGameResourceBridge {
     static WebResourceResponse serve(Context context, String requestPath,
             Map<String, String> requestHeaders, AtomicInteger diagnostics) {
         HttpsURLConnection connection = null;
+        RemoteResourceCache.FetchFlight flight = null;
         try {
             RemoteHostConnection host = RemoteHostStore.loadConnection(context);
             if (host == null) return error(503, "Service Unavailable", "PC Host가 등록되지 않았습니다.");
@@ -30,41 +31,98 @@ final class RemoteGameResourceBridge {
             }
 
             String relativePath = normalizeImagePath(requestPath);
-            connection = RemoteHostClient.openGameResource(context, host, rootId, relativePath, requestHeaders);
-            int status = connection.getResponseCode();
-            String reason = reasonPhrase(status);
-            String rawContentType = connection.getContentType();
-            String mime = "application/octet-stream";
-            String encoding = null;
-            if (rawContentType != null) {
-                String[] parts = rawContentType.split(";", 2);
-                if (!parts[0].trim().isEmpty()) mime = parts[0].trim().toLowerCase(Locale.ROOT);
-                if (parts.length > 1) {
-                    for (String parameter : parts[1].split(";")) {
-                        String value = parameter.trim();
-                        if (value.toLowerCase(Locale.ROOT).startsWith("charset=")) {
-                            encoding = value.substring("charset=".length()).replace("\"", "").trim();
-                        }
+            boolean rangeRequest = header(requestHeaders, "Range") != null;
+            boolean noStore = containsDirective(header(requestHeaders, "Cache-Control"), "no-store");
+            boolean forceRefresh = containsDirective(header(requestHeaders, "Cache-Control"), "no-cache");
+            RemoteResourceCache.CacheEntry cached = rangeRequest || noStore
+                    ? null : RemoteResourceCache.find(context, host.hostId, rootId, relativePath);
+
+            if (cached != null && RemoteResourceCache.isFresh(cached) && !forceRefresh) {
+                return cachedResponse(cached, false);
+            }
+
+            String cacheKey = null;
+            if (!rangeRequest && !noStore) {
+                cacheKey = RemoteResourceCache.cacheKey(host.hostId, rootId, relativePath);
+                flight = RemoteResourceCache.acquireFlight(cacheKey);
+                if (!flight.isOwner()) {
+                    // Another request for the same image is currently downloading it.
+                    // Wait briefly for the first stream to complete, then reuse its disk file.
+                    try { flight.await(5000L); }
+                    catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
                     }
+                    RemoteResourceCache.CacheEntry coalesced =
+                            RemoteResourceCache.find(context, host.hostId, rootId, relativePath);
+                    if (coalesced != null) return cachedResponse(coalesced, false);
+                    flight = null;
                 }
             }
 
-            Map<String, String> headers = filteredResponseHeaders(connection);
+            Map<String, String> upstreamHeaders = requestHeaders == null
+                    ? new HashMap<>() : new HashMap<>(requestHeaders);
+            if (cached != null && !rangeRequest) {
+                if (cached.etag != null && !cached.etag.isEmpty() &&
+                        header(upstreamHeaders, "If-None-Match") == null) {
+                    upstreamHeaders.put("If-None-Match", cached.etag);
+                } else if ((cached.etag == null || cached.etag.isEmpty()) &&
+                        cached.lastModified != null && !cached.lastModified.isEmpty() &&
+                        header(upstreamHeaders, "If-Modified-Since") == null) {
+                    upstreamHeaders.put("If-Modified-Since", cached.lastModified);
+                }
+            }
+
+            connection = RemoteHostClient.openGameResource(context, host, rootId, relativePath, upstreamHeaders);
+            int status = connection.getResponseCode();
+
+            if (status == 304 && cached != null) {
+                connection.disconnect();
+                connection = null;
+                if (flight != null) flight.complete(true);
+                return cachedResponse(cached, false);
+            }
+
+            // A 304 without a local copy cannot be served. Retry once without validators.
+            if (status == 304) {
+                connection.disconnect();
+                connection = RemoteHostClient.openGameResource(context, host, rootId, relativePath,
+                        requestHeaders == null ? new HashMap<>() : new HashMap<>(requestHeaders));
+                status = connection.getResponseCode();
+            }
+
+            if (status >= 500 && cached != null) {
+                connection.disconnect();
+                connection = null;
+                if (flight != null) flight.complete(true);
+                return cachedResponse(cached, true);
+            }
+
+            String rawContentType = connection.getContentType();
+            String mime = normalizeMime(rawContentType);
+            String encoding = parseCharset(rawContentType);
+            Map<String, String> responseHeaders = filteredResponseHeaders(connection);
             InputStream body;
+
             if (status == 304 || status == 204) {
                 body = new ByteArrayInputStream(new byte[0]);
+                if (flight != null) flight.complete(false);
             } else if (status >= 200 && status < 400) {
                 InputStream input = connection.getInputStream();
                 HttpsURLConnection owned = connection;
-                body = new FilterInputStream(input) {
-                    @Override public void close() throws IOException {
-                        try { super.close(); }
-                        finally { owned.disconnect(); }
-                    }
-                };
-                connection = null; // the stream now owns the connection
+                RemoteResourceCache.CacheWriter writer = null;
+                long contentLength = connection.getContentLengthLong();
+                if (status == 200 && !rangeRequest && !noStore &&
+                        (contentLength <= 0 || contentLength <= RemoteResourceCache.MAX_ENTRY_BYTES)) {
+                    writer = RemoteResourceCache.beginWrite(context, host.hostId, rootId, relativePath,
+                            mime, connection.getHeaderField("ETag"), connection.getHeaderField("Last-Modified"));
+                }
+                if (flight != null && writer == null) flight.complete(false);
+                body = new CacheTeeInputStream(input, owned, writer, flight);
+                connection = null; // the stream owns the connection
+                flight = null; // the stream completes the in-flight gate
+                responseHeaders.put("Cache-Control", rangeRequest || noStore ? "no-store" : "private, max-age=3");
             } else {
-                // Do not forward Host-side exception text or Windows paths into game content.
+                if (flight != null) flight.complete(false);
                 InputStream source = connection.getErrorStream();
                 if (source != null) {
                     try { source.close(); } catch (IOException ignored) { }
@@ -76,8 +134,9 @@ final class RemoteGameResourceBridge {
             if (status >= 400 && diagnostics != null && diagnostics.getAndIncrement() < 16) {
                 android.util.Log.w("WaywardRemotePlay", "Remote image response status=" + status);
             }
-            return new WebResourceResponse(mime, encoding, status, reason, headers, body);
+            return new WebResourceResponse(mime, encoding, status, reasonPhrase(status), responseHeaders, body);
         } catch (Exception error) {
+            if (flight != null) flight.complete(false);
             if (diagnostics != null && diagnostics.getAndIncrement() < 16) {
                 android.util.Log.w("WaywardRemotePlay",
                         "Remote image request failed: " + error.getClass().getSimpleName());
@@ -85,6 +144,84 @@ final class RemoteGameResourceBridge {
             return error(502, "Bad Gateway", "PC 이미지 리소스를 가져오지 못했습니다.");
         } finally {
             if (connection != null) connection.disconnect();
+        }
+    }
+
+    private static final class CacheTeeInputStream extends FilterInputStream {
+        private final HttpsURLConnection connection;
+        private final RemoteResourceCache.CacheWriter writer;
+        private final RemoteResourceCache.FetchFlight flight;
+        private boolean endOfStream;
+        private boolean closed;
+
+        CacheTeeInputStream(InputStream input, HttpsURLConnection connection,
+                RemoteResourceCache.CacheWriter writer, RemoteResourceCache.FetchFlight flight) {
+            super(input);
+            this.connection = connection;
+            this.writer = writer;
+            this.flight = flight;
+        }
+
+        @Override public int read() throws IOException {
+            try {
+                int value = super.read();
+                if (value < 0) finish();
+                else if (writer != null) {
+                    byte[] one = {(byte) value};
+                    writer.write(one, 0, 1);
+                }
+                return value;
+            } catch (IOException error) {
+                abort();
+                throw error;
+            }
+        }
+
+        @Override public int read(byte[] buffer, int offset, int length) throws IOException {
+            try {
+                int count = super.read(buffer, offset, length);
+                if (count < 0) finish();
+                else if (count > 0 && writer != null) writer.write(buffer, offset, count);
+                return count;
+            } catch (IOException error) {
+                abort();
+                throw error;
+            }
+        }
+
+        private void finish() {
+            if (endOfStream || closed) return;
+            endOfStream = true;
+            if (writer != null) writer.commit();
+            if (flight != null) flight.complete(writer != null);
+        }
+
+        private void abort() {
+            if (writer != null) writer.abort();
+            if (flight != null) flight.complete(false);
+        }
+
+        @Override public void close() throws IOException {
+            if (closed) return;
+            closed = true;
+            if (!endOfStream) abort();
+            try { super.close(); }
+            finally { connection.disconnect(); }
+        }
+    }
+
+    private static WebResourceResponse cachedResponse(RemoteResourceCache.CacheEntry entry, boolean stale) {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Cache-Control", "private, max-age=3");
+        headers.put("Content-Length", Long.toString(entry.length()));
+        headers.put("X-Content-Type-Options", "nosniff");
+        if (entry.etag != null && !entry.etag.isEmpty()) headers.put("ETag", entry.etag);
+        if (entry.lastModified != null && !entry.lastModified.isEmpty()) headers.put("Last-Modified", entry.lastModified);
+        if (stale) headers.put("Warning", "110 - Response is stale");
+        try {
+            return new WebResourceResponse(entry.contentType, null, 200, "OK", headers, entry.open());
+        } catch (IOException error) {
+            return error(502, "Bad Gateway", "PC 이미지 캐시를 읽지 못했습니다.");
         }
     }
 
@@ -105,9 +242,39 @@ final class RemoteGameResourceBridge {
                 throw new IOException("Invalid remote image path segment.");
             }
         }
-        // Keep the original URI-encoded path so Unicode and reserved filename characters
-        // are not double-encoded when appended to /v1/game.
         return "/images/" + relative;
+    }
+
+    private static String header(Map<String, String> headers, String name) {
+        if (headers == null) return null;
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
+            if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(name)) return entry.getValue();
+        }
+        return null;
+    }
+
+    private static boolean containsDirective(String header, String directive) {
+        return header != null && header.toLowerCase(Locale.ROOT).contains(directive);
+    }
+
+    private static String normalizeMime(String rawContentType) {
+        if (rawContentType == null) return "application/octet-stream";
+        String[] parts = rawContentType.split(";", 2);
+        String mime = parts[0].trim().toLowerCase(Locale.ROOT);
+        return mime.isEmpty() ? "application/octet-stream" : mime;
+    }
+
+    private static String parseCharset(String rawContentType) {
+        if (rawContentType == null) return null;
+        String[] parts = rawContentType.split(";", 2);
+        if (parts.length < 2) return null;
+        for (String parameter : parts[1].split(";")) {
+            String value = parameter.trim();
+            if (value.toLowerCase(Locale.ROOT).startsWith("charset=")) {
+                return value.substring("charset=".length()).replace("\"", "").trim();
+            }
+        }
+        return null;
     }
 
     private static Map<String, String> filteredResponseHeaders(HttpsURLConnection connection) {
