@@ -28,6 +28,10 @@ assert.match(connection, /verifySignedManifest\(\)/,
   'the Host QR must be validated before trust is stored');
 assert.match(connection, /verifyHostSignature\(/,
   'Host pairing challenges and approval receipts must be verified using the pinned Host public key');
+assert.match(connection, /verifyPairingApprovalReceipt/,
+  'the approval receipt must bind the signed Host, Pairing ID, Device ID, public-key fingerprint and permission bitmask');
+assert.match(client, /verifyPairingApprovalReceipt/,
+  'the mobile pairing flow must verify the canonical signed receipt before accepting enrollment');
 assert.match(connection, /certificateSha256/,
   'the signed Host manifest must bind the TLS certificate fingerprint');
 assert.match(client, /checkServerTrusted/,
@@ -94,6 +98,8 @@ assert.match(comfy, /\/v1\/comfy\/images/,
   'ComfyUI input and output images must travel through the Remote Host gateway');
 assert.match(comfy, /getCachedImage/,
   'ComfyUI output images must support an app-private cache');
+assert.match(comfy, /verifyCachedImage/,
+  'ComfyUI cache files must pass SHA-256 verification before reuse');
 assert.match(manifest, /usesCleartextTraffic="false"/,
   'cleartext HTTP must remain disabled for the official launcher');
 assert.match(naiStore, /AES\/GCM\/NoPadding/,
