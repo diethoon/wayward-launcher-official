@@ -304,6 +304,46 @@ final class RemoteHostClient {
         }
     }
 
+    /** Returns a status/body envelope without exposing the bearer token to WebView JavaScript. */
+    static JSONObject requestAuthenticatedJsonEnvelope(Context context, RemoteHostConnection host,
+            String path, String method, JSONObject body) throws Exception {
+        String token = authenticate(context, host);
+        JSONObject response = requestJsonEnvelope(host, path, method, body, "Bearer " + token);
+        if (response.optInt("status", 0) == HttpURLConnection.HTTP_UNAUTHORIZED) {
+            clearSession();
+            token = authenticate(context, host);
+            response = requestJsonEnvelope(host, path, method, body, "Bearer " + token);
+        }
+        return response;
+    }
+
+    private static JSONObject requestJsonEnvelope(RemoteHostConnection host, String path,
+            String method, JSONObject body, String authorization) throws Exception {
+        HttpsURLConnection connection = openPinned(host, path, method, body, authorization, null);
+        try {
+            int status = connection.getResponseCode();
+            InputStream stream = status >= 200 && status < 300
+                    ? connection.getInputStream() : connection.getErrorStream();
+            byte[] bytes = readLimited(stream, MAX_JSON_RESPONSE_BYTES);
+            try {
+                JSONObject headers = new JSONObject();
+                for (String name : new String[] {"Content-Type", "Cache-Control", "Retry-After", "ETag"}) {
+                    String value = connection.getHeaderField(name);
+                    if (value != null) headers.put(name, value);
+                }
+                return new JSONObject()
+                        .put("status", status)
+                        .put("statusText", connection.getResponseMessage() == null ? "" : connection.getResponseMessage())
+                        .put("headers", headers)
+                        .put("bodyBase64", android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP));
+            } finally {
+                java.util.Arrays.fill(bytes, (byte) 0);
+            }
+        } finally {
+            connection.disconnect();
+        }
+    }
+
     static HttpsURLConnection openAuthenticatedConnection(Context context, RemoteHostConnection host,
             String path, String method, Map<String, String> requestHeaders) throws Exception {
         String token = authenticate(context, host);
