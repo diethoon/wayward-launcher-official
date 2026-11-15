@@ -36,7 +36,7 @@ final class RemoteHostStore {
         String raw = preferences(context).getString(KEY_HOST, null);
         if (raw == null || raw.trim().isEmpty()) return null;
         RemoteHostConnection connection = RemoteHostConnection.fromStoredJson(raw);
-        connection.verifySignedManifest();
+        connection.verifyStoredIdentity();
         return connection;
     }
 
