@@ -38,6 +38,9 @@ assert.match(connection, /parseSignedLong\(text, "permissions"\)[\s\S]*permissio
 
 assert.match(connection, /certificateSha256/,
   'the signed Host manifest must bind the TLS certificate fingerprint');
+assert.match(connection, /qrNonce/);
+assert.match(client, /\.put\("qrNonce", host\.qrNonce\)/,
+  'initial pairing must consume the nonce embedded in the signed and short-lived QR');
 assert.match(client, /checkServerTrusted/,
   'TLS must validate the exact pinned certificate rather than trust arbitrary self-signed certificates');
 assert.match(client, /MessageDigest\.isEqual\(expected, actual\)/,

@@ -45,9 +45,10 @@ public final class RemotePlayCryptoInstrumentedTest {
         String requestId = UUID.randomUUID().toString();
         String deviceFingerprint = RemoteHostConnection.sha256Hex(firstKey.getPublic().getEncoded());
         String certificatePin = "A".repeat(64);
+        String qrNonce = "D".repeat(64);
         String baseUrl = "https://192.168.1.77:8765/";
         RemoteHostConnection host = createSignedHostManifest(
-                firstKey, hostId, baseUrl, deviceFingerprint, certificatePin,
+                firstKey, hostId, baseUrl, deviceFingerprint, certificatePin, qrNonce,
                 System.currentTimeMillis(), System.currentTimeMillis() + 300_000L);
 
         host.verifySignedManifest();
@@ -96,7 +97,7 @@ public final class RemotePlayCryptoInstrumentedTest {
 
         RemoteHostConnection storedHost = createSignedHostManifest(
                 keyPair, hostId, "https://192.168.1.78:8765/", fingerprint,
-                "B".repeat(64), issuedAt, expiresAt);
+                "B".repeat(64), "E".repeat(64), issuedAt, expiresAt);
 
         storedHost.verifyStoredIdentity();
         assertThrows(SecurityException.class, storedHost::verifySignedManifest);
@@ -111,15 +112,15 @@ public final class RemotePlayCryptoInstrumentedTest {
         assertThrows(IllegalArgumentException.class, () -> new RemoteHostConnection(
                 "http://192.168.1.90:8765/", hostId,
                 Base64.encodeToString(keyPair.getPublic().getEncoded(), Base64.NO_WRAP),
-                fingerprint, "C".repeat(64), "payload", "signature"));
+                fingerprint, "C".repeat(64), "D".repeat(64), "payload", "signature"));
         assertThrows(IllegalArgumentException.class, () -> new RemoteHostConnection(
                 "https://8.8.8.8:8765/", hostId,
                 Base64.encodeToString(keyPair.getPublic().getEncoded(), Base64.NO_WRAP),
-                fingerprint, "C".repeat(64), "payload", "signature"));
+                fingerprint, "C".repeat(64), "D".repeat(64), "payload", "signature"));
     }
 
     private static RemoteHostConnection createSignedHostManifest(KeyPair signer, String hostId,
-            String baseUrl, String keyFingerprint, String certificatePin,
+            String baseUrl, String keyFingerprint, String certificatePin, String qrNonce,
             long issuedAt, long expiresAt) throws Exception {
         String payloadText = String.join("\n",
                 "Wayward-Remote-Host-Connection",
@@ -128,6 +129,7 @@ public final class RemotePlayCryptoInstrumentedTest {
                 "baseUrl=" + baseUrl,
                 "publicKeyFingerprint=" + keyFingerprint,
                 "certificateSha256=" + certificatePin,
+                "qrNonce=" + qrNonce,
                 "issued=" + issuedAt,
                 "expires=" + expiresAt);
         byte[] payload = payloadText.getBytes(StandardCharsets.UTF_8);
@@ -139,6 +141,7 @@ public final class RemotePlayCryptoInstrumentedTest {
                     Base64.encodeToString(signer.getPublic().getEncoded(), Base64.NO_WRAP),
                     keyFingerprint,
                     certificatePin,
+                    qrNonce,
                     Base64.encodeToString(payload, Base64.NO_WRAP),
                     Base64.encodeToString(signature, Base64.NO_WRAP));
         } finally {

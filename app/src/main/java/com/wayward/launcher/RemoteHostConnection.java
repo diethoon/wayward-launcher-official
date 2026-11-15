@@ -21,17 +21,22 @@ final class RemoteHostConnection {
     final String publicKeyBase64;
     final String publicKeyFingerprint;
     final String certificateSha256;
+    final String qrNonce;
     final String signedPayloadBase64;
     final String signatureBase64;
 
     RemoteHostConnection(String baseUrl, String hostId, String publicKeyBase64,
-            String publicKeyFingerprint, String certificateSha256,
+            String publicKeyFingerprint, String certificateSha256, String qrNonce,
             String signedPayloadBase64, String signatureBase64) {
         this.baseUrl = normalizeBaseUrl(baseUrl);
         this.hostId = UUID.fromString(hostId).toString();
         this.publicKeyBase64 = requireText(publicKeyBase64, "Host public key");
         this.publicKeyFingerprint = normalizeFingerprint(publicKeyFingerprint);
         this.certificateSha256 = normalizeFingerprint(certificateSha256);
+        this.qrNonce = requireText(qrNonce, "QR enrollment nonce").trim().toUpperCase(Locale.ROOT);
+        if (!this.qrNonce.matches("[0-9A-F]{64}")) {
+            throw new IllegalArgumentException("QR enrollment nonce format is invalid.");
+        }
         this.signedPayloadBase64 = requireText(signedPayloadBase64, "Host signed payload");
         this.signatureBase64 = requireText(signatureBase64, "Host signature");
     }
@@ -47,6 +52,7 @@ final class RemoteHostConnection {
                 value.getString("publicKeyBase64"),
                 value.getString("publicKeyFingerprint"),
                 value.getString("certificateSha256"),
+                value.getString("qrNonce"),
                 value.getString("signedPayloadBase64"),
                 value.getString("signatureBase64"));
     }
@@ -93,6 +99,7 @@ final class RemoteHostConnection {
             requireSignedLine(signedText, "baseUrl=" + baseUrl, false);
             requireSignedLine(signedText, "publicKeyFingerprint=" + actualFingerprint, false);
             requireSignedLine(signedText, "certificateSha256=" + certificateSha256, false);
+            requireSignedLine(signedText, "qrNonce=" + qrNonce, false);
 
             long issued = parseSignedLong(signedText, "issued");
             long expires = parseSignedLong(signedText, "expires");
@@ -154,6 +161,7 @@ final class RemoteHostConnection {
         value.put("publicKeyBase64", publicKeyBase64);
         value.put("publicKeyFingerprint", publicKeyFingerprint);
         value.put("certificateSha256", certificateSha256);
+        value.put("qrNonce", qrNonce);
         value.put("signedPayloadBase64", signedPayloadBase64);
         value.put("signatureBase64", signatureBase64);
         return value;

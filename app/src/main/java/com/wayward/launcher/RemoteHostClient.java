@@ -132,6 +132,7 @@ final class RemoteHostClient {
         JSONObject startBody = new JSONObject()
                 .put("deviceId", deviceId)
                 .put("displayName", displayName)
+                .put("qrNonce", host.qrNonce)
                 .put("publicKeySubjectPublicKeyInfoBase64",
                         Base64.encodeToString(keyPair.getPublic().getEncoded(), Base64.NO_WRAP));
         JSONObject start = requestJson(host, "/v1/pairing/requests", "POST", startBody, null);
