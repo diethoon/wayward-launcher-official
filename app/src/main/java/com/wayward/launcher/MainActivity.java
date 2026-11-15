@@ -682,18 +682,14 @@ public final class MainActivity extends Activity {
 
 
     private synchronized int reserveGoogleAuthRequestCode(String nonce){
-        int range=REQUEST_GOOGLE_AUTH_MAX-REQUEST_GOOGLE_AUTH_MIN+1;
-        for(int attempt=0;attempt<range;attempt++){
-            int requestCode=nextGoogleAuthRequestCode++;
-            if(nextGoogleAuthRequestCode>REQUEST_GOOGLE_AUTH_MAX){
-                nextGoogleAuthRequestCode=REQUEST_GOOGLE_AUTH_MIN;
-            }
-            if(!pendingGoogleAuthRequestNonces.containsKey(requestCode)){
-                pendingGoogleAuthRequestNonces.put(requestCode,nonce);
-                return requestCode;
-            }
+        // Never reuse a request code during this Activity lifetime. A cancelled
+        // PendingIntent may still deliver its ActivityResult after a later retry.
+        if(nextGoogleAuthRequestCode>REQUEST_GOOGLE_AUTH_MAX){
+            throw new IllegalStateException("Google 인증 요청 한도를 초과했습니다. 런처를 다시 시작해 주세요.");
         }
-        throw new IllegalStateException("사용 가능한 Google 인증 요청 코드가 없습니다.");
+        int requestCode=nextGoogleAuthRequestCode++;
+        pendingGoogleAuthRequestNonces.put(requestCode,nonce);
+        return requestCode;
     }
 
     private void clearGoogleDriveAuthRequest(String nonce){
