@@ -5,6 +5,8 @@ import android.content.Context;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URLEncoder;
@@ -13,6 +15,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import javax.net.ssl.HttpsURLConnection;
 
@@ -28,6 +31,8 @@ public final class RemoteComfyClient {
     private static final int MAX_IMAGE_UPLOAD_BYTES = 32 * 1024 * 1024;
     private static final long MAX_IMAGE_DOWNLOAD_BYTES = 128L * 1024 * 1024;
     private static final int MAX_ERROR_BYTES = 16 * 1024;
+    private static final long MAX_COMFY_CACHE_BYTES = 256L * 1024 * 1024;
+    private static final ConcurrentHashMap<String, Object> CACHE_LOCKS = new ConcurrentHashMap<>();
 
     private RemoteComfyClient() {}
 
@@ -128,6 +133,117 @@ public final class RemoteComfyClient {
             return response;
         } finally {
             if (!success) connection.disconnect();
+        }
+    }
+
+    /**
+     * Downloads a generated ComfyUI image once into app-private cache storage.
+     * promptId is part of the key so a later generation cannot reuse an older result
+     * that happens to have the same output file name.
+     */
+    public static File getCachedImage(Context context, RemoteHostConnection host, String promptId,
+            String fileName, String subfolder, String type) throws Exception {
+        if (context == null) throw new IllegalArgumentException("Android Context is required.");
+        String id = validatePromptId(promptId);
+        String safeName = validateFileName(fileName);
+        String safeSubfolder = validateSubfolder(subfolder);
+        String safeType = validateImageType(type);
+        String key = cacheKey(host.hostId, id, safeName, safeSubfolder, safeType);
+        File directory = new File(context.getApplicationContext().getCacheDir(), "wayward-remote-comfy-v1");
+        if (!directory.isDirectory() && !directory.mkdirs() && !directory.isDirectory()) {
+            throw new IOException("Could not create the app-private ComfyUI image cache.");
+        }
+        File target = new File(directory, key + ".image");
+        Object lock = CACHE_LOCKS.computeIfAbsent(key, ignored -> new Object());
+        synchronized (lock) {
+            if (target.isFile() && target.length() > 0 && target.length() <= MAX_IMAGE_DOWNLOAD_BYTES) {
+                target.setLastModified(System.currentTimeMillis());
+                return target;
+            }
+
+            File temporary = new File(directory, key + "." + android.os.Process.myPid() + ".part");
+            long downloaded = 0;
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            try (ImageResponse response = openImage(context, host, safeName, safeSubfolder, safeType);
+                 InputStream input = response.getStream();
+                 FileOutputStream output = new FileOutputStream(temporary, false)) {
+                byte[] buffer = new byte[64 * 1024];
+                int read;
+                while ((read = input.read(buffer)) != -1) {
+                    if (read == 0) continue;
+                    downloaded += read;
+                    if (downloaded > MAX_IMAGE_DOWNLOAD_BYTES) {
+                        throw new IOException("Generated ComfyUI image exceeds the 128 MiB download limit.");
+                    }
+                    digest.update(buffer, 0, read);
+                    output.write(buffer, 0, read);
+                }
+                output.flush();
+                output.getFD().sync();
+                if (response.getContentLength() >= 0 && downloaded != response.getContentLength()) {
+                    throw new IOException("Generated ComfyUI image length did not match Content-Length.");
+                }
+                if (downloaded <= 0) throw new IOException("Generated ComfyUI image response was empty.");
+                output.close();
+
+                delete(target);
+                if (!temporary.renameTo(target)) throw new IOException("Could not finalize ComfyUI image cache file.");
+                target.setLastModified(System.currentTimeMillis());
+                String checksum = hex(digest.digest());
+                File checksumFile = new File(directory, key + ".sha256");
+                File checksumTemp = new File(directory, key + ".sha256.part");
+                try (FileOutputStream checksumOutput = new FileOutputStream(checksumTemp, false)) {
+                    checksumOutput.write(checksum.getBytes(StandardCharsets.US_ASCII));
+                    checksumOutput.write('\\n');
+                    checksumOutput.getFD().sync();
+                }
+                delete(checksumFile);
+                if (!checksumTemp.renameTo(checksumFile)) delete(checksumTemp);
+                purgeComfyCache(directory, target);
+                return target;
+            } catch (Exception error) {
+                delete(temporary);
+                throw error;
+            }
+        }
+    }
+
+    private static String cacheKey(String hostId, String promptId, String fileName,
+            String subfolder, String type) throws Exception {
+        String value = hostId + "\\n" + promptId + "\\n" + fileName + "\\n" + subfolder + "\\n" + type;
+        byte[] bytes = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(value.getBytes(StandardCharsets.UTF_8));
+        try { return hex(bytes); }
+        finally { java.util.Arrays.fill(bytes, (byte) 0); }
+    }
+
+    private static String hex(byte[] bytes) {
+        StringBuilder result = new StringBuilder(bytes.length * 2);
+        for (byte value : bytes) result.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+        return result.toString();
+    }
+
+    private static void purgeComfyCache(File directory, File keep) {
+        File[] files = directory.listFiles((dir, name) -> name.endsWith(".image"));
+        if (files == null) return;
+        long total = 0;
+        for (File file : files) total += file.length();
+        java.util.Arrays.sort(files, java.util.Comparator.comparingLong(File::lastModified));
+        for (File file : files) {
+            if (total <= MAX_COMFY_CACHE_BYTES) break;
+            if (file.equals(keep)) continue;
+            long size = file.length();
+            if (file.delete()) {
+                total -= size;
+                String base = file.getName().substring(0, file.getName().length() - ".image".length());
+                delete(new File(directory, base + ".sha256"));
+            }
+        }
+    }
+
+    private static void delete(File file) {
+        if (file != null && file.exists()) {
+            try { file.delete(); } catch (SecurityException ignored) { }
         }
     }
 
