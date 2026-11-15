@@ -54,3 +54,8 @@ Updated: 2026-11-15 (Asia/Seoul)
 - 완료는 실제 동작과 증거로만 판정한다. 커밋 SHA, 실행한 테스트/CI 링크 및 결과, 생성 산출물, 미검증·차단 항목을 기록한다. Mock/정적 테스트를 실환경 성공으로 표현하지 않는다.
 - 다음 작업자가 즉시 이어갈 수 있도록 이 HANDOFF를 각 의미 있는 단계마다 갱신한다.
 
+
+## Branch tip after documentation and CI-filter updates
+- Current branch tip: 7ce31c122642309d8f1635c25083910c90f11ed9. Product code remains validated at e9307b75131809aba70ee6072bd37ee820b06532.
+- Workflow path-filter commit f5477707c7b1240713ddf4d39bed7bdf4dba71e0 was validated by Android CI 43724977457 (success). Documentation-only commits after that are ignored by push/pull_request builds.
+- Final APK rebuilt in workflow run 43724977457; artifact 14165644599 SHA-256 8aaf2400d1e36f20d8a1e56a497bf0bc60b37c90537624df4dc2b6aaccdb7c96.
