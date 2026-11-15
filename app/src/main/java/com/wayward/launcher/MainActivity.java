@@ -1178,8 +1178,11 @@ public final class MainActivity extends Activity {
                         }
                         return folderHandler.serveGamePath(path.substring(6));
                     }
-                    if(path != null && path.startsWith("/images/__wayward_generated__/"))
+                    if(path != null && path.startsWith("/images/__wayward_generated__/")) {
+                        if(IMAGE_MODE_REMOTE_PC.equals(currentImageMode()))
+                            return RemoteGameResourceBridge.serve(MainActivity.this,u.getEncodedPath(),r.getRequestHeaders(),imageDiagnostics);
                         return serveGeneratedImageRequest(path, imageDiagnostics);
+                    }
                     if(FolderHandler.isImageRequestPath(path))return serveImageRequestByMode(folderHandler,path,u.getEncodedPath(),r.getRequestHeaders(),imageDiagnostics);
                 }
                 String requestedPath=u.getPath();
@@ -2032,19 +2035,31 @@ public final class MainActivity extends Activity {
             });
         }
         @JavascriptInterface public void imageGenProxyFetch(String requestId,String method,String path,String headersJson,String bodyBase64){
-            ImageGenProxy.dispatch(web,requestId,method,path,headersJson,bodyBase64);
+            boolean remotePcMode=IMAGE_MODE_REMOTE_PC.equals(currentImageMode());
+            ImageGenProxy.dispatch(web,requestId,method,path,headersJson,bodyBase64,remotePcMode);
         }
         @JavascriptInterface public String imageGenRuntimeStatus(){
-            ImageGenStatusStore.State state=ImageGenStatusStore.read(getFilesDir());
+            boolean remotePcMode=IMAGE_MODE_REMOTE_PC.equals(currentImageMode());
+            ImageGenStatusStore.State state=ImageGenStatusStore.read(MainActivity.this.getFilesDir());
             try{
                 JSONObject value=new JSONObject();
-                value.put("available",state.isAvailable());
-                value.put("starting",state.isStarting());
-                value.put("ready",state.isReady());
-                value.put("backendVersion",state.backendVersion);
-                String[] parts=state.backendVersion.split(":");
-                value.put("engine",parts.length>=3?parts[2]:"unknown");
-                value.put("message",state.message);
+                if(remotePcMode){
+                    boolean ready=RemoteHostStore.isReady(MainActivity.this);
+                    value.put("available",ready);
+                    value.put("starting",false);
+                    value.put("ready",ready);
+                    value.put("backendVersion","remote-pc:v1");
+                    value.put("engine","remote-pc");
+                    value.put("message",ready?"페어링된 PC Remote Host를 사용합니다.":"PC 페어링과 승인된 폴더 선택이 필요합니다.");
+                }else{
+                    value.put("available",state.isAvailable());
+                    value.put("starting",state.isStarting());
+                    value.put("ready",state.isReady());
+                    value.put("backendVersion",state.backendVersion);
+                    String[] parts=state.backendVersion.split(":");
+                    value.put("engine",parts.length>=3?parts[2]:"unknown");
+                    value.put("message",state.message);
+                }
                 return value.toString();
             }catch(Exception ignored){return "{\"available\":false,\"starting\":false,\"ready\":false,\"backendVersion\":\"\",\"engine\":\"unknown\"}";}
         }
