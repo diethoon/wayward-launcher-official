@@ -10,6 +10,8 @@ const discovery = read('app/src/main/java/com/wayward/launcher/RemoteHostDiscove
 const bridge = read('app/src/main/java/com/wayward/launcher/RemoteGameResourceBridge.java');
 const resourceCache = read('app/src/main/java/com/wayward/launcher/RemoteResourceCache.java');
 const comfy = read('app/src/main/java/com/wayward/launcher/RemoteComfyClient.java');
+const remoteImageApi = read('app/src/main/java/com/wayward/launcher/RemoteGameImageApiClient.java');
+const imageProxy = read('app/src/main/java/com/wayward/launcher/ImageGenProxy.java');
 const files = read('app/src/main/java/com/wayward/launcher/RemoteFilesClient.java');
 const manifest = read('app/src/main/AndroidManifest.xml');
 const naiStore = read('app/src/main/java/com/wayward/launcher/NovelAiTokenStore.java');
@@ -22,9 +24,11 @@ assert.match(main, /setDomain\(domain\+":"\+originPort\)/,
 assert.match(main, /RemoteGameResourceBridge\.serve\(this,encodedPath,requestHeaders,samples\)/,
   'Remote Play image requests must be proxied by the Native WebView resource interceptor');
 const generatedAnchorRoute = main.indexOf('path.startsWith("/images/__wayward_generated__/")');
-const remoteImageRoute = main.indexOf('FolderHandler.isImageRequestPath(path)', generatedAnchorRoute);
-assert.ok(generatedAnchorRoute >= 0 && remoteImageRoute > generatedAnchorRoute,
-  'the app-private generated-image anchor must be served locally before the general PC image route');
+assert.ok(generatedAnchorRoute >= 0 &&
+  main.indexOf('serveGeneratedImageRequest(path, imageDiagnostics)', generatedAnchorRoute) > generatedAnchorRoute,
+  'the app-private generated-image anchor must remain available in local generation mode');
+assert.match(main, /IMAGE_MODE_REMOTE_PC\.equals\(currentImageMode\(\)\)[\\s\\S]*?RemoteGameResourceBridge\.serve\(MainActivity\.this,u\.getEncodedPath\(\)/,
+  'Remote PC generated-image anchors must be fetched from the approved PC root through the pinned Host');
 assert.match(main, /IMAGE_MODE_REMOTE_PC/,
   'the existing serialized image routing manager must retain a Remote PC mode contract');
 assert.match(main, /registerRemotePcServerControl\(/,
@@ -121,6 +125,22 @@ assert.match(bridge, /ETag/,
 assert.match(bridge, /RemoteHostClient\.openGameResource/,
   'game resources must be fetched through the certificate-pinned native API client');
 
+assert.match(main, /ImageGenProxy\.dispatch\(web,requestId,method,path,headersJson,bodyBase64,remotePcMode\)/,
+  'the existing WebView bridge must choose the remote transport from the selected image mode');
+assert.match(imageProxy, /if \(remotePcMode\)[\\s\\S]*?RemoteGameImageApiClient\.execute/,
+  'Remote PC image API calls must use the native authenticated transport instead of the local ImageGen port');
+assert.match(imageProxy, /RemoteHostStore\.isReady\(appContext\)/,
+  'Remote PC generation must require a paired Host and selected approved workspace root');
+assert.match(remoteImageApi, /\/v1\/game-image-api\/image\/generate/,
+  'the original single-image endpoint must map to the authenticated PC Host adapter');
+assert.match(remoteImageApi, /\/v1\/game-image-api\/batch\/enqueue/,
+  'the original pre-generation batch endpoint must map to the authenticated PC Host adapter');
+assert.match(remoteImageApi, /\/v1\/game-image-api\/image\/status/,
+  'the original game must be able to poll image completion on the PC Host');
+assert.match(remoteImageApi, /requestAuthenticatedJsonEnvelope/,
+  'Remote Host bearer tokens must stay inside native code and be returned as a response envelope only');
+assert.doesNotMatch(remoteImageApi, /put\("Authorization"|Bearer /,
+  'game JavaScript must not receive or create the Remote Host bearer token');
 assert.match(comfy, /\/v1\/comfy\/status/,
   'Native ComfyUI status must use the authenticated Remote Host gateway');
 assert.match(comfy, /\/v1\/comfy\/jobs/,
