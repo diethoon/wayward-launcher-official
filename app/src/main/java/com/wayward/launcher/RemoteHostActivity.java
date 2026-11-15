@@ -104,8 +104,9 @@ public final class RemoteHostActivity extends Activity {
             RemoteHostConnection host = requireConnection();
             String token = RemoteHostClient.authenticate(this, host);
             JSONObject current = RemoteHostClient.requestJson(host, "/v1/auth/session", "GET", null, "Bearer " + token);
-            if (!current.optBoolean("authenticated")) {
-                throw new SecurityException("PC Host가 이 Device Session을 인증하지 않았습니다.");
+            String expectedDeviceId = RemoteHostStore.getDeviceId(this);
+            if (!expectedDeviceId.equalsIgnoreCase(current.optString("deviceId"))) {
+                throw new SecurityException("PC Host가 반환한 Device ID가 이 기기의 Keystore Identity와 다릅니다.");
             }
             return "PC Host 재인증 완료\nDevice ID: " + current.optString("deviceId") +
                     "\n권한: " + current.optInt("permissions") +
