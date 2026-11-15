@@ -22,6 +22,7 @@ final class RemoteGameResourceBridge {
             Map<String, String> requestHeaders, AtomicInteger diagnostics) {
         HttpsURLConnection connection = null;
         RemoteResourceCache.FetchFlight flight = null;
+        RemoteResourceCache.CacheEntry offlineFallback = null;
         try {
             RemoteHostConnection host = RemoteHostStore.loadConnection(context);
             if (host == null) return error(503, "Service Unavailable", "PC Host가 등록되지 않았습니다.");
@@ -36,6 +37,7 @@ final class RemoteGameResourceBridge {
             boolean forceRefresh = containsDirective(header(requestHeaders, "Cache-Control"), "no-cache");
             RemoteResourceCache.CacheEntry cached = rangeRequest || noStore
                     ? null : RemoteResourceCache.find(context, host.hostId, rootId, relativePath);
+            offlineFallback = cached;
 
             if (cached != null && RemoteResourceCache.isFresh(cached) && !forceRefresh) {
                 return cachedResponse(cached, false);
@@ -142,6 +144,13 @@ final class RemoteGameResourceBridge {
             return new WebResourceResponse(mime, encoding, status, reasonPhrase(status), responseHeaders, body);
         } catch (Exception error) {
             if (flight != null) flight.complete(false);
+            if (offlineFallback != null &&
+                    (error instanceof IOException || error instanceof java.net.SocketTimeoutException)) {
+                if (diagnostics != null && diagnostics.getAndIncrement() < 16) {
+                    android.util.Log.w("WaywardRemotePlay", "Serving a previously verified cached image after Host network loss.");
+                }
+                return cachedResponse(offlineFallback, true);
+            }
             if (diagnostics != null && diagnostics.getAndIncrement() < 16) {
                 android.util.Log.w("WaywardRemotePlay",
                         "Remote image request failed: " + error.getClass().getSimpleName());
