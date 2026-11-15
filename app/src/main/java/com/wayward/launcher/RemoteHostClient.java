@@ -190,6 +190,7 @@ final class RemoteHostClient {
                         java.util.Arrays.fill(receiptSignature, (byte) 0);
                     }
                     authenticate(context, host);
+                    RemoteHostStore.markPaired(context,host);
                     return "PC Manager에서 기기 승인이 완료되었습니다.\nHost ID: " + host.hostId +
                             "\nDevice ID: " + deviceId +
                             "\n권한 비트: " + receipt.optInt("permissions");

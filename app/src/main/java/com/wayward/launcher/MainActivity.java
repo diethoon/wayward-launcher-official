@@ -1,6 +1,7 @@
 package com.wayward.launcher;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ContentValues;
 import android.content.Intent;
@@ -113,6 +114,9 @@ public final class MainActivity extends Activity {
     private Runnable imageGenPollRunnable;
     private WebView web;
     private WebFileChooser webFileChooser;
+    private Button pairingButton;
+    private RemoteHostDiscovery remoteHostDiscovery;
+    private boolean remoteReconnectInProgress;
 
     @Override public void onCreate(Bundle b){
         super.onCreate(b);
@@ -132,7 +136,19 @@ public final class MainActivity extends Activity {
         long revision=getSharedPreferences(PREFS,MODE_PRIVATE).getLong(KEY_ZIP_REV,0);
         if(web!=null&&revision!=loadedZipRevision){loadedZipRevision=revision;web.reload();}
         if(web!=null&&tree!=null)registerSessionActivity();
-        if(home!=null&&home.getVisibility()==View.VISIBLE){renderProfiles();refreshStatus();refreshImageGenStatus();renderImageModePanel();}
+        if(home!=null&&home.getVisibility()==View.VISIBLE){
+            renderProfiles();refreshStatus();refreshImageGenStatus();renderImageModePanel();
+            updatePairingButtonState();
+            startRemoteHostDiscoveryIfNeeded();
+            reconnectRemoteHostInBackground();
+        }
+    }
+    @Override protected void onPause(){
+        if(remoteHostDiscovery!=null){
+            try{remoteHostDiscovery.close();}catch(Exception ignored){}
+            remoteHostDiscovery=null;
+        }
+        super.onPause();
     }
     @Override protected void onNewIntent(Intent intent){
         super.onNewIntent(intent);setIntent(intent);
@@ -210,12 +226,15 @@ public final class MainActivity extends Activity {
         LinearLayout top=new LinearLayout(this);top.setGravity(android.view.Gravity.CENTER_VERTICAL);
         TextView title=uiText("WAYWARD",24,Color.rgb(24,27,31),true);title.setLetterSpacing(0.035f);
         top.addView(title,new LinearLayout.LayoutParams(0,-2,1f));
-        Button addFolder=compactButton("＋ 폴더",true,this::chooseFolder);
-        LinearLayout.LayoutParams addFolderParams=new LinearLayout.LayoutParams(dp(82),dp(38));
-        addFolderParams.leftMargin=dp(6);top.addView(addFolder,addFolderParams);
-        Button info=compactButton("안내",false,this::showLauncherInfoDialog);
-        LinearLayout.LayoutParams infoParams=new LinearLayout.LayoutParams(dp(56),dp(38));
-        infoParams.leftMargin=dp(5);top.addView(info,infoParams);
+        Button pcFolder=compactButton("+ PC 폴더",false,this::chooseRemotePcFolder);
+        LinearLayout.LayoutParams pcFolderParams=new LinearLayout.LayoutParams(dp(82),dp(38));
+        pcFolderParams.leftMargin=dp(4);top.addView(pcFolder,pcFolderParams);
+        Button addFolder=compactButton("+ 현재 기기 폴더",true,this::chooseFolder);
+        LinearLayout.LayoutParams addFolderParams=new LinearLayout.LayoutParams(dp(112),dp(38));
+        addFolderParams.leftMargin=dp(4);top.addView(addFolder,addFolderParams);
+        pairingButton=compactButton("페어링",false,this::openRemotePairing);
+        LinearLayout.LayoutParams pairingParams=new LinearLayout.LayoutParams(dp(74),dp(38));
+        pairingParams.leftMargin=dp(4);top.addView(pairingButton,pairingParams);
         LinearLayout.LayoutParams topParams=new LinearLayout.LayoutParams(-1,-2);topParams.bottomMargin=dp(3);
         page.addView(top,topParams);
         TextView subtitle=uiText("GAME LAUNCHER  ·  여러 게임을 독립 세션으로 실행",11,Color.rgb(111,118,125),false);
@@ -263,8 +282,13 @@ public final class MainActivity extends Activity {
         imageModePanel.setClipToPadding(false);
         imageCard.addView(imageModePanel,new LinearLayout.LayoutParams(-1,-2));
 
+        Button remoteFileManager=compactButton("원격 PC 파일매니저",false,this::openRemotePcFileManager);
+        LinearLayout.LayoutParams remoteFileManagerParams=new LinearLayout.LayoutParams(-1,dp(46));
+        remoteFileManagerParams.topMargin=dp(12);
+        page.addView(remoteFileManager,remoteFileManagerParams);
+
         home=page;root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));setContentView(root);applySystemBarInsets(root);
-        renderProfiles();refreshStatus();renderImageModePanel();refreshImageGenStatus();
+        renderProfiles();refreshStatus();renderImageModePanel();refreshImageGenStatus();updatePairingButtonState();
     }
 
 
@@ -336,33 +360,215 @@ public final class MainActivity extends Activity {
             String message;
             if(imageModeTransitionInProgress) message="서버 전환 중 · 기존 서버를 종료하고 새 모드를 적용합니다.";
             else if(imageGenSessionMessage!=null&&imageGenSessionMessage.startsWith("이미지 서버 전환 실패:")) message=imageGenSessionMessage;
-            else if(IMAGE_MODE_REMOTE_PC.equals(mode)) message="집 PC 원격 서버 모드 · 원격 연결 기능은 후속 UI 통합에서 활성화됩니다.";
+            else if(IMAGE_MODE_REMOTE_PC.equals(mode)) message="PC Remote Server 모드 · 승인된 PC 폴더와 Host 경유 HTTPS를 사용합니다.";
             else if(generationSelected&&state.isReady()) message="이미지 생성 서버 실행 중 · 이미지 생성 요청은 런처 서버로 전달됩니다.";
             else if(generationSelected) message="이미지 생성 서버 준비 중 · 생성 경로를 연결하고 있습니다.";
             else if(IMAGE_MODE_GENERATION.equals(mode)&&!active) message="이미지 생성 서버가 중지되었습니다. 다시 실행하거나 이미지팩 모드로 전환하세요.";
-            else message="이미지팩 전용 · 외부 생성 서버를 호출하지 않고 선택한 게임 폴더의 로컬 이미지만 탐색합니다.";
+            else message="이미지팩 전용 · 이 기기에 설치된 이미지팩만 탐색";
             imageModeStatus.setText(message);
         }
 
+        LinearLayout serverRow=new LinearLayout(this);
+        serverRow.setOrientation(LinearLayout.HORIZONTAL);
+        serverRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
         View server=glassModeTile(generationSelected?"이미지 생성 서버 실행 중":"이미지 생성 서버 실행",
                 generationSelected?"NovelAI 연결됨 · 다시 터치하면 종료":(tokenReady?"토큰 등록됨 · 터치해 서버 실행":"토큰 미등록 · 눌러 계정 연결"),
                 generationSelected,this::openNovelAiSettings,()->{
                     if(IMAGE_MODE_GENERATION.equals(currentImageMode())&&localImageServerActive()) switchToImagePacksOnly();
                     else switchToImageGenerationMode();
                 });
-        LinearLayout.LayoutParams serverParams=new LinearLayout.LayoutParams(-1,dp(76));
-        imageModePanel.addView(server,serverParams);
+        LinearLayout.LayoutParams serverParams=new LinearLayout.LayoutParams(0,dp(82),1f);
+        serverRow.addView(server,serverParams);
+
+        boolean remotePaired=RemoteHostStore.isPaired(this);
+        boolean comfySelected=IMAGE_MODE_REMOTE_PC.equals(mode)&&remotePaired;
+        View comfy=glassModeTile(comfySelected?"ComfyUI 연결됨":"ComfyUI 서버 실행",
+                remotePaired?"PC Host 인증 · ComfyUI 권한 필요":"PC 페어링 필요",
+                comfySelected,null,this::switchToRemoteComfyMode);
+        LinearLayout.LayoutParams comfyParams=new LinearLayout.LayoutParams(0,dp(82),1f);
+        comfyParams.leftMargin=dp(8);
+        serverRow.addView(comfy,comfyParams);
+        imageModePanel.addView(serverRow,new LinearLayout.LayoutParams(-1,-2));
 
         View packs=glassModeTile(packsSelected?"이미지팩만 사용 · 활성":"이미지팩만 사용",
-                "모든 서버 종료 · 로컬 이미지팩만 탐색 · 외부 생성 주소 차단",
+                "이 기기에 설치된 이미지팩만 탐색",
                 packsSelected,null,this::switchToImagePacksOnly);
-        LinearLayout.LayoutParams packsParams=new LinearLayout.LayoutParams(-1,dp(76));
+        LinearLayout.LayoutParams packsParams=new LinearLayout.LayoutParams(-1,dp(72));
         packsParams.topMargin=dp(9);
         packsParams.bottomMargin=dp(4);
         imageModePanel.addView(packs,packsParams);
 
     }
 
+
+    private void updatePairingButtonState(){
+        if(pairingButton==null)return;
+        boolean paired=RemoteHostStore.isPaired(this);
+        pairingButton.setText(paired?"페어링 완료":"페어링");
+        pairingButton.setEnabled(!paired);
+        pairingButton.setAlpha(paired?0.68f:1.0f);
+        pairingButton.setContentDescription(paired?"PC 페어링이 완료되었습니다":"PC QR 페어링 시작");
+    }
+
+    private void openRemotePairing(){
+        if(RemoteHostStore.isPaired(this)){
+            Toast.makeText(this,"이미 PC와 페어링되어 있습니다.",Toast.LENGTH_SHORT).show();
+            updatePairingButtonState();
+            return;
+        }
+        startActivity(new Intent(this,RemotePairingActivity.class));
+    }
+
+    private void showPcPairingRequired(String nextAction){
+        new AlertDialog.Builder(this)
+                .setTitle("PC 페어링 필요")
+                .setMessage("PC Remote Server를 실행하고 Windows Manager에 표시된 QR을 런처 내부에서 스캔해야 합니다. 승인 후 PC에서 허용한 폴더만 사용할 수 있습니다.")
+                .setNegativeButton("닫기",null)
+                .setPositiveButton("페어링", (dialog,which)->openRemotePairing())
+                .show();
+    }
+
+    private void chooseRemotePcFolder(){
+        if(!RemoteHostStore.isPaired(this)){
+            showPcPairingRequired("folder");
+            return;
+        }
+        new Thread(()->{
+            try{
+                RemoteHostConnection host=RemoteHostStore.loadConnection(this);
+                if(host==null)throw new IllegalStateException("등록된 PC Host가 없습니다.");
+                RemoteHostClient.authenticate(this,host);
+                JSONArray roots=RemoteHostClient.getWorkspaceRoots(this,host);
+                if(roots.length()==0)throw new IllegalStateException("PC에서 승인된 폴더가 없습니다. Windows Manager에서 PC 폴더를 먼저 허용하세요.");
+                String[] labels=new String[roots.length()];
+                String[] ids=new String[roots.length()];
+                for(int i=0;i<roots.length();i++){
+                    JSONObject item=roots.getJSONObject(i);
+                    ids[i]=item.getString("rootId");
+                    labels[i]=item.optString("displayName",ids[i]);
+                }
+                runOnUiThread(()->new AlertDialog.Builder(this)
+                        .setTitle("PC에서 허용한 폴더")
+                        .setItems(labels,(dialog,which)->{
+                            RemoteHostStore.saveSelectedRoot(this,ids[which],labels[which]);
+                            Toast.makeText(this,"PC 폴더 선택: "+labels[which],Toast.LENGTH_SHORT).show();
+                            renderImageModePanel();
+                        })
+                        .setNegativeButton("취소",null)
+                        .show());
+            }catch(Exception error){
+                String detail=msg(error);
+                if(isRemoteDeviceRevoked(error))RemoteHostStore.clearPaired(this,null);
+                runOnUiThread(()->{
+                    updatePairingButtonState();
+                    new AlertDialog.Builder(this).setTitle("PC 폴더 조회 실패").setMessage(detail)
+                            .setPositiveButton("확인",null).show();
+                });
+            }
+        },"Wayward-Remote-Root-Picker").start();
+    }
+
+    private void openRemotePcFileManager(){
+        if(!RemoteHostStore.isPaired(this)){
+            showPcPairingRequired("files");
+            return;
+        }
+        startActivity(new Intent(this,RemotePcFileManagerActivity.class));
+    }
+
+    private void switchToRemoteComfyMode(){
+        if(!RemoteHostStore.isPaired(this)){
+            showPcPairingRequired("comfy");
+            return;
+        }
+        if(RemoteHostStore.getSelectedRootId(this).isEmpty()){
+            chooseRemotePcFolder();
+            Toast.makeText(this,"먼저 PC 폴더를 선택하세요.",Toast.LENGTH_SHORT).show();
+            return;
+        }
+        imageModeStatus.setText("PC ComfyUI 서버 상태와 사용 권한 확인 중…");
+        new Thread(()->{
+            try{
+                RemoteHostConnection host=RemoteHostStore.loadConnection(this);
+                if(host==null)throw new IllegalStateException("PC Host 연결 정보가 없습니다.");
+                JSONObject status=RemoteComfyClient.getStatus(this,host);
+                runOnUiThread(()->{
+                    switchToRemotePcServer();
+                    Toast.makeText(this,"PC ComfyUI 서버 연결 확인 완료 · "+status.optString("system","준비됨"),Toast.LENGTH_LONG).show();
+                });
+            }catch(Exception error){
+                String detail=msg(error);
+                runOnUiThread(()->{
+                    imageModeStatus.setText(detail.contains("403")
+                            ?"PC에서 이 기기의 ComfyUI 사용 권한을 허용해야 합니다."
+                            :"PC ComfyUI 연결 실패: "+detail);
+                    Toast.makeText(this,imageModeStatus.getText(),Toast.LENGTH_LONG).show();
+                });
+            }
+        },"Wayward-Remote-Comfy-Connect").start();
+    }
+
+    private boolean isRemoteDeviceRevoked(Exception error){
+        String value=error==null?"":String.valueOf(error.getMessage()).toLowerCase(Locale.ROOT);
+        return value.contains("http 401")||value.contains("http 404")||
+                value.contains("devicerevoked")||value.contains("device_not_paired");
+    }
+
+    private void startRemoteHostDiscoveryIfNeeded(){
+        if(!RemoteHostStore.isPaired(this)||remoteHostDiscovery!=null)return;
+        try{
+            RemoteHostDiscovery discovery=new RemoteHostDiscovery(this);
+            discovery.start(new RemoteHostDiscovery.Listener(){
+                @Override public void onHostAddressUpdated(RemoteHostConnection connection){
+                    reconnectRemoteHostInBackground();
+                }
+                @Override public void onHostLost(String hostId){
+                    if(imageModeStatus!=null)imageModeStatus.setText("PC 연결이 일시적으로 끊겼습니다. 동일 Host의 LAN 재검색을 계속합니다.");
+                }
+                @Override public void onDiscoveryError(String operation,Exception error){
+                    DiagnosticsLogger.event(MainActivity.this,"WARN","remote-host","mdns_"+operation,error);
+                }
+            });
+            remoteHostDiscovery=discovery;
+        }catch(Exception error){
+            DiagnosticsLogger.event(this,"WARN","remote-host","mdns_start",error);
+        }
+    }
+
+    private void reconnectRemoteHostInBackground(){
+        if(remoteReconnectInProgress||!RemoteHostStore.isPaired(this))return;
+        remoteReconnectInProgress=true;
+        new Thread(()->{
+            String statusText="PC 연결이 준비되었습니다.";
+            boolean revoked=false;
+            try{
+                RemoteHostConnection host=RemoteHostStore.loadConnection(this);
+                if(host==null)throw new IllegalStateException("PC 연결 정보가 없습니다.");
+                RemoteHostClient.authenticate(this,host);
+                JSONArray roots=RemoteHostClient.getWorkspaceRoots(this,host);
+                String selected=RemoteHostStore.getSelectedRootId(this);
+                boolean selectedFound=false;
+                for(int i=0;i<roots.length();i++){
+                    JSONObject item=roots.optJSONObject(i);
+                    if(item!=null&&selected.equals(item.optString("rootId",""))){selectedFound=true;break;}
+                }
+                statusText=selectedFound?"PC 영구 페어링 및 자동 재연결 완료":"PC에 연결됐습니다. PC 폴더를 선택하세요.";
+            }catch(Exception error){
+                revoked=isRemoteDeviceRevoked(error);
+                statusText=revoked?"PC에서 이 기기의 등록이 해제되었습니다. 다시 페어링하세요.":"PC 자동 재연결 대기 중: "+msg(error);
+            }finally{
+                if(revoked)RemoteHostStore.clearPaired(this,null);
+                String text=statusText;
+                runOnUiThread(()->{
+                    remoteReconnectInProgress=false;
+                    updatePairingButtonState();
+                    if(imageModeStatus!=null&&RemoteHostStore.isPaired(this))
+                        imageModeStatus.setText(text);
+                    renderImageModePanel();
+                });
+            }
+        },"Wayward-Remote-Host-Reconnect").start();
+    }
 
     private void registerRemotePcControl(){
         registerRemotePcServerControl(new RemotePcServerControl(){

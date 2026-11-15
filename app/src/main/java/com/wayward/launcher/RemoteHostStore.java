@@ -22,14 +22,52 @@ final class RemoteHostStore {
     private static final String KEY_DEVICE_NAME = "remote_host_device_name";
     private static final String KEY_ROOT_ID = "remote_host_root_id";
     private static final String KEY_ROOT_LABEL = "remote_host_root_label";
+    private static final String KEY_PAIRED_HOST_ID = "remote_host_paired_host_id";
     private static final Object LOCK = new Object();
 
     private RemoteHostStore() {}
 
     static void saveConnection(Context context, RemoteHostConnection connection) throws Exception {
         synchronized (LOCK) {
-            preferences(context).edit().putString(KEY_HOST, connection.toJson().toString()).commit();
+            SharedPreferences prefs=preferences(context);
+            String previousHostId="";
+            try{
+                String previous=prefs.getString(KEY_HOST,null);
+                if(previous!=null)previousHostId=new JSONObject(previous).optString("hostId","");
+            }catch(Exception ignored){}
+            SharedPreferences.Editor editor=prefs.edit()
+                    .putString(KEY_HOST,connection.toJson().toString())
+                    .remove(KEY_PAIRED_HOST_ID);
+            if(!previousHostId.isEmpty()&&!previousHostId.equalsIgnoreCase(connection.hostId)){
+                editor.remove(KEY_ROOT_ID).remove(KEY_ROOT_LABEL);
+            }
+            if(!editor.commit())throw new IllegalStateException("PC Host 연결 정보를 안전하게 저장하지 못했습니다.");
         }
+    }
+
+    static void markPaired(Context context,RemoteHostConnection host){
+        if(host==null)throw new IllegalArgumentException("Trusted Host is required.");
+        if(!preferences(context).edit().putString(KEY_PAIRED_HOST_ID,host.hostId).commit())
+            throw new IllegalStateException("PC 페어링 상태를 영구 저장하지 못했습니다.");
+    }
+
+    static boolean isPaired(Context context){
+        try{
+            RemoteHostConnection host=loadConnection(context);
+            if(host==null)return false;
+            String paired=preferences(context).getString(KEY_PAIRED_HOST_ID,"");
+            return !paired.isEmpty()&&paired.equalsIgnoreCase(host.hostId);
+        }catch(Exception ignored){return false;}
+    }
+
+    static void clearPaired(Context context,String hostId){
+        SharedPreferences prefs=preferences(context);
+        synchronized(LOCK){
+            String saved=prefs.getString(KEY_PAIRED_HOST_ID,"");
+            if(hostId==null||hostId.trim().isEmpty()||saved.equalsIgnoreCase(hostId))
+                prefs.edit().remove(KEY_PAIRED_HOST_ID).commit();
+        }
+        RemoteHostClient.clearSession();
     }
 
     static RemoteHostConnection loadConnection(Context context) throws Exception {
@@ -46,6 +84,7 @@ final class RemoteHostStore {
                     .remove(KEY_HOST)
                     .remove(KEY_ROOT_ID)
                     .remove(KEY_ROOT_LABEL)
+                    .remove(KEY_PAIRED_HOST_ID)
                     .commit();
         }
         RemoteHostClient.clearSession();

@@ -68,10 +68,29 @@ assert.match(client, /pairAndWaitForApproval/,
   'pairing must wait for explicit approval in the Windows Manager');
 assert.match(client, /getWorkspaceRoots/,
   'the native client must query Host-approved workspace roots');
-assert.doesNotMatch(main, /PC Remote Play.*glassModeTile|RemoteHostActivity/,
-  'Home-screen UI placement remains deferred until the user provides the UI specification');
-assert.doesNotMatch(manifest, /CAMERA|RemoteHostActivity/,
-  'the launcher manifest must not add camera permission or an unapproved Remote Host screen');
+assert.match(main, /compactButton\("\+ PC 폴더"/,
+  'Home must provide an approved PC workspace picker before the current-device folder picker');
+assert.match(main, /compactButton\("페어링"/,
+  'Home must expose internal QR pairing in the upper-right action slot');
+assert.match(main, /원격 PC 파일매니저/,
+  'the remote file manager must remain separate from image routing');
+assert.match(main, /이 기기에 설치된 이미지팩만 탐색/,
+  'the image-pack mode description must be local-only and explicit');
+assert.match(main, /RemotePairingActivity\.class/,
+  'the pairing action must open the in-launcher scanner');
+const pairingActivity = read('app/src/main/java/com/wayward/launcher/RemotePairingActivity.java');
+const fileManagerActivity = read('app/src/main/java/com/wayward/launcher/RemotePcFileManagerActivity.java');
+assert.match(pairingActivity, /GmsBarcodeScanning\.getClient\(this\)/,
+  'QR scanning must run in the launcher through Google Code Scanner');
+assert.match(pairingActivity, /verifyAndStoreQr/);
+assert.match(pairingActivity, /pairAndWaitForApproval/);
+assert.match(store, /markPaired|KEY_PAIRED_HOST_ID/,
+  'approved pairing state must persist and bind to the exact Host ID');
+assert.match(fileManagerActivity, /RemoteFilesClient\.list/);
+assert.match(fileManagerActivity, /RemoteFilesClient\.openDownload/);
+assert.match(fileManagerActivity, /RemoteFilesClient\.beginUpload/);
+assert.doesNotMatch(manifest, /android\.permission\.CAMERA/,
+  'Google Code Scanner must not require a CAMERA permission');
 
 assert.match(bridge, /Range/,
   'remote media requests must forward HTTP Range headers');
