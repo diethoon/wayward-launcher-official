@@ -5,6 +5,130 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { URL } = require('node:url');
 
+function runNativeAuthCase(source, options) {
+  const nonce = options.nonce;
+  const origin = 'https://wayward-cloud-auth.vercel.app';
+  const frame = {
+    style: {},
+    contentWindow: { closed: false, close() {} },
+    setAttribute() {},
+    remove() { this.removed = true; }
+  };
+  const calls = [];
+  const events = [];
+  const timers = [];
+  let poll = null;
+  let pending = '';
+  let fallbackOpened = false;
+
+  const host = {
+    takePendingStateForNonce(value) {
+      if (value !== nonce || !pending) return '';
+      const result = pending;
+      pending = '';
+      return result;
+    }
+  };
+  if (options.policyApi) {
+    host.startGoogleDriveAuthWithPolicy = (value, forceSelectAccount) => {
+      calls.push(['policy', value, forceSelectAccount]);
+      pending = JSON.stringify({
+        type: 'wayward-cloud-auth-success',
+        nonce: value,
+        accessToken: 'policy-token-not-for-production',
+        expiresIn: 3600
+      });
+    };
+  }
+  if (options.legacyApi) {
+    host.startGoogleDriveAuth = value => {
+      calls.push(['legacy', value]);
+      pending = JSON.stringify({
+        type: 'wayward-cloud-auth-success',
+        nonce: value,
+        accessToken: 'legacy-token-not-for-production',
+        expiresIn: 3600
+      });
+    };
+  }
+
+  const window = {
+    location: { href: 'https://localhost:12000/game/Wayward_WML_ko.html' },
+    WMLHost: host,
+    open() { fallbackOpened = true; return null; },
+    setInterval(callback, ms) {
+      assert.equal(ms, 250);
+      poll = callback;
+      return 7;
+    },
+    clearInterval(id) { assert.equal(id, 7); },
+    setTimeout(callback) { timers.push(callback); return timers.length; },
+    dispatchEvent(event) { events.push(event); return true; }
+  };
+  const document = {
+    documentElement: { appendChild(node) { assert.equal(node, frame); } },
+    createElement(tag) { assert.equal(tag, 'iframe'); return frame; }
+  };
+  class TestMessageEvent {
+    constructor(type, init) { this.type = type; Object.assign(this, init); }
+  };
+
+  vm.runInNewContext(source, {
+    window, document, URL, Headers, MessageEvent: TestMessageEvent
+  });
+
+  const query = new URLSearchParams({ nonce });
+  if (options.login) query.set('login', options.login);
+  const returnedWindow = window.open(origin + '/?' + query.toString(), 'wayward-cloud-auth', 'popup');
+  assert.equal(returnedWindow, frame.contentWindow);
+  assert.equal(fallbackOpened, false);
+
+  if (poll && pending) poll();
+  while (timers.length) timers.shift()();
+
+  return { calls, events, returnedWindow, fallbackOpened };
+}
+
+async function testNativeAccountSelectionDispatch(source) {
+  const nonce = 'a'.repeat(48);
+  const forced = runNativeAuthCase(source, {
+    nonce, login: 'select_account', policyApi: true, legacyApi: true
+  });
+  assert.deepEqual(forced.calls, [['policy', nonce, true]],
+    'logout re-auth must forward forceSelectAccount=true through the policy API');
+  assert.equal(forced.events.length, 1);
+  assert.equal(forced.events[0].data.type, 'wayward-cloud-auth-success');
+  assert.equal(forced.events[0].data.nonce, nonce);
+  assert.equal(forced.events[0].source, forced.returnedWindow);
+
+  const rememberedNonce = 'b'.repeat(48);
+  const remembered = runNativeAuthCase(source, {
+    nonce: rememberedNonce, login: 'remember', policyApi: true, legacyApi: true
+  });
+  assert.deepEqual(remembered.calls, [['policy', rememberedNonce, false]],
+    'normal auth must preserve the remembered-account policy');
+  assert.equal(remembered.events[0].data.nonce, rememberedNonce);
+
+  const legacyNonce = 'c'.repeat(48);
+  const legacy = runNativeAuthCase(source, {
+    nonce: legacyNonce, login: 'remember', policyApi: false, legacyApi: true
+  });
+  assert.deepEqual(legacy.calls, [['legacy', legacyNonce]],
+    'older launchers remain compatible for ordinary authentication');
+  assert.equal(legacy.events[0].data.type, 'wayward-cloud-auth-success');
+
+  const unsupportedNonce = 'd'.repeat(48);
+  const unsupported = runNativeAuthCase(source, {
+    nonce: unsupportedNonce, login: 'select_account', policyApi: false, legacyApi: true
+  });
+  assert.deepEqual(unsupported.calls, [],
+    'forced account selection must not silently fall back to the legacy API');
+  assert.equal(unsupported.events.length, 1);
+  assert.equal(unsupported.events[0].data.type, 'wayward-cloud-auth-error');
+  assert.match(unsupported.events[0].data.message, /계정 선택 API/);
+  assert.equal(unsupported.events[0].source, unsupported.returnedWindow);
+}
+
 async function main() {
   const source = fs.readFileSync(
     path.join(__dirname, '../app/src/main/assets/wayward-google-auth-bridge.js'),
@@ -17,6 +141,8 @@ async function main() {
   );
   assert.ok(activitySource.includes('.setPrompt(AuthorizationRequest.Prompt.SELECT_ACCOUNT)'));
   assert.ok(activitySource.includes('clearToken(ClearTokenRequest.builder().setToken(token).build())'));
+
+  await testNativeAccountSelectionDispatch(source);
 
   const nonce = '0123456789abcdef0123456789abcdef0123456789abcdef';
   const origin = 'https://wayward-cloud-auth.vercel.app';
