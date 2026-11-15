@@ -57,10 +57,6 @@ assert.match(glassTileUi, /generationSelected,this::openNovelAiSettings/,
   'only the server glass button must contain the token-settings gear');
 assert.match(glassTileUi, /packsSelected,null,this::switchToImagePacksOnly/,
   'the image-pack button must not create a second gear or nested control');
-assert.match(glassTileUi, /remoteSelected,null/,
-  'PC Remote Play must be a third mode tile without reusing the NovelAI settings gear');
-assert.match(glassTileUi, /PC Remote Play/,
-  'the official launcher must expose PC Remote Play in its existing image routing panel');
 assert.doesNotMatch(glassTileUi, /PC Remote Play|PC 등록 \/ 연결 설정/,
   'Remote Play must not change the launcher home layout before the user supplies the UI design');
 assert.doesNotMatch(glassTileUi, /glassSettingsButton|dp\(112\)/,
