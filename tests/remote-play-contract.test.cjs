@@ -32,8 +32,8 @@ assert.match(client, /checkServerTrusted/,
   'TLS must validate the exact pinned certificate rather than trust arbitrary self-signed certificates');
 assert.match(client, /MessageDigest\.isEqual\(expected, actual\)/,
   'TLS certificate pin comparison must use constant-time digest comparison');
-assert.match(client, /AndroidKeyStore/,
-  'the Remote Host device signing key must live in Android Keystore');
+assert.match(client, /RemoteHostStore\.getDeviceKeyPair/,
+  'the Remote Host client must use the Android Keystore-backed device key store');
 assert.match(store, /AndroidKeyStore/,
   'the persistent Device Identity must be backed by Android Keystore');
 
