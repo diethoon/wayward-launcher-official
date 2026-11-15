@@ -70,6 +70,9 @@ jobs:
           node scripts/test-official-scope.cjs
           python3 -m py_compile scripts/check-glass-ui-layout.py
 
+      - name: Test Remote Play native bridge contract
+        run: node tests/remote-play-contract.test.cjs
+
       - name: Test Google OAuth bridge contract
         run: node scripts/test-google-auth-bridge.cjs
 
