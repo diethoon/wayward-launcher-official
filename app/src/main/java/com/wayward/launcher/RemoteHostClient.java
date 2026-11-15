@@ -282,6 +282,19 @@ final class RemoteHostClient {
         return connection;
     }
 
+    static JSONObject requestAuthenticatedJson(Context context, RemoteHostConnection host,
+            String path, String method, JSONObject body) throws Exception {
+        String token = authenticate(context, host);
+        try {
+            return requestJson(host, path, method, body, "Bearer " + token);
+        } catch (IOException error) {
+            if (error.getMessage() == null || !error.getMessage().contains("HTTP 401")) throw error;
+            clearSession();
+            token = authenticate(context, host);
+            return requestJson(host, path, method, body, "Bearer " + token);
+        }
+    }
+
     static HttpsURLConnection openAuthenticatedConnection(Context context, RemoteHostConnection host,
             String path, String method, Map<String, String> requestHeaders) throws Exception {
         String token = authenticate(context, host);
