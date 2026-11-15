@@ -74,7 +74,13 @@
           ? url.pathname.slice(generatedPrefix.length)
           : url.pathname.slice("/images/".length);
         const serverReady = runtimeStatus().ready;
-        const targetPath = serverReady ? generatedPrefix + relative : "/images/" + relative;
+        // A URL from the launcher's local image server is a generated result, not a
+        // PC/local image-pack asset. Keep its app-private cache reachable through the
+        // HTTPS game-origin anchor even after the generation process is stopped.
+        const fromLauncherImageServer = url.origin === LOCAL_ORIGIN
+          || url.origin === "http://localhost:8189";
+        const targetPath = serverReady || fromLauncherImageServer
+          ? generatedPrefix + relative : "/images/" + relative;
         const targetUrl = new URL(targetPath + url.search, window.location.origin).toString();
         return previousFetch(new Request(targetUrl, request));
       }
@@ -137,7 +143,9 @@
   }
 
   function localEndpoint(path) {
-    if (!prefersLauncherLocal()) return null;
+    // Cached generated images are served by the Native WebView interceptor; they do
+    // not require the 8189 generation process to stay alive. API paths below still
+    // require a running/starting managed server.
     const value = String(path || "").trim();
     if (!value || value.indexOf("\\") >= 0 || value.indexOf("\0") >= 0) return null;
     let url;

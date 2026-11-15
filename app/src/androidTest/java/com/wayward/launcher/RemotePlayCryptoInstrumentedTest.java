@@ -8,6 +8,7 @@ import androidx.test.platform.app.InstrumentationRegistry;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
@@ -84,6 +85,41 @@ public final class RemotePlayCryptoInstrumentedTest {
         java.util.Arrays.fill(wireSignature, (byte) 0);
         java.util.Arrays.fill(receipt, (byte) 0);
         java.util.Arrays.fill(receiptSignature, (byte) 0);
+    }
+
+    @Test
+    public void qrNonceIsParsedFromWindowsManagerJsonAndBoundToTheHostSignature() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        KeyPair keyPair = RemoteHostStore.getDeviceKeyPair(context);
+        String hostId = UUID.randomUUID().toString();
+        String fingerprint = RemoteHostConnection.sha256Hex(keyPair.getPublic().getEncoded());
+        String qrNonce = "A".repeat(64);
+        RemoteHostConnection original = createSignedHostManifest(
+                keyPair, hostId, "https://192.168.1.79:8765/", fingerprint,
+                "C".repeat(64), qrNonce,
+                System.currentTimeMillis(), System.currentTimeMillis() + 300_000L);
+
+        // This is the camelCase JSON envelope emitted by Windows /v1/host/qr.
+        JSONObject managerQr = original.toJson();
+        RemoteHostConnection parsed = RemoteHostConnection.fromQrJson(managerQr.toString());
+        assertEquals(qrNonce, parsed.qrNonce);
+        assertEquals(hostId, parsed.hostId);
+        parsed.verifySignedManifest();
+
+        JSONObject tamperedNonce = new JSONObject(managerQr.toString());
+        tamperedNonce.put("qrNonce", "F".repeat(64));
+        RemoteHostConnection tampered = RemoteHostConnection.fromQrJson(tamperedNonce.toString());
+        assertThrows(SecurityException.class, tampered::verifySignedManifest);
+
+        JSONObject missingNonce = new JSONObject(managerQr.toString());
+        missingNonce.remove("qrNonce");
+        assertThrows(Exception.class,
+                () -> RemoteHostConnection.fromQrJson(missingNonce.toString()));
+
+        JSONObject malformedNonce = new JSONObject(managerQr.toString());
+        malformedNonce.put("qrNonce", "not-a-64-character-hex-nonce");
+        assertThrows(IllegalArgumentException.class,
+                () -> RemoteHostConnection.fromQrJson(malformedNonce.toString()));
     }
 
     @Test

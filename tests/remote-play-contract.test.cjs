@@ -13,6 +13,7 @@ const comfy = read('app/src/main/java/com/wayward/launcher/RemoteComfyClient.jav
 const files = read('app/src/main/java/com/wayward/launcher/RemoteFilesClient.java');
 const manifest = read('app/src/main/AndroidManifest.xml');
 const naiStore = read('app/src/main/java/com/wayward/launcher/NovelAiTokenStore.java');
+const imageStudio = read('app/src/main/assets/imagegen-studio-bridge.js');
 
 assert.match(main, /private String sessionDomain\(String id\)\s*\{\s*return "localhost";/,
   'the existing per-game localhost WebView origin must remain unchanged');
@@ -20,6 +21,10 @@ assert.match(main, /setDomain\(domain\+":"\+originPort\)/,
   'the existing per-game origin and port must continue to host localStorage/IndexedDB');
 assert.match(main, /RemoteGameResourceBridge\.serve\(this,encodedPath,requestHeaders,samples\)/,
   'Remote Play image requests must be proxied by the Native WebView resource interceptor');
+const generatedAnchorRoute = main.indexOf('path.startsWith("/images/__wayward_generated__/")');
+const remoteImageRoute = main.indexOf('FolderHandler.isImageRequestPath(path)', generatedAnchorRoute);
+assert.ok(generatedAnchorRoute >= 0 && remoteImageRoute > generatedAnchorRoute,
+  'the app-private generated-image anchor must be served locally before the general PC image route');
 assert.match(main, /IMAGE_MODE_REMOTE_PC/,
   'the existing serialized image routing manager must retain a Remote PC mode contract');
 assert.match(main, /registerRemotePcServerControl\(/,
@@ -136,6 +141,12 @@ assert.match(files, /UploadFiles|beginUpload|appendUploadChunk|completeUpload/,
   'the Native file client must support the Host resumable upload lifecycle');
 assert.match(files, /X-Wayward-Content-SHA256/,
   'download responses must require the Host file SHA-256 header');
+
+assert.match(imageStudio, /fromLauncherImageServer/,
+  'a cached result from the local image server must remain on the generated-image anchor after the process stops');
+assert.doesNotMatch(imageStudio,
+  /function localEndpoint\(path\)\s*\{\s*if \(!prefersLauncherLocal\(\)\) return null;/,
+  'native cached generated images must not be hidden merely because the generation process is stopped');
 
 assert.match(manifest, /usesCleartextTraffic="false"/,
   'cleartext HTTP must remain disabled for the official launcher');

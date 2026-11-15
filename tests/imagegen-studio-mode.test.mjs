@@ -81,13 +81,22 @@ assert.equal(packFetch.status, 200);
 assert.equal(outgoing.at(-1).input, "https://localhost:42000/images/portrait.png",
   "server-off image fetches must resolve through the local image-pack path");
 
+const retainedGenerated = await window.fetch("http://127.0.0.1:8189/images/retained-result.png");
+assert.equal(retainedGenerated.status, 200);
+assert.equal(outgoing.at(-1).input,
+  "https://localhost:42000/images/__wayward_generated__/retained-result.png",
+  "a cached image from the local image server must keep its generated-image anchor after that process stops");
+assert.equal(api.fn("imageServerUrl")("http://127.0.0.1:8189/images/retained-result.png"),
+  "https://localhost:42000/images/__wayward_generated__/retained-result.png",
+  "Image Studio must resolve cached generated images without requiring the generation process to be running");
+
 const blocked = await window.fetch("https://my-worker.workers.dev/generate", { method: "POST", body: "{}" });
 assert.equal(blocked.status, 503, "server-off must block direct fetch to the saved generation endpoint");
 const directNaiOff = await window.fetch("https://image.novelai.net/ai/generate-image", {
   method: "POST", body: "{}"
 });
 assert.equal(directNaiOff.status, 503, "server-off must block direct NovelAI generation requests");
-assert.equal(outgoing.length, 1, "external generation endpoints must not receive requests while the server is OFF");
+assert.equal(outgoing.length, 2, "external generation endpoints must not receive requests while the server is OFF; local pack/cache reads remain allowed");
 
 runtime.available = true;
 runtime.ready = true;
