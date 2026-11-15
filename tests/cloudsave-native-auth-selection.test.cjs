@@ -64,6 +64,18 @@ assert.match(
   /clearToken\(ClearTokenRequest\.builder\(\)\.setToken\(token\)\.build\(\)\)/
 );
 
+// The WebView bridge forwards the account policy into the native adapter.
+assert.match(bridge, /const accountPolicy = parsed\.searchParams\.get\('login'\) \|\| 'remember'/);
+assert.match(bridge, /const forceSelectAccount = accountPolicy === 'select_account'/);
+assert.match(bridge, /host\.startGoogleDriveAuthWithPolicy\(nonce, forceSelectAccount\)/);
+assert.match(bridge, /else if \(!forceSelectAccount && hasLegacyStart\)/);
+assert.match(bridge, /deliverStartError\('현재 Android 런처는 Google 계정 선택 API를 제공하지 않습니다\./);
+assert.doesNotMatch(
+  bridge,
+  /host\.startGoogleDriveAuth\(nonce\);\s*$/m,
+  'legacy entry point must not be used unconditionally'
+);
+
 // The WebView bridge only forwards the native result. It must not create a second GIS OAuth flow.
 assert.match(
   bridge,
