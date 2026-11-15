@@ -4,7 +4,10 @@
   if (window.__waywardGoogleAuthBridgeInstalled) return;
   window.__waywardGoogleAuthBridgeInstalled = true;
 
-  const AUTH_ORIGIN = 'https://wayward-cloud-auth.vercel.app';
+  const AUTH_ORIGINS = new Set([
+    'https://wayward-cloud-auth.vercel.app',
+    'https://jeiky224.github.io'
+  ]);
   const DRIVE_SESSION_TOKEN_KEY = 'wml-google-drive-session-token-v1';
   let lastGoogleDriveAccessToken = '';
 
@@ -80,7 +83,7 @@
       typeof host.startGoogleDriveAuthWithPolicy === 'function');
     const hasLegacyStart = !!(host &&
       typeof host.startGoogleDriveAuth === 'function');
-    if (parsed.origin !== AUTH_ORIGIN ||
+    if (!AUTH_ORIGINS.has(parsed.origin) ||
         !host ||
         (!hasPolicyStart && !hasLegacyStart) ||
         typeof host.takePendingStateForNonce !== 'function') {
