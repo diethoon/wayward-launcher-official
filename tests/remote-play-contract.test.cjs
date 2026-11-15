@@ -47,6 +47,16 @@ assert.match(connection, /parseSignedLong\(text, "permissions"\)[\s\S]*permissio
 
 assert.match(connection, /certificateSha256/,
   'the signed Host manifest must bind the TLS certificate fingerprint');
+assert.match(connection, /normalizeExternalBaseUrl/,
+  'the optional Internet endpoint must be restricted to a numeric globally routable HTTPS IPv4 address and port');
+assert.match(connection, /externalBaseUrl=.*signedText|externalBaseUrl=/,
+  'the optional Internet endpoint must be bound by the Host Identity signature');
+assert.match(client, /host\.externalBaseUrl/,
+  'Remote Host requests must try the signed external endpoint after the private LAN endpoint fails');
+assert.match(client, /SSLException/,
+  'TLS or certificate-pin failures must not trigger a fallback to another endpoint');
+assert.match(client, /writeRequestBody/,
+  'request bodies must be sent only after a trusted endpoint has connected, avoiding duplicate POST retries');
 assert.match(connection, /qrNonce/);
 assert.match(client, /\.put\("qrNonce", host\.qrNonce\)/,
   'initial pairing must consume the nonce embedded in the signed and short-lived QR');

@@ -123,6 +123,72 @@ public final class RemotePlayCryptoInstrumentedTest {
     }
 
     @Test
+    public void externalEndpointIsHostSignedAndStillUsesThePinnedCertificate() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        KeyPair keyPair = RemoteHostStore.getDeviceKeyPair(context);
+        String hostId = UUID.randomUUID().toString();
+        String fingerprint = RemoteHostConnection.sha256Hex(keyPair.getPublic().getEncoded());
+        String externalUrl = "https://8.8.8.8:8765/";
+        String qrNonce = "9".repeat(64);
+        long issuedAt = System.currentTimeMillis();
+        long expiresAt = issuedAt + 300_000L;
+        String payloadText = String.join("\n",
+                "Wayward-Remote-Host-Connection",
+                "protocol=1",
+                "host=" + hostId,
+                "baseUrl=https://192.168.1.77:8765/",
+                "externalBaseUrl=" + externalUrl,
+                "publicKeyFingerprint=" + fingerprint,
+                "certificateSha256=" + "C".repeat(64),
+                "qrNonce=" + qrNonce,
+                "issued=" + issuedAt,
+                "expires=" + expiresAt);
+        byte[] payload = payloadText.getBytes(StandardCharsets.UTF_8);
+        byte[] signature = RemoteHostClient.derToP1363(sign(keyPair, payload));
+        try {
+            JSONObject qr = new JSONObject()
+                    .put("protocolVersion", 1)
+                    .put("baseUrl", "https://192.168.1.77:8765/")
+                    .put("externalBaseUrl", externalUrl)
+                    .put("hostId", hostId)
+                    .put("publicKeyBase64", Base64.encodeToString(keyPair.getPublic().getEncoded(), Base64.NO_WRAP))
+                    .put("publicKeyFingerprint", fingerprint)
+                    .put("certificateSha256", "C".repeat(64))
+                    .put("qrNonce", qrNonce)
+                    .put("signedPayloadBase64", Base64.encodeToString(payload, Base64.NO_WRAP))
+                    .put("signatureBase64", Base64.encodeToString(signature, Base64.NO_WRAP));
+
+            RemoteHostConnection parsed = RemoteHostConnection.fromQrJson(qr.toString());
+            assertEquals(externalUrl, parsed.externalBaseUrl);
+            parsed.verifySignedManifest();
+            JSONObject stored = parsed.toJson();
+            assertEquals(externalUrl, stored.getString("externalBaseUrl"));
+            RemoteHostConnection restored = RemoteHostConnection.fromStoredJson(stored.toString());
+            assertEquals(externalUrl, restored.externalBaseUrl);
+            restored.verifyStoredIdentity();
+
+            JSONObject tampered = new JSONObject(qr.toString());
+            tampered.put("externalBaseUrl", "https://1.1.1.1:8765/");
+            RemoteHostConnection tamperedHost = RemoteHostConnection.fromQrJson(tampered.toString());
+            assertThrows(SecurityException.class, tamperedHost::verifySignedManifest);
+        } finally {
+            java.util.Arrays.fill(payload, (byte) 0);
+            java.util.Arrays.fill(signature, (byte) 0);
+        }
+
+        assertThrows(IllegalArgumentException.class, () ->
+                RemoteHostConnection.normalizeExternalBaseUrl("http://8.8.8.8:8765/"));
+        assertThrows(IllegalArgumentException.class, () ->
+                RemoteHostConnection.normalizeExternalBaseUrl("https://192.168.1.2:8765/"));
+        assertThrows(IllegalArgumentException.class, () ->
+                RemoteHostConnection.normalizeExternalBaseUrl("https://100.64.0.1:8765/"));
+        assertThrows(IllegalArgumentException.class, () ->
+                RemoteHostConnection.normalizeExternalBaseUrl("https://example.com:8765/"));
+        assertThrows(IllegalArgumentException.class, () ->
+                RemoteHostConnection.normalizeExternalBaseUrl("https://8.8.8.8/"));
+    }
+
+    @Test
     public void signedHostIdentityRemainsVerifiableAfterQrExpiryButFreshQrDoesNot() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         KeyPair keyPair = RemoteHostStore.getDeviceKeyPair(context);

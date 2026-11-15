@@ -420,11 +420,62 @@ final class RemoteHostClient {
 
     private static HttpsURLConnection openPinned(RemoteHostConnection host, String path,
             String method, JSONObject body, String authorization, Map<String, String> forwardedHeaders) throws Exception {
-        return openPinned(host.baseUrl, host.certificateSha256, path, method, body, authorization, forwardedHeaders);
+        String[] endpoints = host.externalBaseUrl.isEmpty()
+                ? new String[] {host.baseUrl}
+                : new String[] {host.baseUrl, host.externalBaseUrl};
+        IOException lastNetworkError = null;
+        for (int index = 0; index < endpoints.length; index++) {
+            HttpsURLConnection connection = createPinnedConnection(
+                    endpoints[index], host.certificateSha256, path, method, body,
+                    authorization, forwardedHeaders);
+            try {
+                connection.connect();
+            } catch (IOException error) {
+                connection.disconnect();
+                // Never try another endpoint after a TLS/pin failure. The second
+                // endpoint is only a route fallback, never a trust fallback.
+                if (error instanceof javax.net.ssl.SSLException ||
+                        !(error instanceof java.net.ConnectException ||
+                          error instanceof java.net.NoRouteToHostException ||
+                          error instanceof java.net.UnknownHostException ||
+                          error instanceof java.net.SocketTimeoutException ||
+                          error instanceof java.net.SocketException)) {
+                    throw error;
+                }
+                lastNetworkError = error;
+                continue;
+            }
+            try {
+                writeRequestBody(connection, body);
+                return connection;
+            } catch (IOException error) {
+                connection.disconnect();
+                // Request bytes may already have reached the Host. Retrying a POST
+                // against another address could duplicate a generation or pairing.
+                throw error;
+            }
+        }
+        if (lastNetworkError != null) throw lastNetworkError;
+        throw new IOException("No trusted Remote Host endpoint is available.");
     }
 
     private static HttpsURLConnection openPinned(String baseUrl, String certificatePin, String path,
             String method, JSONObject body, String authorization, Map<String, String> forwardedHeaders) throws Exception {
+        HttpsURLConnection connection = createPinnedConnection(
+                baseUrl, certificatePin, path, method, body, authorization, forwardedHeaders);
+        try {
+            connection.connect();
+            writeRequestBody(connection, body);
+            return connection;
+        } catch (IOException error) {
+            connection.disconnect();
+            throw error;
+        }
+    }
+
+    private static HttpsURLConnection createPinnedConnection(String baseUrl, String certificatePin,
+            String path, String method, JSONObject body, String authorization,
+            Map<String, String> forwardedHeaders) throws Exception {
         if (path == null || !path.startsWith("/") || path.startsWith("//")) {
             throw new IllegalArgumentException("Host API path must be an absolute relative path.");
         }
@@ -437,7 +488,7 @@ final class RemoteHostClient {
         connection.setReadTimeout(READ_TIMEOUT_MS);
         connection.setRequestMethod(method);
         connection.setInstanceFollowRedirects(false);
-        connection.setUseCaches(true);
+        connection.setUseCaches(false);
         connection.setRequestProperty("Accept", "application/json");
         configurePinnedTls(connection, certificatePin);
         if (authorization != null) connection.setRequestProperty("Authorization", authorization);
@@ -456,15 +507,19 @@ final class RemoteHostClient {
         if (body != null) {
             connection.setDoOutput(true);
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-            byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
-            try (OutputStream output = connection.getOutputStream()) {
-                output.write(bytes);
-                output.flush();
-            } finally {
-                java.util.Arrays.fill(bytes, (byte) 0);
-            }
         }
         return connection;
+    }
+
+    private static void writeRequestBody(HttpsURLConnection connection, JSONObject body) throws IOException {
+        if (body == null) return;
+        byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
+        try (OutputStream output = connection.getOutputStream()) {
+            output.write(bytes);
+            output.flush();
+        } finally {
+            java.util.Arrays.fill(bytes, (byte) 0);
+        }
     }
 
     private static String readResponseText(HttpsURLConnection connection, int maxBytes) throws Exception {

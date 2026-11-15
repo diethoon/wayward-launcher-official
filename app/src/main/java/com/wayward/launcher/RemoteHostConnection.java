@@ -17,6 +17,7 @@ import java.util.UUID;
 /** Verified, public connection metadata for one Windows Remote Host. */
 final class RemoteHostConnection {
     final String baseUrl;
+    final String externalBaseUrl;
     final String hostId;
     final String publicKeyBase64;
     final String publicKeyFingerprint;
@@ -28,7 +29,15 @@ final class RemoteHostConnection {
     RemoteHostConnection(String baseUrl, String hostId, String publicKeyBase64,
             String publicKeyFingerprint, String certificateSha256, String qrNonce,
             String signedPayloadBase64, String signatureBase64) {
+        this(baseUrl, "", hostId, publicKeyBase64, publicKeyFingerprint,
+                certificateSha256, qrNonce, signedPayloadBase64, signatureBase64);
+    }
+
+    RemoteHostConnection(String baseUrl, String externalBaseUrl, String hostId,
+            String publicKeyBase64, String publicKeyFingerprint, String certificateSha256,
+            String qrNonce, String signedPayloadBase64, String signatureBase64) {
         this.baseUrl = normalizeBaseUrl(baseUrl);
+        this.externalBaseUrl = normalizeExternalBaseUrl(externalBaseUrl);
         this.hostId = UUID.fromString(hostId).toString();
         this.publicKeyBase64 = requireText(publicKeyBase64, "Host public key");
         this.publicKeyFingerprint = normalizeFingerprint(publicKeyFingerprint);
@@ -48,6 +57,7 @@ final class RemoteHostConnection {
         }
         return new RemoteHostConnection(
                 value.getString("baseUrl"),
+                value.optString("externalBaseUrl", ""),
                 value.getString("hostId"),
                 value.getString("publicKeyBase64"),
                 value.getString("publicKeyFingerprint"),
@@ -97,6 +107,12 @@ final class RemoteHostConnection {
             requireSignedLine(signedText, "protocol=1", false);
             requireSignedLine(signedText, "host=" + hostId, false);
             requireSignedLine(signedText, "baseUrl=" + baseUrl, false);
+            boolean hasExternalEndpoint = signedText.contains("externalBaseUrl=");
+            if (hasExternalEndpoint) {
+                requireSignedLine(signedText, "externalBaseUrl=" + externalBaseUrl, false);
+            } else if (!externalBaseUrl.isEmpty()) {
+                throw new SecurityException("서명되지 않은 외부 Remote Host 주소가 포함되어 있습니다.");
+            }
             requireSignedLine(signedText, "publicKeyFingerprint=" + actualFingerprint, false);
             requireSignedLine(signedText, "certificateSha256=" + certificateSha256, false);
             requireSignedLine(signedText, "qrNonce=" + qrNonce, false);
@@ -157,6 +173,7 @@ final class RemoteHostConnection {
         JSONObject value = new JSONObject();
         value.put("protocolVersion", 1);
         value.put("baseUrl", baseUrl);
+        if (!externalBaseUrl.isEmpty()) value.put("externalBaseUrl", externalBaseUrl);
         value.put("hostId", hostId);
         value.put("publicKeyBase64", publicKeyBase64);
         value.put("publicKeyFingerprint", publicKeyFingerprint);
@@ -227,6 +244,45 @@ final class RemoteHostConnection {
         } catch (java.net.URISyntaxException error) {
             throw new IllegalArgumentException("Remote Host URL 형식이 올바르지 않습니다.", error);
         }
+    }
+
+    static String normalizeExternalBaseUrl(String value) {
+        if (value == null || value.trim().isEmpty()) return "";
+        String trimmed = value.trim();
+        try {
+            URI uri = new URI(trimmed);
+            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null ||
+                    uri.getPort() < 1 || uri.getPort() > 65535 ||
+                    uri.getRawUserInfo() != null || uri.getRawQuery() != null ||
+                    uri.getRawFragment() != null ||
+                    (uri.getRawPath() != null && !uri.getRawPath().isEmpty() && !"/".equals(uri.getRawPath())) ||
+                    !isGloballyRoutableIpv4(uri.getHost())) {
+                throw new IllegalArgumentException("외부 Remote Host 주소는 HTTPS와 공인 IPv4 주소·포트만 허용합니다.");
+            }
+            return trimmed.endsWith("/") ? trimmed : trimmed + "/";
+        } catch (java.net.URISyntaxException error) {
+            throw new IllegalArgumentException("외부 Remote Host URL 형식이 올바르지 않습니다.", error);
+        }
+    }
+
+    private static boolean isGloballyRoutableIpv4(String host) {
+        if (host == null || !host.matches("[0-9]{1,3}(\\.[0-9]{1,3}){3}")) return false;
+        String[] octets = host.split("\\.", -1);
+        int[] b = new int[4];
+        for (int i = 0; i < 4; i++) {
+            try { b[i] = Integer.parseInt(octets[i]); }
+            catch (NumberFormatException error) { return false; }
+            if (b[i] < 0 || b[i] > 255 ||
+                    (octets[i].length() > 1 && octets[i].startsWith("0"))) return false;
+        }
+        if (b[0] == 0 || b[0] == 10 || b[0] == 127 || b[0] >= 224) return false;
+        if (b[0] == 100 && b[1] >= 64 && b[1] <= 127) return false;
+        if (b[0] == 169 && b[1] == 254) return false;
+        if (b[0] == 172 && b[1] >= 16 && b[1] <= 31) return false;
+        if (b[0] == 192 && (b[1] == 168 || b[1] == 0 && b[2] <= 2)) return false;
+        if (b[0] == 198 && (b[1] == 18 || b[1] == 19 || b[1] == 51 && b[2] == 100)) return false;
+        if (b[0] == 203 && b[1] == 0 && b[2] == 113) return false;
+        return true;
     }
 
     private static boolean isPrivateLanIpv4(String host) {
