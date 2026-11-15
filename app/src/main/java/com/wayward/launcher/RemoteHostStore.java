@@ -63,8 +63,8 @@ final class RemoteHostStore {
     }
 
     static String getDeviceId(Context context) throws Exception {
-        return getDeviceKeyPair(context).getPublic().getAlgorithm().isEmpty()
-                ? "" : preferences(context).getString(KEY_DEVICE_ID, "");
+        getDeviceKeyPair(context);
+        return preferences(context).getString(KEY_DEVICE_ID, "");
     }
 
     static KeyPair getDeviceKeyPair(Context context) throws Exception {
