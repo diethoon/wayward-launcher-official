@@ -123,12 +123,20 @@ public final class RemotePlayCryptoInstrumentedTest {
     }
 
     @Test
+    public void dynamicExternalPortsAreAcceptedWithoutChangingTheLanListenerPort() {
+        for (int port : new int[] {8765, 43210, 50000}) {
+            String external = "https://8.8.8.8:" + port + "/";
+            assertEquals(external, RemoteHostConnection.normalizeExternalBaseUrl(external));
+        }
+    }
+
+    @Test
     public void externalEndpointIsHostSignedAndStillUsesThePinnedCertificate() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         KeyPair keyPair = RemoteHostStore.getDeviceKeyPair(context);
         String hostId = UUID.randomUUID().toString();
         String fingerprint = RemoteHostConnection.sha256Hex(keyPair.getPublic().getEncoded());
-        String externalUrl = "https://8.8.8.8:8765/";
+        String externalUrl = "https://8.8.8.8:43210/";
         String qrNonce = "9".repeat(64);
         long issuedAt = System.currentTimeMillis();
         long expiresAt = issuedAt + 300_000L;

@@ -49,6 +49,8 @@ assert.match(connection, /certificateSha256/,
   'the signed Host manifest must bind the TLS certificate fingerprint');
 assert.match(connection, /normalizeExternalBaseUrl/,
   'the optional Internet endpoint must be restricted to a numeric globally routable HTTPS IPv4 address and port');
+assert.match(connection, /uri\.getPort\(\) < 1[^\n]*uri\.getPort\(\) > 65535/,
+  'the signed external endpoint must validate its supplied port instead of assuming 8765');
 assert.match(connection, /externalBaseUrl=.*signedText|externalBaseUrl=/,
   'the optional Internet endpoint must be bound by the Host Identity signature');
 assert.match(client, /host\.externalBaseUrl/,
