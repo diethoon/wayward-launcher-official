@@ -194,7 +194,7 @@ public final class RemoteComfyClient {
                 File checksumTemp = new File(directory, key + ".sha256.part");
                 try (FileOutputStream checksumOutput = new FileOutputStream(checksumTemp, false)) {
                     checksumOutput.write(checksum.getBytes(StandardCharsets.US_ASCII));
-                    checksumOutput.write('\\n');
+                    checksumOutput.write('\n');
                     checksumOutput.getFD().sync();
                 }
                 delete(checksumFile);
@@ -210,7 +210,7 @@ public final class RemoteComfyClient {
 
     private static String cacheKey(String hostId, String promptId, String fileName,
             String subfolder, String type) throws Exception {
-        String value = hostId + "\\n" + promptId + "\\n" + fileName + "\\n" + subfolder + "\\n" + type;
+        String value = hostId + "\n" + promptId + "\n" + fileName + "\n" + subfolder + "\n" + type;
         byte[] bytes = java.security.MessageDigest.getInstance("SHA-256")
                 .digest(value.getBytes(StandardCharsets.UTF_8));
         try { return hex(bytes); }
