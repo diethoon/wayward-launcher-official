@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify image-mode button geometry in an Android uiautomator XML dump."""
 
+import re
 import sys
 import xml.etree.ElementTree as ET
 
@@ -17,7 +18,7 @@ def by_description(nodes, fragment):
 
 def rect(node):
     bounds = node.attrib.get("bounds", "")
-    values = [int(value) for value in bounds.replace("[", "").replace("]", "").replace(",", " ").split()]
+    values = [int(value) for value in re.findall(r"-?\\d+", bounds)]
     if len(values) != 4:
         raise AssertionError(f"Invalid UI bounds: {bounds}")
     return values
