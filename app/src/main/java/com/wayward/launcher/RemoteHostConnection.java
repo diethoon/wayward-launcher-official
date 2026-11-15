@@ -189,13 +189,29 @@ final class RemoteHostConnection {
                     uri.getRawUserInfo() != null || uri.getRawQuery() != null ||
                     uri.getRawFragment() != null ||
                     (uri.getRawPath() != null && !uri.getRawPath().isEmpty() && !"/".equals(uri.getRawPath())) ||
-                    (uri.getPort() != -1 && (uri.getPort() < 1 || uri.getPort() > 65535))) {
-                throw new IllegalArgumentException("Remote Host 주소는 HTTPS 서버 주소만 허용합니다.");
+                    (uri.getPort() != -1 && (uri.getPort() < 1 || uri.getPort() > 65535)) ||
+                    !isPrivateLanIpv4(uri.getHost())) {
+                throw new IllegalArgumentException("Remote Play v1은 HTTPS 및 PC의 RFC1918 사설 IPv4 주소만 허용합니다.");
             }
             return trimmed.endsWith("/") ? trimmed : trimmed + "/";
         } catch (java.net.URISyntaxException error) {
             throw new IllegalArgumentException("Remote Host URL 형식이 올바르지 않습니다.", error);
         }
+    }
+
+    private static boolean isPrivateLanIpv4(String host) {
+        if (host == null || !host.matches("[0-9]{1,3}(\\.[0-9]{1,3}){3}")) return false;
+        String[] octets = host.split("\\.", -1);
+        int[] values = new int[4];
+        for (int i = 0; i < 4; i++) {
+            try { values[i] = Integer.parseInt(octets[i]); }
+            catch (NumberFormatException error) { return false; }
+            if (values[i] < 0 || values[i] > 255 ||
+                    (octets[i].length() > 1 && octets[i].startsWith("0"))) return false;
+        }
+        return values[0] == 10 ||
+                (values[0] == 172 && values[1] >= 16 && values[1] <= 31) ||
+                (values[0] == 192 && values[1] == 168);
     }
 
     private static String requireText(String value, String label) {
