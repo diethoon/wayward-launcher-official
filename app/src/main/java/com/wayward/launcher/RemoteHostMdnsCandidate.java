@@ -4,6 +4,7 @@ import java.net.InetAddress;
 
 /** Public DNS-SD metadata used only to find a Host before its signed QR manifest is fetched. */
 final class RemoteHostMdnsCandidate {
+    static final String SERVICE_TYPE = "_wayward-remote-host._tcp.";
     final String hostId;
     final InetAddress address;
     final int port;
