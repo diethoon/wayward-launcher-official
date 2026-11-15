@@ -493,7 +493,7 @@ final class RemoteHostClient {
         return derToP1363(signer.sign());
     }
 
-    private static byte[] derToP1363(byte[] der) {
+    static byte[] derToP1363(byte[] der) {
         if (der == null || der.length < 8) {
             throw new SecurityException("Invalid Android Keystore ECDSA signature.");
         }
