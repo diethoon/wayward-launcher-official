@@ -57,7 +57,7 @@ assert.match(activity, /getWorkspaceRoots/,
 
 assert.match(bridge, /Range/,
   'remote media requests must forward HTTP Range headers');
-assert.match(bridge, /If-None-Match/,
+assert.match(client, /"If-None-Match"/,
   'remote media requests must forward ETag revalidation headers');
 assert.match(bridge, /Content-Range/,
   'partial-content metadata must be returned to the WebView');
