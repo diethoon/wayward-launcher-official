@@ -67,6 +67,10 @@ assert.match(
 // The WebView bridge forwards the account policy into the native adapter.
 assert.match(bridge, /const accountPolicy = parsed\.searchParams\.get\('login'\) \|\| 'remember'/);
 assert.match(bridge, /const forceSelectAccount = accountPolicy === 'select_account'/);
+assert.match(bridge, /'https:\/\/jeiky224\.github\.io'/,
+  'current CloudSave Pages auth origin must be intercepted');
+assert.match(bridge, /'https:\/\/wayward-cloud-auth\.vercel\.app'/,
+  'legacy Vercel auth origin remains compatible');
 assert.match(bridge, /host\.startGoogleDriveAuthWithPolicy\(nonce, forceSelectAccount\)/);
 assert.match(bridge, /else if \(!forceSelectAccount && hasLegacyStart\)/);
 assert.match(bridge, /host\.startGoogleDriveAuth\(nonce\);/);
