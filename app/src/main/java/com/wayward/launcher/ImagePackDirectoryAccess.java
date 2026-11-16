@@ -100,8 +100,7 @@ final class ImagePackDirectoryAccess {
                         error.getClass().getSimpleName());
             }
         }
-        // Android 11+ forbids granting the storage-volume root and Download root.
-        // Start in the user's expected selectable Download subfolder instead.
+        // Android 10 retains the SAF flow and starts at the shared Download folder.
         return DocumentsContract.buildDocumentUri(
                 EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY, DEFAULT_INITIAL_DOCUMENT_ID);
     }
@@ -109,7 +108,7 @@ final class ImagePackDirectoryAccess {
     private String pickerInitialSource() {
         if (initialUriForTesting != null) return "test";
         if (treeUri != null) return "saved_tree";
-        return "default_download_subfolder";
+        return "default_download";
     }
 
     void onResume() {

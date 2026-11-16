@@ -57,6 +57,6 @@ assert.match(main, /readImagePackFile\(String path\)/, "WMLHost must preserve th
 assert.match(readFileSync(new URL("../app/src/debug/java/com/wayward/launcher/ImagePackPickerAcceptanceActivity.java", import.meta.url), "utf8"), /const fileHandle=await directory\.getFileHandle\(\x27pixel\.png\x27\);[\s\S]*const file=await fileHandle\.getFile\(\);/, "the Android 15 acceptance page must read the selected PNG");
 assert.match(smoke, /appops", "set", "--uid", PACKAGE, "MANAGE_EXTERNAL_STORAGE", "allow"/, "the Android 15 emulator acceptance test must grant all-files access");
 assert.match(smoke, /run_native_folder_acceptance\(\)/, "the Android 15 smoke test must exercise the custom folder browser");
-assert.doesNotMatch(smoke, /DocumentsUI|ACTION_OPEN_DOCUMENT_TREE|이 폴더 사용/, "the Android 15 smoke test must not depend on system DocumentsUI");
+assert.doesNotMatch(smoke, /run_documentsui_acceptance|ACTION_OPEN_DOCUMENT_TREE|이 폴더 사용|use this folder/i, "the Android 15 smoke test must drive the custom browser instead of the system picker");
 
 console.log("Native image-pack filesystem/SAF versioned bridge contract tests passed.");

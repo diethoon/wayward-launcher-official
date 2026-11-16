@@ -124,6 +124,7 @@ final class ImagePackFileSystemAccess {
             showPermissionPrompt(false);
             return;
         }
+        restoreSelectedRoot();
         File initial = selectedRoot;
         if (!isUsableDirectory(initial)) {
             File download = new File(storageRoot, "Download");
@@ -363,9 +364,11 @@ final class ImagePackFileSystemAccess {
     private void restoreSelectedRoot() {
         SharedPreferences preferences = activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE);
         String saved = preferences.getString(preferenceKey, "");
+        selectedRoot = null;
         if (saved == null || saved.isEmpty()) return;
         File candidate = canonicalOrNull(new File(saved));
-        if (isUsableDirectory(candidate)) {
+        boolean pathAllowed = candidate != null && isWithinStorage(candidate);
+        if (pathAllowed && (!hasAllFilesAccess() || isUsableDirectory(candidate))) {
             selectedRoot = candidate;
         } else {
             preferences.edit().remove(preferenceKey).apply();
