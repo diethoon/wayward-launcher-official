@@ -18,6 +18,17 @@ assert.match(bridge, /host\.chooseImagePackFolder\(id\)/, "the folder action mus
 assert.match(bridge, /listImagePackDirectory/, "directory children must be read through the SAF bridge");
 assert.match(bridge, /readImagePackFile/, "the selected image file must be readable through the SAF bridge");
 assert.match(access, /Intent\.ACTION_OPEN_DOCUMENT_TREE/, "the native button bridge must launch the SAF tree picker");
+assert.match(access, /EXTRA_INITIAL_URI, initialUri/,
+  "production SAF picker must always open at a real document URI instead of starting at a restricted storage root");
+assert.match(access, /DEFAULT_INITIAL_DOCUMENT_ID = "primary:Download\/Wayward_Faith\/image-packs"/,
+  "first-time SAF selection must start in the configured selectable image-pack subfolder");
+assert.match(access, /buildDocumentUriUsingTree\(treeUri, documentId\)/,
+  "subsequent folder-picker requests must start at the previously granted tree");
+assert.match(access, /getPersistedUriPermissions\(\)[\s\S]*?persistedRead=true/,
+  "the native bridge must verify that the returned tree read grant was actually persisted");
+assert.match(access, /picker_result result=success persistedRead=true/,
+  "diagnostics must confirm a retained URI grant without printing the URI or path");
+
 assert.match(access, /FLAG_GRANT_PERSISTABLE_URI_PERMISSION/, "the native picker must request a persisted grant");
 assert.match(access, /takePersistableUriPermission\(selected, grants\)/, "the selected tree grant must be persisted");
 assert.match(readFileSync(new URL("../scripts/android15-emulator-smoke.py", import.meta.url), "utf8"), /if not clickable:/, "the Android 15 test must only tap clickable confirmation controls");
