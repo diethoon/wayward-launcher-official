@@ -11,11 +11,7 @@ assert.match(picker, /Intent\.EXTRA_ALLOW_MULTIPLE/, "multiple ZIP selection mus
 assert.match(picker, /getClipData\(\)/, "ClipData selections must be read");
 assert.match(picker, /getData\(\)/, "single-file selections must be read");
 assert.match(picker, /callback\.onReceiveValue\(result\)/, "selected file URIs must be returned to WebView");
-assert.match(picker, /MODE_OPEN_FOLDER\s*=\s*2/, "folder requests must be distinguished without requiring compileSdk 37");
-assert.match(picker, /buildFolderPickerIntent\(fileChooserParams\)/, "folder requests must use the directory-only picker");
-assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT_TREE/, "folder requests must open a SAF tree, never a file picker");
-assert.match(picker, /DocumentsContract\.isTreeUri\(selected\)/, "folder results must be validated as a tree URI");
-assert.match(picker, /takePersistableUriPermission\(selected, grants\)/, "folder access should persist when the provider grants it");
+assert.doesNotMatch(picker, /MODE_OPEN_FOLDER|ACTION_OPEN_DOCUMENT_TREE|pendingFolderSelection/, "folder requests must not be converted to SAF tree URIs by ValueCallback<Uri[]>");
 assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT/, "ordinary files must keep the document picker");
 assert.match(main, /web\.setWebChromeClient\(webFileChooser\)/, "WebView must use the file chooser client");
 assert.match(main, /req==WebFileChooser\.REQUEST_CODE/, "file chooser activity results must be routed");

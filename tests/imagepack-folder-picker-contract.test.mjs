@@ -16,11 +16,8 @@ assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT/, "ordinary files and ZIPs mu
 assert.match(picker, /CATEGORY_OPENABLE/, "ordinary file picker must remain OPENABLE");
 assert.match(picker, /Intent\.EXTRA_ALLOW_MULTIPLE/, "ZIP multi-select must remain supported");
 assert.match(picker, /getClipData\(\)/, "ZIP selections must preserve ClipData support");
-assert.match(picker, /MODE_OPEN_FOLDER\s*=\s*2/, "native folder mode must be handled explicitly");
-assert.match(picker, /buildFolderPickerIntent\(fileChooserParams\)/, "folder mode must use a directory picker");
-assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT_TREE/, "directory selection must not degrade into file selection");
-assert.match(picker, /DocumentsContract\.isTreeUri\(selected\)/, "folder results must be real SAF tree URIs");
-assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT/, "ordinary file and ZIP selection must remain unchanged");
+assert.doesNotMatch(picker, /MODE_OPEN_FOLDER|ACTION_OPEN_DOCUMENT_TREE|pendingFolderSelection/, "folder selection must use the JS-native bridge rather than the WebView file callback");
+assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT/, "ordinary files and ZIPs must retain the SAF document picker");
 
 assert.match(bridge, /window\.showDirectoryPicker\s*=/, "the Image Studio directory API must be intercepted at document start");
 assert.match(bridge, /host\.chooseImagePackFolder\(id\)/, "the folder action must call the native launcher bridge directly");
@@ -65,15 +62,27 @@ assert.doesNotMatch(filesystem, /ACTION_OPEN_DOCUMENT_TREE/, "Android 11+ custom
 
 assert.match(main, /new ImagePackDirectoryAccess\(this,web,activeProfileId\)/, "the production game WebView must own the native image-pack bridge");
 assert.match(main, /imagePackDirectoryAccess\.onResume\(\)/, "the production activity must recheck all-files permission on resume");
-assert.match(main, /installDocumentStartAsset\("imagepack-folder-picker\.js", origin\)/, "the directory adapter must be registered independently");
+assert.doesNotMatch(main, /FLAG_ACTIVITY_NEW_DOCUMENT/, "game sessions must remain in the existing launcher task");
+assert.doesNotMatch(manifest, /documentLaunchMode/, "MainActivity must not create a separate document task");
+assert.match(main, /else if\(sessionProfileId\(getIntent\(\)\)!=null\)\{[\s\S]*?finish\(\);/, "root BACK in a game session must finish only the session Activity");
+assert.match(main, /if\(web\.canGoBack\(\)\)\{\s*web\.goBack\(\);/, "BACK inside WebView history must stay inside the game");
+assert.match(main, /ImagePackFolderPickerScript\.installDocumentStart\(web, imagePackFolderPickerScript, origin\)/, "the directory adapter must register at document start when supported");
+assert.match(main, /ImagePackFolderPickerScript\.installAfterPageFinished\(/, "the directory adapter must have a runtime fallback");
+assert.match(readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackFolderPickerScript.java", import.meta.url), "utf8"), /isSameOrigin\(/, "runtime fallback must be restricted to the active game origin");
+assert.match(readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackFolderPickerScript.java", import.meta.url), "utf8"), /WebViewCompat\.addDocumentStartJavaScript/, "supported document-start injection must remain");
 assert.match(main, /installDocumentStartAsset\("imagegen-proxy\.js", origin\)/, "image-generation scripts must remain installed separately");
 assert.match(main, /chooseImagePackFolder\(String requestId\)/, "WMLHost must preserve the existing folder action");
 assert.match(main, /listImagePackDirectory\(String path\)/, "WMLHost must preserve the existing directory-list method");
 assert.match(main, /readImagePackFile\(String path\)/, "WMLHost must preserve the existing file-read method");
-assert.match(readFileSync(new URL("../app/src/debug/java/com/wayward/launcher/ImagePackPickerAcceptanceActivity.java", import.meta.url), "utf8"), /const fileHandle=await directory\.getFileHandle\(\x27pixel\.png\x27\);[\s\S]*const file=await fileHandle\.getFile\(\);/, "the Android 15 acceptance page must read the selected PNG");
+assert.match(readFileSync(new URL("../app/src/debug/java/com/wayward/launcher/ImagePackPickerAcceptanceActivity.java", import.meta.url), "utf8"), /PASS_FS_DIRECTORY_HANDLE/, "acceptance must inspect a real directory-handle object, enumerate it, and read a file");
 assert.match(smoke, /appops", "set", "--uid", PACKAGE, "MANAGE_EXTERNAL_STORAGE", "allow"/, "the Android 15 emulator acceptance test must grant all-files access");
 assert.match(smoke, /run_native_folder_acceptance\(\)/, "the Android 15 smoke test must exercise the custom folder browser");
-assert.doesNotMatch(smoke, /run_documentsui_acceptance|ACTION_OPEN_DOCUMENT_TREE|이 폴더 사용|use this folder/i, "the Android 15 smoke test must drive the custom browser instead of the system picker");
+assert.match(smoke, /run_main_activity_game_session_acceptance\(\)/, "Android 15 must exercise image-pack selection in the real MainActivity game session");
+assert.match(smoke, /PASS_GAME_SESSION_DIRECTORY_HANDLE/, "the game session must verify the JavaScript directory handle and image read");
+assert.match(smoke, /PASS_SINGLE_FILE/, "the game session must regression-test ordinary file selection");
+assert.match(smoke, /PASS_ZIP_MULTI_FILES/, "the game session must regression-test ZIP multi-selection");
+assert.match(smoke, /dumpsys", "activity", "recents"/, "the Android 15 test must inspect the actual Recent Apps task list");
+assert.doesNotMatch(smoke, /run_documentsui_acceptance/i, "the Android 15 smoke test must also exercise an actual MainActivity game session");
 assert.match(readFileSync(new URL("../tests/ImagePackPathGuardTest.java", import.meta.url), "utf8"), /linked-documents/, "path tests must cover symbolic-link escape");
 assert.match(readFileSync(new URL("../tests/ImagePackAtomicFileWriterTest.java", import.meta.url), "utf8"), /simulated short write/, "writer tests must verify preservation after an incomplete write");
 assert.match(smoke, /MANAGE_EXTERNAL_STORAGE", "deny"/, "Android 15 smoke must verify permission revocation");

@@ -12,6 +12,7 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 import zlib
+import zipfile
 
 PACKAGE = "com.wayward.launcher.official.debug"
 ACTIVITY = f"{PACKAGE}/com.wayward.launcher.MainActivity"
@@ -109,6 +110,321 @@ def wait_for_log(marker: str, *, timeout_seconds: int = 45) -> str:
     raise RuntimeError("Timed out waiting for " + marker + ". Last acceptance log: " + latest[-4000:])
 
 
+def wait_for_ui_contains(local_path: pathlib.Path, device_path: str, marker: str,
+                         *, timeout_seconds: int = 30) -> str:
+    latest = ""
+    for _ in range(timeout_seconds):
+        latest = dump_ui(local_path, device_path)
+        if marker in latest:
+            return latest
+        time.sleep(1)
+    raise RuntimeError("Timed out waiting for UI marker " + marker + ": " + latest[-2500:])
+
+
+def choose_download_as_game_folder(local_path: pathlib.Path, device_path: str) -> str:
+    """Drive the real MainActivity game-folder SAF picker and select Download."""
+    home_xml = dump_ui(local_path, device_path)
+    add_button = node_bounds(home_xml, ("현재 기기 폴더", "Add device folder"))
+    if add_button is None:
+        raise RuntimeError("MainActivity did not expose its device-folder registration button.")
+    tap_bounds(add_button)
+
+    download_selected = False
+    latest = ""
+    for _ in range(50):
+        latest = dump_ui(local_path, device_path)
+
+        if download_selected:
+            use_folder = node_bounds(latest, ("이 폴더 사용", "Use this folder", "Use folder"))
+            if use_folder is not None:
+                tap_bounds(use_folder)
+                break
+
+        download_row = node_bounds(latest, ("Downloads", "Download"), require_clickable=False)
+        if download_row is not None and not download_selected:
+            tap_bounds(download_row)
+            download_selected = True
+            time.sleep(2)
+            continue
+
+        roots_button = node_bounds(
+            latest, ("Show roots", "Show navigation drawer", "Browse")
+        )
+        if roots_button is not None and not download_selected:
+            tap_bounds(roots_button)
+            time.sleep(1)
+            continue
+
+        time.sleep(1)
+    else:
+        (ARTIFACTS / "android15-game-tree-picker.xml").write_text(latest, encoding="utf-8")
+        raise RuntimeError("DocumentsUI did not allow the real launcher to select Download.")
+
+    # Android may ask for the tree grant after the folder button is pressed.
+    for _ in range(20):
+        latest = dump_ui(local_path, device_path)
+        allow_button = node_bounds(latest, ("허용", "Allow"))
+        if allow_button is not None:
+            tap_bounds(allow_button)
+            time.sleep(1)
+            continue
+        if "내 게임" in latest or "My games" in latest:
+            return latest
+        time.sleep(1)
+    (ARTIFACTS / "android15-game-tree-picker.xml").write_text(latest, encoding="utf-8")
+    raise RuntimeError("The launcher did not return to its home screen after the SAF grant.")
+
+
+def open_download_directory_in_documents_ui(local_path: pathlib.Path, device_path: str,
+                                                *, timeout_seconds: int = 45) -> str:
+    latest = ""
+    download_selected = False
+    for _ in range(timeout_seconds):
+        latest = dump_ui(local_path, device_path)
+        if download_selected:
+            return latest
+        download_row = node_bounds(latest, ("Downloads", "Download"))
+        if download_row is None:
+            download_row = node_bounds(latest, ("Downloads", "Download"), require_clickable=False)
+        if download_row is not None:
+            tap_bounds(download_row)
+            download_selected = True
+            time.sleep(2)
+            continue
+        roots_button = node_bounds(latest, ("Show roots", "Show navigation drawer", "Browse"))
+        if roots_button is not None:
+            tap_bounds(roots_button)
+            time.sleep(1)
+            continue
+        time.sleep(1)
+    (ARTIFACTS / "android15-documentsui-download-navigation.xml").write_text(
+        latest, encoding="utf-8"
+    )
+    raise RuntimeError("DocumentsUI did not expose a Downloads/Download location.")
+
+
+def pick_single_document(local_path: pathlib.Path, device_path: str, filename: str) -> None:
+    open_download_directory_in_documents_ui(local_path, device_path)
+    latest = dump_ui(local_path, device_path)
+    item = node_bounds(latest, (filename,))
+    if item is None:
+        item = node_bounds(latest, (filename,), require_clickable=False)
+    if item is None:
+        raise RuntimeError("The file picker did not list " + filename)
+    tap_bounds(item)
+
+
+def pick_multiple_zip_documents(local_path: pathlib.Path, device_path: str) -> None:
+    latest = open_download_directory_in_documents_ui(local_path, device_path)
+    first = node_bounds(latest, ("test-one.zip",), require_clickable=False)
+    if first is None:
+        raise RuntimeError("The ZIP picker did not list test-one.zip")
+    left, top, right, bottom = first
+    x, y = str((left + right) // 2), str((top + bottom) // 2)
+    adb("shell", "input", "swipe", x, y, x, y, "1000")
+    time.sleep(1)
+
+    latest = dump_ui(local_path, device_path)
+    second = node_bounds(latest, ("test-two.zip",), require_clickable=False)
+    if second is None:
+        (ARTIFACTS / "android15-zip-multiselect.xml").write_text(latest, encoding="utf-8")
+        raise RuntimeError("The ZIP picker did not list test-two.zip in selection mode.")
+    tap_bounds(second)
+    time.sleep(1)
+
+    for _ in range(15):
+        latest = dump_ui(local_path, device_path)
+        action = node_bounds(latest, ("Open", "열기", "Select", "선택", "Done", "완료"))
+        if action is not None:
+            tap_bounds(action)
+            return
+        time.sleep(1)
+    (ARTIFACTS / "android15-zip-multiselect.xml").write_text(latest, encoding="utf-8")
+    raise RuntimeError("The ZIP picker did not expose its multi-select confirmation action.")
+
+
+def run_main_activity_game_session_acceptance() -> None:
+    """Exercise the real game WebView, folder bridge, back stack, and Recents."""
+    ARTIFACTS.mkdir(parents=True, exist_ok=True)
+    fixture_dir = ARTIFACTS / "main-activity-game-fixture"
+    fixture_dir.mkdir(parents=True, exist_ok=True)
+    game_page = """<!doctype html>
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body>
+<h1>WAYWARD MAIN ACTIVITY GAME SESSION</h1>
+<button id="pick">Open image-pack folder</button>
+<button id="single-button">Pick ordinary PNG file</button>
+<input id="single-input" type="file" accept=".png,image/png" hidden>
+<button id="zip-button">Pick multiple ZIP files</button>
+<input id="zip-input" type="file" accept=".zip,application/zip" multiple hidden>
+<a id="second" href="session-second.html">Open second internal page</a>
+<div id="result">READY</div><div id="file-result">FILE_READY</div>
+<script>
+document.getElementById('pick').addEventListener('click', async () => {
+  try {
+    const directory = await window.showDirectoryPicker({mode: 'read'});
+    if (!directory || directory.kind !== 'directory' ||
+        typeof directory.getFileHandle !== 'function' ||
+        typeof directory.entries !== 'function') {
+      throw new Error('The folder API did not return a directory handle');
+    }
+    const names = [];
+    for await (const [name, handle] of directory.entries()) names.push(name);
+    if (!names.includes('pixel.png')) throw new Error('pixel.png missing from directory handle listing');
+    const handle = await directory.getFileHandle('pixel.png');
+    const file = await handle.getFile();
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const signature = Array.from(bytes.slice(0, 8)).join(',');
+    if (signature !== '137,80,78,71,13,10,26,10') throw new Error('PNG read failed');
+    document.getElementById('result').textContent =
+      'PASS_GAME_SESSION_DIRECTORY_HANDLE name=' + directory.name +
+      ' listed=' + names.length + ' bytes=' + bytes.length;
+  } catch (error) {
+    document.getElementById('result').textContent =
+      'FAIL_GAME_SESSION_DIRECTORY_HANDLE ' + String(error && error.name) +
+      ': ' + String(error && error.message);
+  }
+});
+document.getElementById('single-button').addEventListener('click', () =>
+  document.getElementById('single-input').click());
+document.getElementById('single-input').addEventListener('change', event => {
+  const file = event.target.files && event.target.files[0];
+  document.getElementById('file-result').textContent =
+    file ? 'PASS_SINGLE_FILE name=' + file.name : 'FAIL_SINGLE_FILE no file';
+});
+document.getElementById('zip-button').addEventListener('click', () =>
+  document.getElementById('zip-input').click());
+document.getElementById('zip-input').addEventListener('change', event => {
+  const files = Array.from(event.target.files || []).map(file => file.name);
+  document.getElementById('file-result').textContent =
+    files.length >= 2 && files.includes('test-one.zip') && files.includes('test-two.zip')
+      ? 'PASS_ZIP_MULTI_FILES count=' + files.length + ' names=' + files.join(',')
+      : 'FAIL_ZIP_MULTI_FILES count=' + files.length + ' names=' + files.join(',');
+});
+</script>
+</body></html>"""
+    second_page = """<!doctype html><html><body><h1>SECOND_SESSION_PAGE</h1>
+<p>Back must return to the first game page, not the launcher.</p></body></html>"""
+    (fixture_dir / "Wayward_WML_ko.html").write_text(game_page, encoding="utf-8")
+    (fixture_dir / "session-second.html").write_text(second_page, encoding="utf-8")
+    for archive_name in ("test-one.zip", "test-two.zip"):
+        with zipfile.ZipFile(fixture_dir / archive_name, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("fixture.txt", archive_name)
+
+    adb("shell", "mkdir", "-p", FIXTURE_FOLDER)
+    adb("push", str(fixture_dir / "Wayward_WML_ko.html"), FIXTURE_FOLDER + "/Wayward_WML_ko.html")
+    adb("push", str(fixture_dir / "session-second.html"), FIXTURE_FOLDER + "/session-second.html")
+    adb("shell", "appops", "set", "--uid", PACKAGE, "MANAGE_EXTERNAL_STORAGE", "allow")
+    adb("logcat", "-c")
+
+    picker_local = pathlib.Path("/tmp/wayward-main-activity-game.xml")
+    picker_device = "/sdcard/wayward-main-activity-game.xml"
+    choose_download_as_game_folder(picker_local, picker_device)
+
+    home_xml = dump_ui(picker_local, picker_device)
+    launch_button = node_bounds(home_xml, ("실행", "Launch"))
+    if launch_button is None:
+        raise RuntimeError("The registered Download game profile did not expose its launch button.")
+    tap_bounds(launch_button)
+
+    game_xml = wait_for_ui_contains(
+        picker_local, picker_device, "Open image-pack folder", timeout_seconds=35
+    )
+    (ARTIFACTS / "android15-main-activity-game-before-picker.xml").write_text(
+        game_xml, encoding="utf-8"
+    )
+    pick_button = node_bounds(game_xml, ("Open image-pack folder",))
+    if pick_button is None:
+        raise RuntimeError("The real game WebView did not expose its image-pack folder action.")
+    tap_bounds(pick_button)
+
+    # This must be ImagePackFileSystemAccess' own picker, not DocumentsUI or <input type=file>.
+    folder_xml = ""
+    select_folder = None
+    for _ in range(35):
+        try:
+            folder_xml = dump_ui(picker_local, picker_device)
+            select_folder = node_bounds(folder_xml, ("이 폴더 선택", "Select this folder"))
+            if select_folder is not None:
+                break
+        except Exception:
+            pass
+        time.sleep(1)
+    (ARTIFACTS / "android15-main-activity-imagepack-picker.xml").write_text(
+        folder_xml, encoding="utf-8"
+    )
+    if select_folder is None:
+        raise RuntimeError("The real game session did not open the launcher's own image-pack browser.")
+    if "/Download" not in folder_xml:
+        raise RuntimeError("The production image-pack browser did not start from Download.")
+    tap_bounds(select_folder)
+
+    game_xml = wait_for_ui_contains(
+        picker_local, picker_device, "PASS_GAME_SESSION_DIRECTORY_HANDLE", timeout_seconds=35
+    )
+    (ARTIFACTS / "android15-main-activity-game-handle-pass.xml").write_text(
+        game_xml, encoding="utf-8"
+    )
+    if "FAIL_GAME_SESSION_DIRECTORY_HANDLE" in game_xml:
+        raise RuntimeError("The actual game session could not receive or read the JS directory handle.")
+    print("PASS: actual MainActivity game WebView received a JS directory handle, enumerated Download, and read pixel.png.")
+
+    single_button = node_bounds(game_xml, ("Pick ordinary PNG file",))
+    if single_button is None:
+        raise RuntimeError("The game page did not expose its ordinary file input trigger.")
+    tap_bounds(single_button)
+    pick_single_document(picker_local, picker_device, "pixel.png")
+    single_xml = wait_for_ui_contains(picker_local, picker_device, "PASS_SINGLE_FILE", timeout_seconds=25)
+    if "PASS_SINGLE_FILE name=pixel.png" not in single_xml:
+        raise RuntimeError("The ordinary file chooser did not return the selected PNG URI to the game page.")
+    print("PASS: the real game WebView ordinary file chooser returned pixel.png.")
+
+    zip_button = node_bounds(single_xml, ("Pick multiple ZIP files",))
+    if zip_button is None:
+        raise RuntimeError("The game page did not expose its multiple-ZIP input trigger.")
+    tap_bounds(zip_button)
+    pick_multiple_zip_documents(picker_local, picker_device)
+    zip_xml = wait_for_ui_contains(picker_local, picker_device, "PASS_ZIP_MULTI_FILES", timeout_seconds=25)
+    if "PASS_ZIP_MULTI_FILES" not in zip_xml or "test-one.zip" not in zip_xml or "test-two.zip" not in zip_xml:
+        raise RuntimeError("The WebView ZIP multi-select callback did not return both selected URIs.")
+    print("PASS: the real game WebView ZIP multi-select callback returned both selected files.")
+
+    second_link = node_bounds(zip_xml, ("Open second internal page",))
+    if second_link is None:
+        raise RuntimeError("The game fixture did not expose its second internal page link.")
+    tap_bounds(second_link)
+    second_xml = wait_for_ui_contains(
+        picker_local, picker_device, "SECOND_SESSION_PAGE", timeout_seconds=25
+    )
+    adb("shell", "input", "keyevent", "4")
+    first_xml = wait_for_ui_contains(
+        picker_local, picker_device, "PASS_GAME_SESSION_DIRECTORY_HANDLE", timeout_seconds=25
+    )
+    if "WAYWARD MAIN ACTIVITY GAME SESSION" not in first_xml:
+        raise RuntimeError("The first BACK did not navigate within the game WebView history.")
+
+    adb("shell", "input", "keyevent", "4")
+    home_xml = wait_for_ui_contains(picker_local, picker_device, "내 게임", timeout_seconds=25)
+    if "WAYWARD MAIN ACTIVITY GAME SESSION" in home_xml:
+        raise RuntimeError("The root BACK did not finish only the game-session Activity.")
+
+    recent = adb("shell", "dumpsys", "activity", "recents", check=False, capture=True).stdout or ""
+    sections = re.split(r"(?=Recent #\d+:)", recent)
+    launcher_tasks = [section for section in sections if PACKAGE in section]
+    if not launcher_tasks:
+        # Some Android builds use a different Recent-entry formatter. Fall back to Task sections.
+        sections = re.split(r"(?=Task\{)", recent)
+        launcher_tasks = [section for section in sections if PACKAGE in section]
+    if len(launcher_tasks) != 1:
+        (ARTIFACTS / "android15-recents-after-game-back.txt").write_text(recent, encoding="utf-8")
+        raise RuntimeError(
+            "Expected exactly one Wayward recent-app task after returning from the game; "
+            + str(len(launcher_tasks)) + " task records matched."
+        )
+    (ARTIFACTS / "android15-recents-after-game-back.txt").write_text(recent, encoding="utf-8")
+    print("PASS: first BACK navigated the WebView; root BACK returned to the launcher; Recents contains one launcher task.")
+
+
 def run_native_folder_acceptance() -> None:
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     fixture = ARTIFACTS / "imagepack-acceptance-pixel.png"
@@ -190,14 +506,14 @@ def run_native_folder_acceptance() -> None:
         raise RuntimeError("The folder selection action disappeared after parent navigation.")
 
     tap_bounds(select_folder)
-    first_log = wait_for_log("PASS picked directory=")
+    first_log = wait_for_log("PASS fs-directory-handle")
     if "FAIL " in first_log:
         raise RuntimeError("Selected-root CRUD or symbolic-link boundary acceptance failed: " + first_log[-4000:])
     if "PASS selected-root-boundary" not in first_log:
         raise RuntimeError("Selected-root CRUD and boundary tests did not report success.")
-    if "bytes=" not in first_log:
-        raise RuntimeError("The selected image file was not read through the native file-system bridge.")
-    print("PASS: Android 15 used the launcher folder browser (not DocumentsUI) and read Download/pixel.png.")
+    if "listed=" not in first_log or "bytes=" not in first_log:
+        raise RuntimeError("The returned directory handle did not enumerate and read the selected image.")
+    print("PASS: adapter test returned a directory-handle-compatible JS object, listed files, and read Download/pixel.png.")
     print(first_log[-1800:])
 
     adb("shell", "am", "force-stop", PACKAGE)
@@ -290,6 +606,7 @@ def main() -> int:
     if (ARTIFACTS / "android15-launcher-home.png").stat().st_size == 0:
         raise RuntimeError("Android 15 home screenshot is empty.")
 
+    run_main_activity_game_session_acceptance()
     run_native_folder_acceptance()
     run(["gradle", "--no-daemon", "connectedDebugAndroidTest"])
 

@@ -11,18 +11,17 @@ import android.webkit.WebViewClient;
 
 import org.json.JSONObject;
 
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 
 public final class ImagePackPickerAcceptanceActivity extends Activity {
     private static final String TAG = "WaywardImagePackTest";
     private static final String PROFILE = "acceptance_imagepack";
+    private static final String TEST_ORIGIN = "https://wayward-imagepack-test.local";
     private ImagePackDirectoryAccess access;
     private WebView webView;
     private boolean verifyExisting;
     private boolean verifyRevoked;
     private boolean verifySymlinkFixture;
+    private String pickerScript;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -41,49 +40,49 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
         webView.addJavascriptInterface(new AcceptanceBridge(), "AcceptanceBridge");
         webView.setWebViewClient(new WebViewClient() {
             @Override public void onPageFinished(WebView view, String url) {
-                if (verifyRevoked) {
-                    view.evaluateJavascript("window.AcceptanceBridge.verifyPermissionRevoked()", null);
-                } else if (verifyExisting) {
-                    view.evaluateJavascript("window.AcceptanceBridge.verifyPersistedAccess()", null);
-                } else {
-                    view.evaluateJavascript("document.getElementById('pick').click()", null);
-                }
+                ImagePackFolderPickerScript.installAfterPageFinished(
+                        view, url, TEST_ORIGIN, pickerScript, installed -> {
+                            if (!installed) {
+                                Log.e(TAG, "FAIL image-pack picker script runtime installation");
+                            } else if (verifyRevoked) {
+                                view.evaluateJavascript("window.AcceptanceBridge.verifyPermissionRevoked()", null);
+                            } else if (verifyExisting) {
+                                view.evaluateJavascript("window.AcceptanceBridge.verifyPersistedAccess()", null);
+                            } else {
+                                view.evaluateJavascript("document.getElementById('pick').click()", null);
+                            }
+                        });
             }
         });
         setContentView(webView);
 
         try {
-            String pickerScript = readAsset("imagepack-folder-picker.js");
+            pickerScript = ImagePackFolderPickerScript.read(this);
             String page = "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'></head>"
-                    + "<body><button id='pick'>Choose image-pack folder</button>"
-                    + "<script>" + pickerScript + "</script><script>"
-                    + "document.getElementById('pick').addEventListener('click',async()=>{"
+                    + "<body><button id='pick'>Choose image-pack folder</button><div id='result'>READY</div>"
+                    + "<script>document.getElementById('pick').addEventListener('click',async()=>{"
                     + "try{const directory=await window.showDirectoryPicker({mode:'read'});"
+                    + "if(!directory||directory.kind!=='directory'||typeof directory.getFileHandle!=='function'||typeof directory.entries!=='function')"
+                    + "throw new Error('showDirectoryPicker did not return a FileSystemDirectoryHandle-compatible object');"
+                    + "const names=[];for await(const [name,handle] of directory.entries())names.push(name);"
+                    + "if(!names.includes('pixel.png'))throw new Error('Directory handle listing did not include pixel.png');"
                     + "const fileHandle=await directory.getFileHandle('pixel.png');"
                     + "const file=await fileHandle.getFile();"
                     + "const bytes=new Uint8Array(await file.arrayBuffer());"
                     + "const signature=Array.from(bytes.slice(0,8)).join(',');"
                     + "if(signature!=='137,80,78,71,13,10,26,10')throw new Error('Selected file did not contain a PNG signature');"
+                    + "document.getElementById('result').textContent='PASS_FS_DIRECTORY_HANDLE name='+directory.name+' listed='+names.length+' bytes='+bytes.length;"
                     + "window.AcceptanceBridge.verifyFilesystemOperations();"
-                    + "window.AcceptanceBridge.report('PASS picked directory='+directory.name+' bytes='+bytes.length);"
-                    + "}catch(error){window.AcceptanceBridge.report('FAIL picked '+String(error&&error.name)+':'+String(error&&error.message));}"
+                    + "window.AcceptanceBridge.report('PASS fs-directory-handle name='+directory.name+' listed='+names.length+' bytes='+bytes.length);"
+                    + "}catch(error){document.getElementById('result').textContent='FAIL '+String(error&&error.name)+':'+String(error&&error.message);"
+                    + "window.AcceptanceBridge.report('FAIL picked '+String(error&&error.name)+':'+String(error&&error.message));}"
                     + "});</script></body></html>";
-            webView.loadDataWithBaseURL("https://wayward-imagepack-test.local/", page,
-                    "text/html", "UTF-8", null);
+            webView.loadDataWithBaseURL(TEST_ORIGIN + "/", page, "text/html", "UTF-8", null);
         } catch (Exception error) {
             Log.e(TAG, "FAIL test page setup", error);
         }
     }
 
-    private String readAsset(String name) throws Exception {
-        try (InputStream input = getAssets().open(name);
-             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            byte[] buffer = new byte[8192];
-            int count;
-            while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
-            return new String(output.toByteArray(), StandardCharsets.UTF_8);
-        }
-    }
 
     @Override protected void onResume() {
         super.onResume();

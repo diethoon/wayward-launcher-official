@@ -76,7 +76,7 @@ public final class MainActivity extends Activity {
     private static final Pattern ID=Pattern.compile("^[a-z0-9][a-z0-9._-]*$");
     private static final Set<String> RUNNING_SESSIONS=Collections.synchronizedSet(new HashSet<>());
     private static final Map<String,String> PENDING_GOOGLE_AUTH_RESULTS=new ConcurrentHashMap<>();
-    // The home launcher and game sessions are separate Android document tasks.
+    // Keep weak references to the Activity that owns each active game WebView and SAF tree.
     // Keep weak references so settings actions can return to the Activity that
     // actually owns the active game's WebView and SAF tree.
     private static final Map<String, WeakReference<MainActivity>> SESSION_ACTIVITIES =
@@ -119,6 +119,8 @@ public final class MainActivity extends Activity {
     private WebView web;
     private WebFileChooser webFileChooser;
     private ImagePackDirectoryAccess imagePackDirectoryAccess;
+    private String imagePackFolderPickerScript;
+    private String imagePackFolderPickerOrigin = "";
     private Button pairingButton;
     private RemoteHostDiscovery remoteHostDiscovery;
     private boolean remoteReconnectInProgress;
@@ -935,7 +937,7 @@ public final class MainActivity extends Activity {
 
     private void launchProfileSession(String id){
         Intent i=new Intent(this,MainActivity.class);i.setData(Uri.parse("wayward://session/"+Uri.encode(id)));
-        i.addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT);startActivity(i);
+        startActivity(i);
     }
 
     private void openProfileSession(String id){
@@ -1097,6 +1099,14 @@ public final class MainActivity extends Activity {
             }
             @Override public void onPageFinished(WebView view,String url){
                 DiagnosticsLogger.event(MainActivity.this,"INFO","webview","page_finished",null);
+                if(imagePackFolderPickerScript!=null
+                        &&ImagePackFolderPickerScript.isSameOrigin(url,imagePackFolderPickerOrigin)){
+                    ImagePackFolderPickerScript.installAfterPageFinished(
+                            view,url,imagePackFolderPickerOrigin,imagePackFolderPickerScript,installed->{
+                                if(!installed)DiagnosticsLogger.event(MainActivity.this,"ERROR","image-pack",
+                                        "folder_picker_runtime_install_failed",null);
+                            });
+                }
                 super.onPageFinished(view,url);
             }
             @Override public void onReceivedError(WebView view,WebResourceRequest request,android.webkit.WebResourceError error){
@@ -1451,24 +1461,41 @@ public final class MainActivity extends Activity {
     }
 
     private void installImageGenDocumentStartScript(String origin) {
-        if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            if (imageGenStatus != null) imageGenStatus.setText("이 Android System WebView는 이미지 서버 연결 스크립트를 지원하지 않습니다. WebView 업데이트가 필요합니다.");
-            return;
+        boolean documentStartSupported = WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT);
+        try {
+            imagePackFolderPickerScript = ImagePackFolderPickerScript.read(this);
+            imagePackFolderPickerOrigin = origin;
+            boolean registered = false;
+            try {
+                registered = ImagePackFolderPickerScript.installDocumentStart(
+                        web, imagePackFolderPickerScript, origin);
+            } catch (RuntimeException registrationError) {
+                DiagnosticsLogger.error(this, "image-pack", "folder_picker_document_start", registrationError);
+            }
+            if (registered) {
+                DiagnosticsLogger.event(this, "INFO", "image-pack", "folder_picker_document_start_registered", null);
+            } else {
+                // The same adapter is installed after the matching game page finishes loading.
+                // Returning a SAF tree URI through ValueCallback<Uri[]> does not create a JS directory handle.
+                DiagnosticsLogger.event(this, "INFO", "image-pack", "folder_picker_runtime_fallback_enabled", null);
+            }
+        } catch (Exception error) {
+            imagePackFolderPickerScript = null;
+            DiagnosticsLogger.error(this, "image-pack", "folder_picker_script_install", error);
         }
 
-        // The image-pack folder bridge is required by game settings. Register it
-        // separately so an unrelated image-generation script failure cannot skip it.
-        try {
-            installDocumentStartAsset("imagepack-folder-picker.js", origin);
-        } catch (Exception e) {
-            DiagnosticsLogger.error(this, "image-pack", "folder_picker_script_install", e);
+        if (!documentStartSupported) {
+            if (imageGenStatus != null) imageGenStatus.setText(
+                    "이 Android System WebView는 이미지 서버 연결 스크립트를 지원하지 않습니다. WebView 업데이트가 필요합니다.");
+            return;
         }
 
         try {
             installDocumentStartAsset("imagegen-proxy.js", origin);
             installDocumentStartAsset("imagegen-studio-bridge.js", origin);
-        } catch (Exception e) {
-            if (imageGenStatus != null) imageGenStatus.setText("이미지 생성 연결 스크립트를 준비하지 못했습니다: " + msg(e));
+        } catch (Exception error) {
+            if (imageGenStatus != null) imageGenStatus.setText(
+                    "이미지 생성 연결 스크립트를 준비하지 못했습니다: " + msg(error));
         }
     }
 
@@ -2067,7 +2094,20 @@ public final class MainActivity extends Activity {
 
     private void showHomePanel(){runOnUiThread(()->{if(web!=null)web.setVisibility(View.GONE);if(home!=null)home.setVisibility(View.VISIBLE);refreshStatus();refreshImageGenStatus();renderImageModePanel();});}
     private void destroyWeb(){if(webFileChooser!=null){webFileChooser.cancelPending();webFileChooser=null;}if(imagePackDirectoryAccess!=null){imagePackDirectoryAccess.cancelPending();imagePackDirectoryAccess=null;}if(web==null)return;web.removeJavascriptInterface("WMLHost");root.removeView(web);web.stopLoading();web.loadUrl("about:blank");web.destroy();web=null;}
-    @Override public void onBackPressed(){if(web!=null&&web.getVisibility()==View.VISIBLE){if(web.canGoBack())web.goBack();else showHomePanel();return;}super.onBackPressed();}
+    @Override public void onBackPressed(){
+        if(web!=null&&web.getVisibility()==View.VISIBLE){
+            if(web.canGoBack()){
+                web.goBack();
+            }else if(sessionProfileId(getIntent())!=null){
+                DiagnosticsLogger.event(this,"INFO","launcher","game_session_back_to_launcher",null);
+                finish();
+            }else{
+                showHomePanel();
+            }
+            return;
+        }
+        super.onBackPressed();
+    }
     @Override protected void onDestroy(){
         String sessionId=sessionProfileId(getIntent());if(sessionId!=null)RUNNING_SESSIONS.remove(sessionId);
         unregisterSessionActivity();

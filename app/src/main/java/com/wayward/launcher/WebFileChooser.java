@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.content.ClipData;
 import android.content.Intent;
 import android.net.Uri;
-import android.provider.DocumentsContract;
 import android.webkit.MimeTypeMap;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -23,15 +22,12 @@ import java.util.Locale;
 final class WebFileChooser extends WebChromeClient {
     // Keep this distinct from MainActivity's 4101-4104 ActivityResult request codes.
     static final int REQUEST_CODE = 4105;
-    // MODE_OPEN_FOLDER became public in API 37; retain its stable value with compileSdk 35.
-    private static final int MODE_OPEN_FOLDER = 2;
 
     private final Activity activity;
     private final java.util.concurrent.atomic.AtomicInteger consoleErrorSamples =
             new java.util.concurrent.atomic.AtomicInteger();
     private ValueCallback<Uri[]> pendingCallback;
     private boolean allowMultiple;
-    private boolean pendingFolderSelection;
 
     WebFileChooser(Activity activity) {
         this.activity = activity;
@@ -65,39 +61,17 @@ final class WebFileChooser extends WebChromeClient {
             FileChooserParams fileChooserParams) {
         cancelPending();
         pendingCallback = filePathCallback;
-        int mode = fileChooserParams == null
-                ? FileChooserParams.MODE_OPEN : fileChooserParams.getMode();
-        pendingFolderSelection = mode == MODE_OPEN_FOLDER;
-        allowMultiple = !pendingFolderSelection
-                && mode == FileChooserParams.MODE_OPEN_MULTIPLE;
-        Intent picker = pendingFolderSelection
-                ? buildFolderPickerIntent(fileChooserParams)
-                : buildPickerIntent(fileChooserParams);
+        // Folder selection is invoked directly by the native image-pack bridge.
+        // Keep this callback dedicated to ordinary and multiple file requests.
+        allowMultiple = fileChooserParams != null
+                && fileChooserParams.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE;
+        Intent picker = buildPickerIntent(fileChooserParams);
         try {
             activity.startActivityForResult(picker, REQUEST_CODE);
         } catch (Exception e) {
             deliver(null);
         }
         return true;
-    }
-
-    private Intent buildFolderPickerIntent(FileChooserParams params) {
-        Intent picker = null;
-        if (params != null) {
-            try {
-                picker = params.createIntent();
-            } catch (RuntimeException ignored) {}
-        }
-        // Newer WebView providers supply ACTION_OPEN_DOCUMENT_TREE for folder mode.
-        // Older providers may not, so preserve the directory-only SAF contract explicitly.
-        if (picker == null || !Intent.ACTION_OPEN_DOCUMENT_TREE.equals(picker.getAction())) {
-            picker = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-        }
-        picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
-                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-                | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
-        return picker;
     }
 
     private Intent buildPickerIntent(FileChooserParams params) {
@@ -148,10 +122,6 @@ final class WebFileChooser extends WebChromeClient {
 
     void handleActivityResult(int resultCode, Intent data) {
         if (pendingCallback == null) return;
-        if (pendingFolderSelection) {
-            handleFolderActivityResult(resultCode, data);
-            return;
-        }
         if (resultCode != Activity.RESULT_OK || data == null) {
             deliver(null);
             return;
@@ -179,39 +149,10 @@ final class WebFileChooser extends WebChromeClient {
         deliver(null);
     }
 
-    private void handleFolderActivityResult(int resultCode, Intent data) {
-        if (resultCode != Activity.RESULT_OK || data == null) {
-            deliver(null);
-            return;
-        }
-        Uri selected = data.getData();
-        if (selected == null || !"content".equalsIgnoreCase(selected.getScheme())
-                || !DocumentsContract.isTreeUri(selected)) {
-            deliver(null);
-            return;
-        }
-        int resultFlags = data.getFlags();
-        int grants = resultFlags & (Intent.FLAG_GRANT_READ_URI_PERMISSION
-                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-        if ((grants & Intent.FLAG_GRANT_READ_URI_PERMISSION) == 0) {
-            deliver(null);
-            return;
-        }
-        if ((resultFlags & Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION) != 0) {
-            try {
-                activity.getContentResolver().takePersistableUriPermission(selected, grants);
-            } catch (SecurityException ignored) {
-                // The immediate result grant remains available to the active WebView session.
-            }
-        }
-        deliver(new Uri[] {selected});
-    }
-
     private void deliver(Uri[] result) {
         ValueCallback<Uri[]> callback = pendingCallback;
         pendingCallback = null;
         allowMultiple = false;
-        pendingFolderSelection = false;
         if (callback != null) callback.onReceiveValue(result);
     }
 }
