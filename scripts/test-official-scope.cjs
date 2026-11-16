@@ -133,7 +133,7 @@ assert(chooserRequestMatch, 'WebView file chooser request code must exist');
 const allRequestCodes = [...mainRequestCodes, Number(chooserRequestMatch[1])];
 assert.match(main, /REQUEST_GOOGLE_AUTH_MIN=60000/);
 assert.match(main, /REQUEST_GOOGLE_AUTH_MAX=65534/);
-assert.match(main, /reserveGoogleAuthRequestCode\\(nonce\\)/);
+assert.ok(main.includes('reserveGoogleAuthRequestCode(nonce)'));
 assert.ok(allRequestCodes.every(code => code < 60000 || code > 65534),
   'static picker codes must not overlap the dynamic Google auth range');
 assert.equal(new Set(allRequestCodes).size, allRequestCodes.length,
