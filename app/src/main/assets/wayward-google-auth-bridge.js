@@ -7,6 +7,11 @@
   const AUTH_ORIGINS = new Set([
     'https://jeiky224.github.io'
   ]);
+  const AUTH_PATHS = new Set([
+    '/cloud/file-auth.html',
+    '/cloud/auth-061.html',
+    '/cloud/auth.html'
+  ]);
   const DRIVE_SESSION_TOKEN_KEY = 'wml-google-drive-session-token-v1';
   let lastGoogleDriveAccessToken = '';
 
@@ -83,6 +88,7 @@
     const hasLegacyStart = !!(host &&
       typeof host.startGoogleDriveAuth === 'function');
     if (!AUTH_ORIGINS.has(parsed.origin) ||
+        !AUTH_PATHS.has(parsed.pathname) ||
         !host ||
         (!hasPolicyStart && !hasLegacyStart) ||
         typeof host.takePendingStateForNonce !== 'function') {
