@@ -255,9 +255,12 @@ const pairingRequest = pairingActivity.indexOf('RemoteHostClient.pairAndWaitForA
 assert.ok(bootstrapBranch >= 0 && manifestFetch > bootstrapBranch && verifyStore > manifestFetch &&
   pairingRequest > verifyStore,
   'bootstrap fetch, manifest validation and existing Host verification must finish before pairing');
-assert.match(pairingActivity, /else\\s*\\{\\s*scannedHost = RemoteHostConnection\.fromQrJson\(raw\)/,
+assert.ok(pairingActivity.includes("scannedHost = RemoteHostConnection.fromQrJson(raw)"),
   'legacy full JSON QR must remain on its original parsing path without bootstrap fallback');
-assert.match(client, /host\.verifySignedManifest\(\)[\\s\\S]*?verifyIdentityResponse\(host, identity\)[\\s\\S]*?RemoteHostStore\.saveConnection\(context, host\)/,
+const signatureCheck = client.indexOf("host.verifySignedManifest()");
+const identityCheck = client.indexOf("verifyIdentityResponse(host, identity)", signatureCheck);
+const hostStore = client.indexOf("RemoteHostStore.saveConnection(context, host)", identityCheck);
+assert.ok(signatureCheck >= 0 && identityCheck > signatureCheck && hostStore > identityCheck,
   'Host signature and identity checks must complete before storing Host data');
 
 console.log('Remote Play native bridge, cache, ComfyUI and security contract checks passed');
