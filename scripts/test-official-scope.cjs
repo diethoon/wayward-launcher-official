@@ -99,7 +99,7 @@ assert.match(main, /clearGoogleAccessToken\(String token\)/, 'invalid native Dri
 assert.match(main, /startImageServerAfterNaiSettings=true;\s*openNovelAiSettings\(\);\s*return;/,
   'starting generation without a token must open NAI settings and remember the requested start');
 const naiResultStart = main.indexOf('if(req==REQUEST_NAI_SETTINGS)');
-const naiResultEnd = main.indexOf('if(req==REQUEST_GOOGLE_AUTH)', naiResultStart);
+const naiResultEnd = main.indexOf('String authNonce=pendingGoogleAuthRequestNonces.remove(req);', naiResultStart);
 assert(naiResultStart >= 0 && naiResultEnd > naiResultStart, 'NAI settings result handler must exist');
 assert.match(main.slice(naiResultStart, naiResultEnd), /requestedStart\|\|IMAGE_MODE_GENERATION\.equals\(currentImageMode\(\)\)/,
   'saving a token from a pending server-start flow must resume server startup');
@@ -120,9 +120,9 @@ assert(webStart >= 0 && webEnd > webStart, 'WebView construction method must exi
 assert.match(main.slice(webStart, webEnd), /installImageGenDocumentStartScript\(origin\)/,
   'the Image Studio adapter must be installed on the game origin');
 
-// Activity result request codes must be globally unique. A collision caused the
-// WebView ZIP/file picker result (4103) to be consumed by Google auth first.
-const mainRequestCodeNames = ['PICK_TREE', 'PICK_MOD_ZIP', 'REQUEST_GOOGLE_AUTH', 'REQUEST_NAI_SETTINGS'];
+// Static picker request codes remain unique. Google auth uses a monotonic
+// nonce-scoped range so a late cancelled result cannot satisfy a later request.
+const mainRequestCodeNames = ['PICK_TREE', 'PICK_MOD_ZIP', 'REQUEST_NAI_SETTINGS'];
 const mainRequestCodes = mainRequestCodeNames.map((name) => {
   const match = main.match(new RegExp(`\\b${name}\\s*=\\s*(\\d+)`));
   assert(match, `MainActivity request code ${name} must exist`);
@@ -131,6 +131,11 @@ const mainRequestCodes = mainRequestCodeNames.map((name) => {
 const chooserRequestMatch = webFileChooser.match(/static final int REQUEST_CODE\s*=\s*(\d+)/);
 assert(chooserRequestMatch, 'WebView file chooser request code must exist');
 const allRequestCodes = [...mainRequestCodes, Number(chooserRequestMatch[1])];
+assert.match(main, /REQUEST_GOOGLE_AUTH_MIN=60000/);
+assert.match(main, /REQUEST_GOOGLE_AUTH_MAX=65534/);
+assert.match(main, /reserveGoogleAuthRequestCode\\(nonce\\)/);
+assert.ok(allRequestCodes.every(code => code < 60000 || code > 65534),
+  'static picker codes must not overlap the dynamic Google auth range');
 assert.equal(new Set(allRequestCodes).size, allRequestCodes.length,
   'MainActivity and WebView file chooser ActivityResult request codes must be unique');
 
