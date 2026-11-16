@@ -3,6 +3,7 @@ package com.wayward.launcher;
 import android.content.Context;
 import android.net.Uri;
 import android.util.Base64;
+import android.util.Log;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -34,6 +35,7 @@ import javax.net.ssl.X509TrustManager;
  * bearer tokens are held only in process memory and are never exposed through WMLHost.
  */
 final class RemoteHostClient {
+    private static final String PAIRING_TAG = "WaywardRemotePair";
     private static final int CONNECT_TIMEOUT_MS = 8000;
     private static final int READ_TIMEOUT_MS = 20000;
     private static final int MAX_JSON_RESPONSE_BYTES = 4 * 1024 * 1024;
@@ -68,13 +70,20 @@ final class RemoteHostClient {
     }
 
     static String verifyAndStoreQr(Context context, String qrJson) throws Exception {
-        RemoteHostConnection host = RemoteHostConnection.fromQrJson(qrJson);
+        return verifyAndStoreQr(context, RemoteHostConnection.fromQrJson(qrJson));
+    }
+
+    static String verifyAndStoreQr(Context context, RemoteHostConnection host) throws Exception {
+        Log.i(PAIRING_TAG, "stage=qr_signature result=started");
         host.verifySignedManifest();
+        Log.i(PAIRING_TAG, "stage=qr_signature result=success");
+        Log.i(PAIRING_TAG, "stage=pc_identity_auth result=started");
         JSONObject identity = requestJson(host, "/v1/host/identity", "GET", null, null);
         verifyIdentityResponse(host, identity);
         RemoteHostStore.saveConnection(context, host);
         clearSession();
-        return "PC Host 신원과 TLS 인증서 핀 검증 완료\nHost ID: " + host.hostId;
+        Log.i(PAIRING_TAG, "stage=pc_identity_auth result=success");
+        return "PC Host 신원과 TLS 인증서 핀 검증 완료\\nHost ID: " + host.hostId;
     }
 
     static RemoteHostConnection discoverHost(
@@ -135,7 +144,9 @@ final class RemoteHostClient {
                 .put("qrNonce", host.qrNonce)
                 .put("publicKeySubjectPublicKeyInfoBase64",
                         Base64.encodeToString(keyPair.getPublic().getEncoded(), Base64.NO_WRAP));
+        Log.i(PAIRING_TAG, "stage=pc_pairing_request result=started");
         JSONObject start = requestJson(host, "/v1/pairing/requests", "POST", startBody, null);
+        Log.i(PAIRING_TAG, "stage=pc_pairing_request result=success");
         if (!host.hostId.equalsIgnoreCase(start.getString("hostId"))) {
             throw new SecurityException("Pairing 응답의 Host ID가 등록하려는 PC와 다릅니다.");
         }
@@ -155,12 +166,14 @@ final class RemoteHostClient {
             if (!prove.optBoolean("accepted")) {
                 throw new SecurityException("PC Host가 Device Key 증명을 거부했습니다: " + prove.optString("failure"));
             }
+            Log.i(PAIRING_TAG, "stage=device_proof result=accepted");
         } finally {
             java.util.Arrays.fill(proofPayload, (byte) 0);
             java.util.Arrays.fill(hostSignature, (byte) 0);
             if (deviceSignature != null) java.util.Arrays.fill(deviceSignature, (byte) 0);
         }
 
+        Log.i(PAIRING_TAG, "stage=user_approval_wait result=started");
         String pollingSecret = start.getString("pollingSecretBase64");
         long deadline = System.currentTimeMillis() + 10 * 60_000L;
         String requestId = start.getString("requestId");
@@ -190,14 +203,18 @@ final class RemoteHostClient {
                         java.util.Arrays.fill(receiptPayload, (byte) 0);
                         java.util.Arrays.fill(receiptSignature, (byte) 0);
                     }
+                    Log.i(PAIRING_TAG, "stage=user_approval_wait result=approved");
                     authenticate(context, host);
                     RemoteHostStore.markPaired(context,host);
+                    Log.i(PAIRING_TAG, "stage=pairing_registration result=success");
                     return "PC Manager에서 기기 승인이 완료되었습니다.\nHost ID: " + host.hostId +
                             "\nDevice ID: " + deviceId +
                             "\n권한 비트: " + receipt.optInt("permissions");
                 case "Rejected":
+                    Log.w(PAIRING_TAG, "stage=user_approval_wait result=rejected");
                     throw new IOException("PC Manager에서 Pairing 요청을 거부했습니다.");
                 case "Expired":
+                    Log.w(PAIRING_TAG, "stage=user_approval_wait result=expired");
                     throw new IOException("Pairing 요청이 만료되었습니다.");
                 default:
                     Thread.sleep(2000L);
@@ -215,6 +232,7 @@ final class RemoteHostClient {
 
             KeyPair deviceKey = RemoteHostStore.getDeviceKeyPair(context);
             String deviceId = RemoteHostStore.getDeviceId(context);
+            Log.i(PAIRING_TAG, "stage=pc_session_auth result=started");
             JSONObject challenge = requestJson(host, "/v1/auth/challenges", "POST",
                     new JSONObject().put("deviceId", deviceId), null);
             if (!host.hostId.equalsIgnoreCase(challenge.getString("hostId"))) {
@@ -241,6 +259,7 @@ final class RemoteHostClient {
                 accessToken = newToken;
                 sessionHostId = host.hostId;
                 tokenExpiresAtMillis = expires;
+                Log.i(PAIRING_TAG, "stage=pc_session_auth result=success");
                 return accessToken;
             } finally {
                 java.util.Arrays.fill(payload, (byte) 0);
