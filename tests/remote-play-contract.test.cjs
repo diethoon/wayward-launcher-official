@@ -237,7 +237,6 @@ assert.ok(client.includes("status != HttpsURLConnection.HTTP_OK"),
   'the manifest response must require HTTP 200');
 assert.ok(client.includes('startsWith("application/json")') && client.includes('"Cache-Control"') && client.includes('"no-store"'),
   'the manifest response must be JSON with no-store caching');
-  'the manifest response must be HTTP 200 JSON with no-store caching');
 assert.match(client, /configurePinnedTls\(connection, certificatePin\)/,
   'bootstrap manifest retrieval must use the existing pinned TLS trust manager');
 const bootstrapBranch = pairingActivity.indexOf('RemoteHostConnection.isBootstrapQrJson(raw)');
