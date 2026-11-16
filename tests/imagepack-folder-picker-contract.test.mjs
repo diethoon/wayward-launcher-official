@@ -43,6 +43,8 @@ assert.match(bridge, /createImagePackDirectory/, "the directory API must retain 
 assert.match(bridge, /deleteImagePackEntry/, "the directory API must retain entry deletion support");
 
 assert.match(helper, /typeof frame\.showDirectoryPicker==='function'/, "runtime verification must check the real API function, not only a marker");
+assert.match(helper, /frame\.__waywardNativeImagePackPickerInstalled!==true/,
+  "a pre-existing browser API must not suppress installation of the native adapter");
 assert.match(helper, /frame\.eval\(source\)/, "runtime fallback must reach same-origin child frames");
 assert.match(access, /Build\.VERSION\.SDK_INT >= Build\.VERSION_CODES\.R/, "Android 11+ must use the filesystem backend");
 assert.match(access, /new ImagePackFileSystemAccess\(activity, webView, safeProfile, diagnosticSessionId\)/, "filesystem access must remain scoped to the active user profile and diagnostic session");

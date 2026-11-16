@@ -89,7 +89,7 @@ final class ImagePackFolderPickerScript {
                     + "try{frameOrigin=frame.location.origin;}catch(e){return;}"
                     + "if(frameOrigin!==expectedOrigin)return;"
                     + "visited++;"
-                    + "try{if(typeof frame.showDirectoryPicker!=='function')frame.eval(source);"
+                    + "try{if(frame.__waywardNativeImagePackPickerInstalled!==true||typeof frame.showDirectoryPicker!=='function')frame.eval(source);"
                     + "if(typeof frame.showDirectoryPicker==='function')installed++;else failed++;}"
                     + "catch(e){failed++;}"
                     + "try{for(var i=0;i<frame.frames.length;i++)visit(frame.frames[i]);}catch(e){}"
