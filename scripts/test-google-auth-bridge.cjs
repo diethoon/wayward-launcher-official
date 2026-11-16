@@ -7,7 +7,7 @@ const { URL } = require('node:url');
 
 function runNativeAuthCase(source, options) {
   const nonce = options.nonce;
-  const origin = options.origin || 'https://wayward-cloud-auth.vercel.app';
+  const origin = options.origin || 'https://jeiky224.github.io';
   const frame = {
     style: {},
     contentWindow: { closed: false, close() {} },
@@ -79,7 +79,7 @@ function runNativeAuthCase(source, options) {
 
   const query = new URLSearchParams({ nonce });
   if (options.login) query.set('login', options.login);
-  const returnedWindow = window.open(origin + '/?' + query.toString(), 'wayward-cloud-auth', 'popup');
+  const returnedWindow = window.open(origin + '/cloud/file-auth.html?' + query.toString(), 'wayward-cloud-auth', 'popup');
   assert.equal(returnedWindow, frame.contentWindow);
   assert.equal(fallbackOpened, false);
 
@@ -145,7 +145,7 @@ async function main() {
   await testNativeAccountSelectionDispatch(source);
 
   const nonce = '0123456789abcdef0123456789abcdef0123456789abcdef';
-  const origin = 'https://wayward-cloud-auth.vercel.app';
+  const origin = 'https://jeiky224.github.io';
   const frame = {
     style: {},
     contentWindow: { closed: false, close() {} },
@@ -211,7 +211,7 @@ async function main() {
 
   vm.runInNewContext(source, { window, document, URL, Headers, MessageEvent: TestMessageEvent });
 
-  const bridge = window.open(origin + '/?nonce=' + nonce, 'wayward-cloud-auth', 'popup');
+  const bridge = window.open(origin + '/cloud/file-auth.html?nonce=' + nonce, 'wayward-cloud-auth', 'popup');
   assert.equal(bridge, frame.contentWindow);
   assert.equal(fallbackOpened, false);
   assert.equal(typeof poll, 'function');
