@@ -71,7 +71,16 @@ def node_bounds(xml: str, labels: tuple[str, ...]) -> tuple[int, int, int, int] 
     for node in root.iter("node"):
         text = node.attrib.get("text", "")
         description = node.attrib.get("content-desc", "")
-        if any(label.casefold() in (text + " " + description).casefold() for label in labels):
+        clickable = node.attrib.get("clickable", "false") == "true"
+        resource_id = node.attrib.get("resource-id", "")
+        if not clickable:
+            continue
+        matches_label = any(label.casefold() in (text + " " + description).casefold() for label in labels)
+        is_confirmation_button = resource_id == "android:id/button1" and any(
+            marker.casefold() in (text + " " + description).casefold()
+            for marker in ("allow", "허용", "use this folder", "이 폴더 사용")
+        )
+        if matches_label or is_confirmation_button:
             match = re.search(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
             if match:
                 return tuple(int(value) for value in match.groups())
@@ -145,10 +154,12 @@ def run_documentsui_acceptance() -> None:
 
     tap_bounds(use_folder)
 
-    # On some Android 15 DocumentsUI builds a second confirmation dialog is shown.
+    # Android 15 DocumentsUI shows an explicit permission-confirmation dialog.
+    # Only tap an actionable node; the title also contains the word "Allow".
     confirmation = ""
     confirmation_path = ARTIFACTS / "android15-documentsui-permission-confirmation.xml"
-    for _ in range(12):
+    allow = None
+    for _ in range(20):
         try:
             confirmation = dump_ui(picker_local, picker_device)
             confirmation_path.write_text(confirmation, encoding="utf-8")
@@ -160,6 +171,24 @@ def run_documentsui_acceptance() -> None:
         except Exception:
             pass
         time.sleep(1)
+    if allow is None:
+        raise RuntimeError("Android 15 permission confirmation did not expose a clickable Allow button.")
+
+    # Confirm that the second modal disappeared before waiting for app callbacks.
+    confirmation_dismissed = False
+    for _ in range(15):
+        try:
+            after_allow = dump_ui(picker_local, picker_device)
+            if "Allow Wayward Launcher to access files" not in after_allow:
+                confirmation_dismissed = True
+                confirmation_path.write_text(after_allow, encoding="utf-8")
+                screenshot(ARTIFACTS / "android15-documentsui-after-allow.png")
+                break
+        except Exception:
+            pass
+        time.sleep(1)
+    if not confirmation_dismissed:
+        raise RuntimeError("The DocumentsUI Allow confirmation button was not accepted.")
 
     first_log = wait_for_log("PASS picked directory=")
     if "bytes=" not in first_log:

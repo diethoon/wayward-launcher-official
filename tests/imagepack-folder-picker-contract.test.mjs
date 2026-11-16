@@ -20,6 +20,7 @@ assert.match(bridge, /readImagePackFile/, "the selected image file must be reada
 assert.match(access, /Intent\.ACTION_OPEN_DOCUMENT_TREE/, "the native button bridge must launch the SAF tree picker");
 assert.match(access, /FLAG_GRANT_PERSISTABLE_URI_PERMISSION/, "the native picker must request a persisted grant");
 assert.match(access, /takePersistableUriPermission\(selected, grants\)/, "the selected tree grant must be persisted");
+assert.match(readFileSync(new URL("../scripts/android15-emulator-smoke.py", import.meta.url), "utf8"), /if not clickable:/, "the Android 15 test must only tap clickable confirmation controls");
 assert.match(access, /putString\(preferenceKey, selected\.toString\(\)\)\.commit\(\)/, "the selected tree URI must be durably saved before returning to the WebView");
 assert.match(access, /buildChildDocumentsUriUsingTree/, "SAF queries must be limited to the requested directory level");
 assert.match(access, /buildDocumentUriUsingTree\(treeUri, node\.documentId\)/, "image files must be opened using the selected tree URI");
