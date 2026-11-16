@@ -37,6 +37,7 @@ import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 import com.google.android.gms.auth.api.identity.AuthorizationRequest;
 import com.google.android.gms.auth.api.identity.ClearTokenRequest;
+import com.google.android.gms.auth.api.identity.RevokeAccessRequest;
 import com.google.android.gms.auth.api.identity.AuthorizationResult;
 import com.google.android.gms.auth.api.identity.Identity;
 import com.google.android.gms.common.api.ApiException;
@@ -66,7 +67,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class MainActivity extends Activity {
-    private static final int PICK_TREE=4101, PICK_MOD_ZIP=4102, REQUEST_GOOGLE_AUTH=4103, REQUEST_NAI_SETTINGS=4104;
+    private static final int PICK_TREE=4101, PICK_MOD_ZIP=4102, REQUEST_NAI_SETTINGS=4104;
+    private static final int REQUEST_GOOGLE_AUTH_MIN=60000, REQUEST_GOOGLE_AUTH_MAX=65534;
     private static final String PREFS="wayward_launcher";
     private static final String KEY_TREE="game_tree_uri", KEY_PROFILES="game_profiles", KEY_ZIP_REV="zip_mod_revision", KEY_COMFY_URL="comfy_server_url", KEY_IMAGE_MODE="image_server_mode";
     private static final String IMAGE_MODE_PACKS_ONLY="image-packs-only", IMAGE_MODE_GENERATION="image-generation", IMAGE_MODE_REMOTE_PC="remote-pc";
@@ -89,6 +91,8 @@ public final class MainActivity extends Activity {
     private final List<GameProfile> profiles=new ArrayList<>();
     private String activeProfileId="";
     private String pendingGoogleAuthNonce="";
+    private int nextGoogleAuthRequestCode=REQUEST_GOOGLE_AUTH_MIN;
+    private final Map<Integer,String> pendingGoogleAuthRequestNonces=new ConcurrentHashMap<>();
     private long loadedZipRevision=-1;
     private FrameLayout root;
     private LinearLayout home, profileList, zipModList;
@@ -774,9 +778,11 @@ public final class MainActivity extends Activity {
             }
             return;
         }
-        if(req==REQUEST_GOOGLE_AUTH){
-            String nonce=pendingGoogleAuthNonce;pendingGoogleAuthNonce="";
-            if(nonce.isEmpty())return;
+        String authNonce=pendingGoogleAuthRequestNonces.remove(req);
+        if(authNonce!=null){
+            String nonce=authNonce;
+            if(!nonce.equals(pendingGoogleAuthNonce))return;
+            pendingGoogleAuthNonce="";
             if(result!=RESULT_OK||data==null){
                 storeGoogleAuthResult(nonce,null,"Google 계정 권한 승인이 취소되었습니다.");
                 return;
@@ -1211,18 +1217,41 @@ public final class MainActivity extends Activity {
         beginGoogleDriveAuth(nonce,false);
     }
 
-    private void beginGoogleDriveAuth(String nonce,boolean forceSelectAccount){
+    private synchronized int reserveGoogleAuthRequestCode(String nonce){
+        // Never reuse a request code during this Activity lifetime. A cancelled
+        // PendingIntent may still deliver its ActivityResult after a later retry.
+        if(nextGoogleAuthRequestCode>REQUEST_GOOGLE_AUTH_MAX){
+            throw new IllegalStateException("Google 인증 요청 한도를 초과했습니다. 런처를 다시 시작해 주세요.");
+        }
+        int requestCode=nextGoogleAuthRequestCode++;
+        pendingGoogleAuthRequestNonces.put(requestCode,nonce);
+        return requestCode;
+    }
+
+    private void clearGoogleDriveAuthRequest(String nonce){
+        if(nonce==null)return;
+        if(nonce.equals(pendingGoogleAuthNonce))pendingGoogleAuthNonce="";
+        for(Integer requestCode:pendingGoogleAuthRequestNonces.keySet()){
+            if(nonce.equals(pendingGoogleAuthRequestNonces.get(requestCode))){
+                pendingGoogleAuthRequestNonces.remove(requestCode,nonce);
+            }
+        }
+        PENDING_GOOGLE_AUTH_RESULTS.remove(nonce);
+    }
+
+    private void beginGoogleDriveAuth(String nonce,boolean selectAccount){
         if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return;
         if(!pendingGoogleAuthNonce.isEmpty()){
             storeGoogleAuthResult(nonce,null,"이미 다른 Google 권한 요청이 진행 중입니다.");
             return;
         }
+        PENDING_GOOGLE_AUTH_RESULTS.remove(nonce);
         pendingGoogleAuthNonce=nonce;
         try{
             AuthorizationRequest.Builder requestBuilder=AuthorizationRequest.builder()
                     .setRequestedScopes(Collections.singletonList(
                             new Scope("https://www.googleapis.com/auth/drive.appdata")));
-            if(forceSelectAccount){
+            if(selectAccount){
                 requestBuilder.setPrompt(AuthorizationRequest.Prompt.SELECT_ACCOUNT);
             }
             AuthorizationRequest request=requestBuilder.build();
@@ -1233,25 +1262,28 @@ public final class MainActivity extends Activity {
                             try{
                                 android.app.PendingIntent pending=authorizationResult.getPendingIntent();
                                 if(pending==null)throw new IllegalStateException("Google 권한 확인 화면을 열 수 없습니다.");
-                                startIntentSenderForResult(pending.getIntentSender(),REQUEST_GOOGLE_AUTH,null,0,0,0);
+                                int requestCode=reserveGoogleAuthRequestCode(nonce);
+                                startIntentSenderForResult(pending.getIntentSender(),requestCode,null,0,0,0);
                             }catch(android.content.IntentSender.SendIntentException error){
-                                pendingGoogleAuthNonce="";
+                                clearGoogleDriveAuthRequest(nonce);
                                 storeGoogleAuthResult(nonce,null,"Google 권한 화면을 시작하지 못했습니다: "+msg(error));
                             }catch(Throwable error){
-                                pendingGoogleAuthNonce="";
+                                clearGoogleDriveAuthRequest(nonce);
                                 storeGoogleAuthResult(nonce,null,"Google 권한 요청 실패: "+msg(error));
                             }
                         }else{
-                            pendingGoogleAuthNonce="";
+                            clearGoogleDriveAuthRequest(nonce);
                             storeGoogleAuthResult(nonce,authorizationResult.getAccessToken(),null);
                         }
                     })
                     .addOnFailureListener(error->{
-                        if(nonce.equals(pendingGoogleAuthNonce))pendingGoogleAuthNonce="";
-                        storeGoogleAuthResult(nonce,null,"Google Drive 권한 요청 실패: "+msg(error));
+                        if(nonce.equals(pendingGoogleAuthNonce)){
+                            clearGoogleDriveAuthRequest(nonce);
+                            storeGoogleAuthResult(nonce,null,"Google Drive 권한 요청 실패: "+msg(error));
+                        }
                     });
         }catch(Throwable error){
-            pendingGoogleAuthNonce="";
+            clearGoogleDriveAuthRequest(nonce);
             storeGoogleAuthResult(nonce,null,"Google 인증 서비스를 사용할 수 없습니다: "+msg(error));
         }
     }
@@ -1269,6 +1301,18 @@ public final class MainActivity extends Activity {
                 payload.put("type","wayward-cloud-auth-error");
                 payload.put("message",error==null?"Google에서 액세스 토큰을 반환하지 않았습니다.":error);
             }
+            PENDING_GOOGLE_AUTH_RESULTS.put(nonce,payload.toString());
+        }catch(Exception ignored){}
+    }
+
+    private static void storeGoogleRevokeResult(String nonce,boolean revoked,String error){
+        if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return;
+        JSONObject payload=new JSONObject();
+        try{
+            payload.put("type","wayward-cloud-revoke-result");
+            payload.put("nonce",nonce);
+            payload.put("revoked",revoked);
+            if(error!=null&&!error.isEmpty())payload.put("error",error);
             PENDING_GOOGLE_AUTH_RESULTS.put(nonce,payload.toString());
         }catch(Exception ignored){}
     }
