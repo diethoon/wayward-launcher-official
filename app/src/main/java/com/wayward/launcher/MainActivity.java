@@ -2097,6 +2097,26 @@ public final class MainActivity extends Activity {
             if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return;
             runOnUiThread(()->beginGoogleDriveAuth(nonce,forceSelectAccount));
         }
+        @JavascriptInterface public void cancelGoogleDriveAuth(String nonce){
+            if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return;
+            runOnUiThread(()->clearGoogleDriveAuthRequest(nonce));
+        }
+        @JavascriptInterface public void revokeGoogleDriveAccess(String nonce){
+            if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return;
+            runOnUiThread(()->{
+                try{
+                    RevokeAccessRequest request=RevokeAccessRequest.builder()
+                            .setScopes(Collections.singletonList(
+                                    new Scope("https://www.googleapis.com/auth/drive.appdata")))
+                            .build();
+                    Identity.getAuthorizationClient(MainActivity.this).revokeAccess(request)
+                            .addOnSuccessListener(unused->storeGoogleRevokeResult(nonce,true,null))
+                            .addOnFailureListener(error->storeGoogleRevokeResult(nonce,false,msg(error)));
+                }catch(Throwable error){
+                    storeGoogleRevokeResult(nonce,false,msg(error));
+                }
+            });
+        }
         @JavascriptInterface public String takePendingStateForNonce(String nonce){
             if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return "";
             String result=PENDING_GOOGLE_AUTH_RESULTS.remove(nonce);
