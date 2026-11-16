@@ -186,6 +186,10 @@ public final class RemotePlayCryptoInstrumentedTest {
         assertThrows(IllegalArgumentException.class,
                 () -> RemoteHostConnection.fromBootstrapQrJson(malformedNonce.toString()));
 
+        JSONObject extraField = new JSONObject(bootstrapQr.toString()).put("hostHint", "untrusted");
+        assertThrows(IllegalArgumentException.class,
+                () -> RemoteHostConnection.fromBootstrapQrJson(extraField.toString()));
+
         JSONObject tamperedManifest = fullManifest.toJson();
         tamperedManifest.put("signatureBase64",
                 Base64.encodeToString(new byte[64], Base64.NO_WRAP));
