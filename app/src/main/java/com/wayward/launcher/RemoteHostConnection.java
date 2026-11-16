@@ -170,8 +170,8 @@ final class RemoteHostConnection {
 
     static BootstrapInfo fromBootstrapQrJson(String json) throws Exception {
         JSONObject value = new JSONObject(json);
-        if (!isBootstrapQrJson(json)) {
-            throw new IllegalArgumentException("부트스트랩 QR 형식이 아닙니다.");
+        if (!isBootstrapQrJson(json) || value.length() != 4) {
+            throw new IllegalArgumentException("부트스트랩 QR은 지정된 네 필드만 포함해야 합니다.");
         }
         Object version = value.get("protocolVersion");
         if (!(version instanceof Number) || ((Number) version).intValue() != 1 ||
