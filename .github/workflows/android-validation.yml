@@ -72,6 +72,7 @@ jobs:
           node --check app/src/main/assets/wml-folder-bootstrap.js
           node --check app/src/main/assets/imagegen-proxy.js
           node --check app/src/main/assets/imagegen-studio-bridge.js
+          node --check app/src/main/assets/imagepack-folder-picker.js
 
       - name: Test official launcher scope
         run: |
@@ -291,6 +292,8 @@ jobs:
             artifacts/android15-main-activity-game-handle-pass.xml
             artifacts/android15-recents-after-game-back.txt
             artifacts/android15-zip-multiselect.xml
+            artifacts/android15-diagnostics-share-chooser.txt
+            artifacts/android15-diagnostics-export.zip
             artifacts/imagepack-acceptance-pixel.png
             artifacts/imagepack-acceptance-logcat.txt
             app/build/reports/androidTests/connected/debug

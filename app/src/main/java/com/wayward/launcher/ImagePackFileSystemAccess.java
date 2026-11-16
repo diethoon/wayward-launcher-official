@@ -38,14 +38,16 @@ final class ImagePackFileSystemAccess {
     private final Activity activity;
     private final WebView webView;
     private final String preferenceKey;
+    private final String diagnosticSessionId;
     private final File storageRoot;
     private String pendingRequestId;
     private boolean waitingForSettings;
     private File selectedRoot;
 
-    ImagePackFileSystemAccess(Activity activity, WebView webView, String profileId) {
+    ImagePackFileSystemAccess(Activity activity, WebView webView, String profileId, String sessionId) {
         this.activity = activity;
         this.webView = webView;
+        diagnosticSessionId = sessionId == null ? "" : sessionId;
         String safeProfile = profileId == null || !profileId.matches("[A-Za-z0-9_-]{1,80}")
                 ? "default" : profileId;
         preferenceKey = "image_pack_folder_path_" + safeProfile;
@@ -61,28 +63,48 @@ final class ImagePackFileSystemAccess {
     }
 
     void openFolderPicker(String requestId) {
-        if (requestId == null || !requestId.matches("[A-Za-z0-9_-]{1,80}")) return;
+        if (requestId == null || !requestId.matches("[A-Za-z0-9._:-]{1,128}")) {
+            diagnostic("native_folder_picker_request_rejected", "", "error", details("result", "invalid_request_id"));
+            return;
+        }
         activity.runOnUiThread(() -> {
             if (pendingRequestId != null) {
+                diagnostic("native_folder_picker_previous_request_replaced", pendingRequestId,
+                        "warn", details("result", "replaced"));
                 finishPending(failure("AbortError", "A previous folder request was replaced."));
             }
             pendingRequestId = requestId;
-            if (hasAllFilesAccess()) beginFolderBrowsing();
-            else showPermissionPrompt(false);
+            boolean permission = hasAllFilesAccess();
+            diagnostic("native_folder_picker_entered", requestId, "info",
+                    details("apiLevel", Build.VERSION.SDK_INT, "permissionGranted", permission));
+            if (permission) {
+                diagnostic("native_all_files_permission_already_granted", requestId, "info",
+                        details("permissionGranted", true));
+                beginFolderBrowsing();
+            } else {
+                diagnostic("native_all_files_permission_missing", requestId, "warn",
+                        details("permissionGranted", false));
+                showPermissionPrompt(false);
+            }
         });
     }
 
     void onResume() {
         if (!waitingForSettings || pendingRequestId == null) return;
         waitingForSettings = false;
+        boolean granted = hasAllFilesAccess();
+        diagnostic("native_permission_settings_returned", pendingRequestId,
+                granted ? "info" : "warn", details("permissionGranted", granted));
         activity.runOnUiThread(() -> {
-            if (hasAllFilesAccess()) beginFolderBrowsing();
+            if (granted) beginFolderBrowsing();
             else showPermissionPrompt(true);
         });
     }
 
     void cancelPending() {
         if (pendingRequestId != null) {
+            diagnostic("native_folder_picker_cancelled_on_lifecycle", pendingRequestId, "warn",
+                    details("cancelled", true, "result", "webview_or_activity_closed"));
             finishPending(failure("AbortError", "The page was closed."));
         }
     }
@@ -93,6 +115,9 @@ final class ImagePackFileSystemAccess {
 
     private void showPermissionPrompt(boolean returningFromSettings) {
         if (pendingRequestId == null || activity.isFinishing()) return;
+        diagnostic("native_permission_prompt_shown", pendingRequestId, "info",
+                details("permissionGranted", false, "permissionAction",
+                        returningFromSettings ? "settings_return_denied" : "settings_required"));
         new AlertDialog.Builder(activity)
                 .setTitle("전체 파일 접근 권한 필요")
                 .setMessage(returningFromSettings
@@ -100,22 +125,33 @@ final class ImagePackFileSystemAccess {
                         : "이미지팩 폴더를 직접 탐색하고 파일을 관리하려면 전체 파일 접근 권한이 필요합니다.")
                 .setPositiveButton(returningFromSettings ? "설정 다시 열기" : "설정 열기",
                         (dialog, which) -> openAllFilesSettings())
-                .setNegativeButton("취소", (dialog, which) ->
-                        finishPending(failure("NotAllowedError", "전체 파일 접근 권한이 허용되지 않았습니다.")))
+                .setNegativeButton("취소", (dialog, which) -> {
+                    diagnostic("native_permission_prompt_cancelled", pendingRequestId, "warn",
+                            details("cancelled", true, "permissionGranted", false));
+                    finishPending(failure("NotAllowedError", "전체 파일 접근 권한이 허용되지 않았습니다."));
+                })
                 .show();
     }
 
     private void openAllFilesSettings() {
         waitingForSettings = true;
+        diagnostic("native_permission_settings_launch_started", pendingRequestId, "info",
+                details("permissionAction", Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION));
         try {
             Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
                     Uri.parse("package:" + activity.getPackageName()));
             activity.startActivity(intent);
+            diagnostic("native_permission_settings_launch_requested", pendingRequestId, "info",
+                    details("permissionAction", Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION));
         } catch (Exception appSpecificUnavailable) {
+            diagnosticError("native_permission_app_settings_launch_failed", pendingRequestId, appSpecificUnavailable);
             try {
                 activity.startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
+                diagnostic("native_permission_global_settings_launch_requested", pendingRequestId, "info",
+                        details("permissionAction", Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
             } catch (Exception error) {
                 waitingForSettings = false;
+                diagnosticError("native_permission_settings_launch_failed", pendingRequestId, error);
                 finishPending(failure("NotAllowedError", "전체 파일 접근 설정 화면을 열 수 없습니다."));
             }
         }
@@ -136,6 +172,8 @@ final class ImagePackFileSystemAccess {
             finishPending(failure("NotFoundError", "내부 저장소에 접근할 수 없습니다."));
             return;
         }
+        diagnostic("native_folder_browser_opened", pendingRequestId, "info",
+                details("permissionGranted", true, "result", selectedRoot == null ? "default_download" : "saved_folder"));
         showDirectoryDialog(canonicalOrNull(initial));
     }
 
@@ -147,6 +185,8 @@ final class ImagePackFileSystemAccess {
             return;
         }
 
+        diagnostic("native_folder_browser_displayed", pendingRequestId, "info",
+                details("permissionGranted", hasAllFilesAccess(), "result", "dialog_visible"));
         List<String> labels = new ArrayList<>();
         List<File> destinations = new ArrayList<>();
         File parent = current.getParentFile();
@@ -170,8 +210,11 @@ final class ImagePackFileSystemAccess {
                 .setTitle(current.getAbsolutePath())
                 .setPositiveButton("이 폴더 선택", (dialog, which) -> selectDirectory(current))
                 .setNeutralButton("새 폴더", (dialog, which) -> showCreateDirectoryDialog(current))
-                .setNegativeButton("취소", (dialog, which) ->
-                        finishPending(failure("AbortError", "Folder selection was cancelled.")));
+                .setNegativeButton("취소", (dialog, which) -> {
+                    diagnostic("native_folder_browser_cancelled", pendingRequestId, "warn",
+                            details("cancelled", true));
+                    finishPending(failure("AbortError", "Folder selection was cancelled."));
+                });
 
         if (labels.isEmpty()) {
             builder.setMessage("하위 폴더가 없습니다.");
@@ -222,6 +265,8 @@ final class ImagePackFileSystemAccess {
             return;
         }
         selectedRoot = selected;
+        diagnostic("native_folder_selection_saved", pendingRequestId, "info",
+                details("permissionGranted", hasAllFilesAccess(), "writable", selected.canWrite() && hasAllFilesAccess()));
         JSONObject result = new JSONObject();
         try {
             result.put("ok", true);
@@ -248,6 +293,11 @@ final class ImagePackFileSystemAccess {
     }
 
     String listDirectoryJson(String path) {
+        return listDirectoryJson(path, "");
+    }
+
+    String listDirectoryJson(String path, String requestId) {
+        diagnostic("native_directory_list_started", requestId, "info", details("method", "listImagePackDirectory"));
         try {
             ImagePackPathGuard guard = requirePathGuard();
             File directory = guard.resolveDirectory(path);
@@ -268,14 +318,21 @@ final class ImagePackFileSystemAccess {
             JSONObject result = new JSONObject();
             result.put("ok", true);
             result.put("entries", entries);
+            diagnostic("native_directory_list_succeeded", requestId, "info", details("entryCount", entries.length()));
             return result.toString();
         } catch (Exception error) {
+            diagnosticError("native_directory_list_failed", requestId, error);
             return failure(error instanceof SecurityException ? "SecurityError" : "NotFoundError",
                     "The selected image-pack directory could not be listed.").toString();
         }
     }
 
     String readFileJson(String path) {
+        return readFileJson(path, "");
+    }
+
+    String readFileJson(String path, String requestId) {
+        diagnostic("native_file_read_started", requestId, "info", details("method", "readImagePackFile"));
         try {
             File file = requirePathGuard().resolveFile(path);
             if (file.length() > MAX_FILE_BYTES) {
@@ -299,9 +356,11 @@ final class ImagePackFileSystemAccess {
                 result.put("lastModified", file.lastModified());
                 result.put("size", output.size());
                 result.put("data", Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP));
+                diagnostic("native_file_read_succeeded", requestId, "info", details("fileSize", output.size()));
                 return result.toString();
             }
         } catch (Exception error) {
+            diagnosticError("native_file_read_failed", requestId, error);
             return failure(error instanceof SecurityException ? "SecurityError" : "NotFoundError",
                     "The selected image-pack file could not be read.").toString();
         }
@@ -469,15 +528,54 @@ final class ImagePackFileSystemAccess {
         waitingForSettings = false;
         String requestId = pendingRequestId;
         pendingRequestId = null;
-        if (requestId != null) deliver(requestId, result);
+        if (requestId != null) {
+            diagnostic("native_folder_picker_result_ready", requestId,
+                    result.optBoolean("ok") ? "info" : "warn",
+                    details("ok", result.optBoolean("ok"), "errorName", result.optBoolean("ok") ? "" : result.optString("name", "")));
+            deliver(requestId, result);
+        }
     }
 
     private void deliver(String requestId, JSONObject result) {
-        String script = "window.__waywardNativeImagePackPickerResolve&&window.__waywardNativeImagePackPickerResolve("
-                + JSONObject.quote(requestId) + "," + result.toString() + ");";
+        String script = "(function(){"
+                + "if(typeof window.__waywardNativeImagePackPickerDispatch==='function')"
+                + "return window.__waywardNativeImagePackPickerDispatch("
+                + JSONObject.quote(requestId) + "," + result.toString() + ");"
+                + "if(typeof window.__waywardNativeImagePackPickerResolve==='function')"
+                + "return window.__waywardNativeImagePackPickerResolve("
+                + JSONObject.quote(requestId) + "," + result.toString() + ")?1:0;"
+                + "return 0;})()";
         activity.runOnUiThread(() -> {
-            if (webView != null) webView.evaluateJavascript(script, null);
+            if (webView == null || activity.isFinishing()) {
+                diagnostic("native_js_result_delivery_skipped", requestId, "error",
+                        details("webViewAlive", webView != null));
+                return;
+            }
+            webView.evaluateJavascript(script, value -> {
+                int delivered = 0;
+                try { delivered = value == null ? 0 : Integer.parseInt(value.trim()); }
+                catch (Exception ignored) {}
+                diagnostic(delivered > 0 ? "native_js_result_dispatched" : "native_js_result_no_pending_frame",
+                        requestId, delivered > 0 ? "info" : "error",
+                        details("dispatchCount", delivered, "webViewAlive", true));
+            });
         });
+    }
+
+    private void diagnostic(String stage, String requestId, String status, JSONObject details) {
+        ImagePackDiagnostics.event(activity, diagnosticSessionId, requestId, stage, status, details);
+    }
+
+    private void diagnosticError(String stage, String requestId, Throwable error) {
+        ImagePackDiagnostics.error(activity, diagnosticSessionId, requestId, stage, error);
+    }
+
+    private static JSONObject details(Object... values) {
+        JSONObject result = new JSONObject();
+        for (int i = 0; i + 1 < values.length; i += 2) {
+            try { result.put(String.valueOf(values[i]), values[i + 1]); } catch (Exception ignored) {}
+        }
+        return result;
     }
 
     private static JSONObject failure(String name, String message) {

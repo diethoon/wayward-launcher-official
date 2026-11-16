@@ -5,6 +5,8 @@ import android.net.Uri;
 import android.webkit.ValueCallback;
 import android.webkit.WebView;
 
+import org.json.JSONObject;
+
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 
@@ -17,7 +19,8 @@ import java.util.Collections;
 /** Installs the image-pack File System Access adapter for the active game origin. */
 final class ImagePackFolderPickerScript {
     private static final int MAX_SCRIPT_BYTES = 64 * 1024;
-    private static final String INSTALLED_FLAG = "window.__waywardNativeImagePackPickerInstalled===true";
+    private static final String INSTALLED_FLAG =
+            "window.__waywardNativeImagePackPickerInstalled===true&&typeof window.showDirectoryPicker==='function'";
 
     private ImagePackFolderPickerScript() {}
 
@@ -79,14 +82,22 @@ final class ImagePackFolderPickerScript {
             return;
         }
 
-        webView.evaluateJavascript(INSTALLED_FLAG, alreadyInstalled -> {
-            if ("true".equals(alreadyInstalled)) {
-                if (callback != null) callback.onReceiveValue(true);
-                return;
-            }
-            String installAndVerify = source + "\n;(" + INSTALLED_FLAG + ");";
-            webView.evaluateJavascript(installAndVerify,
-                    result -> { if (callback != null) callback.onReceiveValue("true".equals(result)); });
-        });
+        String installScript = "(function(source,expectedOrigin){"
+                    + "var visited=0,installed=0,failed=0;"
+                    + "function visit(frame){"
+                    + "var frameOrigin;"
+                    + "try{frameOrigin=frame.location.origin;}catch(e){return;}"
+                    + "if(frameOrigin!==expectedOrigin)return;"
+                    + "visited++;"
+                    + "try{if(typeof frame.showDirectoryPicker!=='function')frame.eval(source);"
+                    + "if(typeof frame.showDirectoryPicker==='function')installed++;else failed++;}"
+                    + "catch(e){failed++;}"
+                    + "try{for(var i=0;i<frame.frames.length;i++)visit(frame.frames[i]);}catch(e){}"
+                    + "}"
+                    + "visit(window);"
+                    + "return visited>0&&installed===visited&&failed===0;"
+                    + "})(" + JSONObject.quote(source) + "," + JSONObject.quote(expectedOrigin) + ");";
+        webView.evaluateJavascript(installScript,
+                result -> { if (callback != null) callback.onReceiveValue("true".equals(result)); });
     }
 }

@@ -10,6 +10,12 @@ const pathGuard = readFileSync(new URL("../app/src/main/java/com/wayward/launche
 const atomicWriter = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackAtomicFileWriter.java", import.meta.url), "utf8");
 const manifest = readFileSync(new URL("../app/src/main/AndroidManifest.xml", import.meta.url), "utf8");
 const smoke = readFileSync(new URL("../scripts/android15-emulator-smoke.py", import.meta.url), "utf8");
+const helper = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackFolderPickerScript.java", import.meta.url), "utf8");
+const imageDiagnostics = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackDiagnostics.java", import.meta.url), "utf8");
+const exporter = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/DiagnosticsBundleExporter.java", import.meta.url), "utf8");
+const diagnosticPaths = readFileSync(new URL("../app/src/main/res/xml/diagnostics_file_paths.xml", import.meta.url), "utf8");
+const legacyBackup = readFileSync(new URL("../app/src/main/res/xml/backup_rules.xml", import.meta.url), "utf8");
+const extractionBackup = readFileSync(new URL("../app/src/main/res/xml/data_extraction_rules.xml", import.meta.url), "utf8");
 
 assert.match(picker, /onShowFileChooser\s*\(/, "WebView file chooser callback must be implemented");
 assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT/, "ordinary files and ZIPs must keep ACTION_OPEN_DOCUMENT");
@@ -21,19 +27,48 @@ assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT/, "ordinary files and ZIPs mu
 
 assert.match(bridge, /window\.showDirectoryPicker\s*=/, "the Image Studio directory API must be intercepted at document start");
 assert.match(bridge, /host\.chooseImagePackFolder\(id\)/, "the folder action must call the native launcher bridge directly");
+assert.match(bridge, /show_directory_picker_called/, "the actual showDirectoryPicker call must be journaled");
+assert.match(bridge, /wmlhost_choose_folder_call_start/, "the JS-to-native bridge call must be journaled");
+assert.match(bridge, /setTimeout\([\s\S]*?120000/, "a lost native callback must not leave the game Promise pending forever");
+assert.match(bridge, /__waywardNativeImagePackPickerDispatch/, "native results must be dispatched to the calling same-origin frame");
+assert.match(bridge, /listImagePackDirectoryForRequest/, "directory enumeration must retain its originating request ID");
+assert.match(bridge, /readImagePackFileForRequest/, "file reads must retain their originating request ID");
+assert.ok(bridge.indexOf('Object.defineProperty(window, "showDirectoryPicker"') <
+          bridge.indexOf("window.__waywardNativeImagePackPickerInstalled = true;"),
+          "the installed flag must only be set after the picker function is installed");
 assert.match(bridge, /listImagePackDirectory/, "directory children must use the existing native bridge contract");
 assert.match(bridge, /readImagePackFile/, "selected image files must remain readable through the existing bridge");
 assert.match(bridge, /writeImagePackFile/, "selected image files must remain writable through the existing bridge");
 assert.match(bridge, /createImagePackDirectory/, "the directory API must retain folder creation support");
 assert.match(bridge, /deleteImagePackEntry/, "the directory API must retain entry deletion support");
 
+assert.match(helper, /typeof frame\.showDirectoryPicker==='function'/, "runtime verification must check the real API function, not only a marker");
+assert.match(helper, /frame\.eval\(source\)/, "runtime fallback must reach same-origin child frames");
 assert.match(access, /Build\.VERSION\.SDK_INT >= Build\.VERSION_CODES\.R/, "Android 11+ must use the filesystem backend");
 assert.match(access, /new ImagePackFileSystemAccess\(activity, webView, safeProfile\)/, "filesystem access must remain scoped to the active user profile");
 assert.match(access, /Intent\.ACTION_OPEN_DOCUMENT_TREE/, "Android 10 must keep the existing SAF tree picker");
 assert.match(access, /takePersistableUriPermission\(selected, grants\)/, "Android 10 must retain persisted SAF permissions");
 assert.match(access, /DEFAULT_INITIAL_DOCUMENT_ID = "primary:Download"/, "the Android 10 SAF picker must start in Download");
 
+assert.match(legacyBackup, /exclude domain="sharedpref" path="wayward_launcher.xml"/,
+  "legacy cloud backup must exclude the profile and game-session preferences file");
+assert.match(legacyBackup, /exclude domain="file" path="diagnostics\\//,
+  "legacy cloud backup must exclude local diagnostic journals");
+assert.match(extractionBackup, /<cloud-backup>[\\s\\S]*?exclude domain="sharedpref" path="wayward_launcher.xml"/,
+  "Android cloud backup must exclude game registrations");
+assert.match(extractionBackup, /<device-transfer>[\\s\\S]*?exclude domain="sharedpref" path="wayward_launcher.xml"/,
+  "Android device-to-device transfer must exclude game registrations");
+assert.equal((extractionBackup.match(/exclude domain="file" path="diagnostics\\//g) || []).length, 2,
+  "both cloud backup and device transfer must exclude picker diagnostics");
 assert.match(manifest, /android\.permission\.MANAGE_EXTERNAL_STORAGE/, "the app must declare all-files access");
+assert.match(manifest, /androidx\.core\.content\.FileProvider/, "diagnostic ZIP sharing must use a non-exported FileProvider");
+assert.match(diagnosticPaths, /cache-path name="diagnostics" path="diagnostics\//, "the FileProvider must expose only the diagnostics cache directory");
+assert.match(imageDiagnostics, /imagepack\.ndjson/, "image-pack diagnostics must be stored separately from auto-uploaded launcher logs");
+assert.match(imageDiagnostics, /output\.getFD\(\)\.sync\(\)/, "image-pack diagnostic events must be synced to durable storage");
+assert.match(imageDiagnostics, /requestId/, "diagnostic events must carry a common request ID");
+assert.match(exporter, /application\/zip/, "the collected diagnostic archive must be shared as a ZIP");
+assert.match(exporter, /Intent\.ACTION_SEND/, "the ZIP must be shared through Android's native share sheet");
+assert.match(exporter, /lastFailureStage/, "the exported metadata must report the last failure stage");
 assert.match(filesystem, /Environment\.isExternalStorageManager\(\)/, "the filesystem backend must verify all-files access");
 assert.match(filesystem, /Settings\.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION/, "missing permission must open the app-specific all-files settings");
 assert.match(filesystem, /Settings\.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION/, "the global all-files settings must be a fallback");
@@ -60,7 +95,11 @@ assert.match(filesystem, /target\.delete\(\)/, "entries must be deleted through 
 assert.doesNotMatch(filesystem, /Wayward_Faith|image-packs/, "no fixed image-pack folder name may be forced");
 assert.doesNotMatch(filesystem, /ACTION_OPEN_DOCUMENT_TREE/, "Android 11+ custom browsing must not invoke the system SAF picker");
 
-assert.match(main, /new ImagePackDirectoryAccess\(this,web,activeProfileId\)/, "the production game WebView must own the native image-pack bridge");
+assert.match(main, /new ImagePackDirectoryAccess\(this,web,activeProfileId,imagePackDiagnosticSessionId\)/, "the production game WebView must own the request-correlated native image-pack bridge");
+assert.match(main, /recordImagePackDiagnostic\(String requestId/, "JavaScript diagnostics must enter the durable journal through WMLHost");
+assert.match(main, /diagnostics=compactButton\("진단"/, "the launcher home screen must expose the diagnostics share action");
+assert.match(main, /DiagnosticsBundleExporter\.share\(this\)/, "the diagnostics button must open the Android share flow");
+assert.match(access, /__waywardNativeImagePackPickerDispatch/, "native completion must resolve the original frame instead of main-frame-only delivery");
 assert.match(main, /imagePackDirectoryAccess\.onResume\(\)/, "the production activity must recheck all-files permission on resume");
 assert.doesNotMatch(main, /FLAG_ACTIVITY_NEW_DOCUMENT/, "game sessions must remain in the existing launcher task");
 assert.match(main, /route\.addFlags\(Intent\.FLAG_ACTIVITY_REORDER_TO_FRONT\)/, "an existing game session must be reordered in its task without creating a document task");
@@ -80,6 +119,9 @@ assert.match(smoke, /appops", "set", "--uid", PACKAGE, "MANAGE_EXTERNAL_STORAGE"
 assert.match(smoke, /run_native_folder_acceptance\(\)/, "the Android 15 smoke test must exercise the custom folder browser");
 assert.match(smoke, /run_main_activity_game_session_acceptance\(\)/, "Android 15 must exercise image-pack selection in the real MainActivity game session");
 assert.match(smoke, /PASS_GAME_SESSION_DIRECTORY_HANDLE/, "the game session must verify the JavaScript directory handle and image read");
+assert.match(smoke, /picker-frame\.html/, "the integration test must invoke the folder picker from a same-origin iframe");
+assert.match(smoke, /ChooserActivity|ResolverActivity/, "Android 15 smoke must verify the diagnostic ZIP share sheet opens");
+assert.match(smoke, /wayward-diagnostics-/, "Android 15 smoke must verify a diagnostic ZIP was generated");
 assert.match(smoke, /PASS_SINGLE_FILE/, "the game session must regression-test ordinary file selection");
 assert.match(smoke, /PASS_ZIP_MULTI_FILES/, "the game session must regression-test ZIP multi-selection");
 assert.match(smoke, /dumpsys", "activity", "recents"/, "the Android 15 test must inspect the actual Recent Apps task list");

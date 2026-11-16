@@ -119,6 +119,7 @@ public final class MainActivity extends Activity {
     private WebView web;
     private WebFileChooser webFileChooser;
     private ImagePackDirectoryAccess imagePackDirectoryAccess;
+    private String imagePackDiagnosticSessionId = "";
     private String imagePackFolderPickerScript;
     private String imagePackFolderPickerOrigin = "";
     private Button pairingButton;
@@ -225,6 +226,20 @@ public final class MainActivity extends Activity {
         GlassButtonStyle.bind(this,b,false,10f);
         b.setOnClickListener(v->action.run());return b;
     }
+    private void shareDiagnosticsZip(){
+        ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "", "diagnostics_share_button_tapped",
+                "info", null);
+        try {
+            DiagnosticsBundleExporter.share(this);
+            ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "", "diagnostics_share_chooser_opened",
+                    "info", null);
+        } catch (Exception error) {
+            ImagePackDiagnostics.error(this, imagePackDiagnosticSessionId, "",
+                    "diagnostics_share_failed", error);
+            Toast.makeText(this, "진단 ZIP 수집 실패: " + msg(error), Toast.LENGTH_LONG).show();
+        }
+    }
+
     private void showHome(){
         root=new FrameLayout(this);root.setBackgroundColor(Color.rgb(246,247,248));
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setVerticalScrollBarEnabled(false);
@@ -246,6 +261,9 @@ public final class MainActivity extends Activity {
         pairingButton=compactButton("페어링",false,this::openRemotePairing);
         LinearLayout.LayoutParams pairingParams=new LinearLayout.LayoutParams(dp(76),dp(38));
         pairingParams.leftMargin=dp(4);top.addView(pairingButton,pairingParams);
+        Button diagnostics=compactButton("진단",false,this::shareDiagnosticsZip);
+        LinearLayout.LayoutParams diagnosticsParams=new LinearLayout.LayoutParams(dp(48),dp(38));
+        diagnosticsParams.leftMargin=dp(4);top.addView(diagnostics,diagnosticsParams);
         LinearLayout.LayoutParams topParams=new LinearLayout.LayoutParams(-1,-2);topParams.bottomMargin=dp(3);
         page.addView(top,topParams);
         TextView subtitle=uiText("GAME LAUNCHER  ·  여러 게임을 독립 세션으로 실행",11,Color.rgb(111,118,125),false);
@@ -947,6 +965,9 @@ public final class MainActivity extends Activity {
         try{
             if(web!=null)destroyWeb();
             activeProfileId=p.id;treeUri=Uri.parse(p.uri);tree=new SafTree(treeUri);
+            imagePackDiagnosticSessionId=ImagePackDiagnostics.newSessionId();
+            ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "", "game_session_start",
+                    "info", ImagePackDiagnostics.pageDetails(sessionOrigin(activeProfileId), true));
             String file=gameFile();if(file==null){DiagnosticsLogger.event(this,"ERROR","launcher","game_html_not_found",null);status("선택한 폴더에서 Wayward HTML을 찾지 못했습니다: "+p.label);return;}
             setTitle("Wayward · "+p.label);
             RUNNING_SESSIONS.add(p.id);
@@ -1085,7 +1106,12 @@ public final class MainActivity extends Activity {
         String domain=sessionDomain(activeProfileId);
         String origin=sessionOrigin(activeProfileId);
         int originPort=sessionPort(activeProfileId);
-        web=new WebView(this);WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setDatabaseEnabled(true);s.setUseWideViewPort(true);s.setLoadWithOverviewMode(true);s.setTextZoom(100);s.setSupportZoom(true);s.setBuiltInZoomControls(false);s.setDisplayZoomControls(false);s.setAllowFileAccess(false);s.setAllowContentAccess(false);s.setCacheMode(WebSettings.LOAD_DEFAULT);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);imagePackDirectoryAccess=new ImagePackDirectoryAccess(this,web,activeProfileId);web.addJavascriptInterface(new HostBridge(),"WMLHost");
+        web=new WebView(this);WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setDatabaseEnabled(true);s.setUseWideViewPort(true);s.setLoadWithOverviewMode(true);s.setTextZoom(100);s.setSupportZoom(true);s.setBuiltInZoomControls(false);s.setDisplayZoomControls(false);s.setAllowFileAccess(false);s.setAllowContentAccess(false);s.setCacheMode(WebSettings.LOAD_DEFAULT);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);imagePackDirectoryAccess=new ImagePackDirectoryAccess(this,web,activeProfileId,imagePackDiagnosticSessionId);
+        ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "", "webview_created", "info",
+                new JSONObject());
+        web.addJavascriptInterface(new HostBridge(),"WMLHost");
+        ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "", "javascript_interface_registered",
+                "info", null);
         installGoogleAuthBridgeScript(origin);
         installImageGenDocumentStartScript(origin);
         FolderHandler folderHandler=new FolderHandler(tree,getAssets(),zipMods,origin);
@@ -1095,17 +1121,32 @@ public final class MainActivity extends Activity {
         web.setWebViewClient(new WebViewClient(){
             @Override public void onPageStarted(WebView view,String url,android.graphics.Bitmap favicon){
                 DiagnosticsLogger.event(MainActivity.this,"INFO","webview","page_started",null);
+                ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, "",
+                        "webview_page_started", "info", ImagePackDiagnostics.pageDetails(url, true));
                 super.onPageStarted(view,url,favicon);
             }
             @Override public void onPageFinished(WebView view,String url){
                 DiagnosticsLogger.event(MainActivity.this,"INFO","webview","page_finished",null);
+                ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, "",
+                        "webview_page_finished", "info", ImagePackDiagnostics.pageDetails(url, true));
                 if(imagePackFolderPickerScript!=null
                         &&ImagePackFolderPickerScript.isSameOrigin(url,imagePackFolderPickerOrigin)){
                     ImagePackFolderPickerScript.installAfterPageFinished(
                             view,url,imagePackFolderPickerOrigin,imagePackFolderPickerScript,installed->{
+                                JSONObject details = new JSONObject();
+                                try {
+                                    details.put("installed", installed);
+                                    details.put("origin", ImagePackDiagnostics.pageDetails(url, true).optString("origin"));
+                                } catch (Exception ignored) {}
+                                ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, "",
+                                        installed ? "folder_picker_runtime_install_verified" : "folder_picker_runtime_install_failed",
+                                        installed ? "info" : "error", details);
                                 if(!installed)DiagnosticsLogger.event(MainActivity.this,"ERROR","image-pack",
                                         "folder_picker_runtime_install_failed",null);
                             });
+                } else {
+                    ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, "",
+                            "folder_picker_page_origin_skipped", "warn", ImagePackDiagnostics.pageDetails(url, true));
                 }
                 super.onPageFinished(view,url);
             }
@@ -1127,6 +1168,9 @@ public final class MainActivity extends Activity {
                     JSONObject details=new JSONObject();
                     try{details.put("code",error==null?0:error.getErrorCode());}catch(Exception ignored){}
                     DiagnosticsLogger.event(MainActivity.this,"ERROR","webview","main_frame_load_error",details);
+                    ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, "",
+                            "webview_main_frame_load_failed", "error",
+                            ImagePackDiagnostics.pageDetails(request.getUrl().toString(), true));
                 }
                 super.onReceivedError(view,request,error);
             }
@@ -1466,21 +1510,30 @@ public final class MainActivity extends Activity {
             imagePackFolderPickerScript = ImagePackFolderPickerScript.read(this);
             imagePackFolderPickerOrigin = origin;
             boolean registered = false;
+            ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "",
+                    "folder_picker_script_loaded", "info",
+                    ImagePackDiagnostics.details("scriptBytes", imagePackFolderPickerScript.length(),
+                            "documentStartSupported", documentStartSupported));
             try {
                 registered = ImagePackFolderPickerScript.installDocumentStart(
                         web, imagePackFolderPickerScript, origin);
             } catch (RuntimeException registrationError) {
                 DiagnosticsLogger.error(this, "image-pack", "folder_picker_document_start", registrationError);
             }
+            ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "",
+                    registered ? "folder_picker_document_start_registered" : "folder_picker_runtime_fallback_enabled",
+                    "info", ImagePackDiagnostics.details("registered", registered,
+                            "documentStartSupported", documentStartSupported, "origin", origin));
             if (registered) {
                 DiagnosticsLogger.event(this, "INFO", "image-pack", "folder_picker_document_start_registered", null);
             } else {
-                // The same adapter is installed after the matching game page finishes loading.
-                // Returning a SAF tree URI through ValueCallback<Uri[]> does not create a JS directory handle.
+                // The adapter is installed after page load when document-start injection is unavailable.
                 DiagnosticsLogger.event(this, "INFO", "image-pack", "folder_picker_runtime_fallback_enabled", null);
             }
         } catch (Exception error) {
             imagePackFolderPickerScript = null;
+            ImagePackDiagnostics.error(this, imagePackDiagnosticSessionId, "",
+                    "folder_picker_script_load_failed", error);
             DiagnosticsLogger.error(this, "image-pack", "folder_picker_script_install", error);
         }
 
@@ -2115,8 +2168,22 @@ public final class MainActivity extends Activity {
     private String msg(Throwable e){return e==null||e.getMessage()==null?"알 수 없는 오류":e.getMessage();}
     private final class HostBridge{
         @JavascriptInterface public String version(){return "1.0.0";}
+        @JavascriptInterface public void recordImagePackDiagnostic(String requestId, String stage, String detailsJson){
+            ImagePackDiagnostics.javascriptEvent(MainActivity.this, imagePackDiagnosticSessionId,
+                    requestId, stage, detailsJson);
+        }
         @JavascriptInterface public void chooseImagePackFolder(String requestId){
+            ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, requestId,
+                    "wmlhost_choose_folder_entered", "info", null);
             if(imagePackDirectoryAccess!=null)imagePackDirectoryAccess.openFolderPicker(requestId);
+            else ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, requestId,
+                    "wmlhost_directory_access_missing", "error", null);
+        }
+        @JavascriptInterface public String listImagePackDirectoryForRequest(String path, String requestId){
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.listDirectoryJson(path,requestId);
+        }
+        @JavascriptInterface public String readImagePackFileForRequest(String path, String requestId){
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.readFileJson(path,requestId);
         }
         @JavascriptInterface public String listImagePackDirectory(String path){
             return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.listDirectoryJson(path);

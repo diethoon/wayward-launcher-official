@@ -1,10 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
     <cloud-backup>
+        <!-- This shared preference file contains registered game folders and session state. -->
+        <exclude domain="sharedpref" path="wayward_launcher.xml" />
+        <exclude domain="file" path="diagnostics/" />
         <exclude domain="file" path="image-providers.enc" />
         <exclude domain="file" path="image-providers.enc.tmp" />
     </cloud-backup>
     <device-transfer>
+        <!-- Apply the same exclusions to phone-to-phone migration. -->
+        <exclude domain="sharedpref" path="wayward_launcher.xml" />
+        <exclude domain="file" path="diagnostics/" />
         <exclude domain="file" path="image-providers.enc" />
         <exclude domain="file" path="image-providers.enc.tmp" />
     </device-transfer>

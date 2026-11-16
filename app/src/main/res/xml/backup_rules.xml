@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
+    <!-- The launcher stores game registrations and other private settings together in this file. -->
+    <exclude domain="sharedpref" path="wayward_launcher.xml" />
+    <!-- Picker diagnostics must only leave the device when the user explicitly shares a ZIP. -->
+    <exclude domain="file" path="diagnostics/" />
     <exclude domain="file" path="image-providers.enc" />
     <exclude domain="file" path="image-providers.enc.tmp" />
 </full-backup-content>

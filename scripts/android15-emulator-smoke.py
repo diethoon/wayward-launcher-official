@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import pathlib
+import json
 import re
 import shutil
 import struct
@@ -25,6 +26,7 @@ LOCAL_XML = pathlib.Path("/tmp/wayward-launcher-home.xml")
 LOCAL_PID = pathlib.Path("/tmp/wayward-launcher-app-pid.txt")
 LOCAL_CRASH = pathlib.Path("/tmp/wayward-launcher-crash.log")
 FIXTURE_FOLDER = "/sdcard/Download"
+GAME_FOLDER = "/sdcard/Download/WaywardGameTest"
 
 
 def run(command: list[str], *, check: bool = True, capture: bool = False) -> subprocess.CompletedProcess:
@@ -60,7 +62,8 @@ def dump_ui(local_path: pathlib.Path, device_path: str) -> str:
     return local_path.read_text(encoding="utf-8", errors="replace")
 
 
-def node_bounds(xml: str, labels: tuple[str, ...], *, require_clickable: bool = True) -> tuple[int, int, int, int] | None:
+def node_bounds(xml: str, labels: tuple[str, ...], *, require_clickable: bool = True,
+                require_enabled: bool = False) -> tuple[int, int, int, int] | None:
     try:
         root = ET.fromstring(xml)
     except ET.ParseError:
@@ -71,6 +74,8 @@ def node_bounds(xml: str, labels: tuple[str, ...], *, require_clickable: bool = 
         clickable = node.attrib.get("clickable", "false") == "true"
         resource_id = node.attrib.get("resource-id", "")
         if require_clickable and not clickable:
+            continue
+        if require_enabled and node.attrib.get("enabled", "true") != "true":
             continue
         matches_label = any(label.casefold() in (text + " " + description).casefold() for label in labels)
         is_confirmation_button = resource_id == "android:id/button1" and any(
@@ -96,7 +101,7 @@ def node_bounds_exact(xml: str, labels: tuple[str, ...]) -> tuple[int, int, int,
         return None
     wanted = {label.casefold() for label in labels}
     for node in root.iter("node"):
-        if node.attrib.get("clickable", "false") != "true":
+        if node.attrib.get("clickable", "false") != "true" or node.attrib.get("enabled", "true") != "true":
             continue
         text = node.attrib.get("text", "").strip().casefold()
         description = node.attrib.get("content-desc", "").strip().casefold()
@@ -141,7 +146,7 @@ def wait_for_ui_contains(local_path: pathlib.Path, device_path: str, marker: str
 
 
 def choose_download_as_game_folder(local_path: pathlib.Path, device_path: str) -> str:
-    """Drive the real MainActivity game-folder SAF picker and select Download."""
+    """Drive the real MainActivity game-folder SAF picker and select a child of Download."""
     home_xml = dump_ui(local_path, device_path)
     add_button = node_bounds(home_xml, ("현재 기기 폴더", "Add device folder"))
     if add_button is None:
@@ -149,12 +154,23 @@ def choose_download_as_game_folder(local_path: pathlib.Path, device_path: str) -
     tap_bounds(add_button)
 
     download_selected = False
+    game_folder_opened = False
     latest = ""
     for _ in range(50):
         latest = dump_ui(local_path, device_path)
 
-        if download_selected:
-            use_folder = node_bounds(latest, ("이 폴더 사용", "Use this folder", "Use folder"))
+        if download_selected and not game_folder_opened:
+            child_folder = node_bounds(latest, ("WaywardGameTest",), require_clickable=False)
+            if child_folder is not None:
+                tap_bounds(child_folder)
+                game_folder_opened = True
+                time.sleep(2)
+                continue
+
+        if game_folder_opened:
+            use_folder = node_bounds(
+                latest, ("이 폴더 사용", "Use this folder", "Use folder"), require_enabled=True
+            )
             if use_folder is not None:
                 tap_bounds(use_folder)
                 break
@@ -177,7 +193,7 @@ def choose_download_as_game_folder(local_path: pathlib.Path, device_path: str) -
         time.sleep(1)
     else:
         (ARTIFACTS / "android15-game-tree-picker.xml").write_text(latest, encoding="utf-8")
-        raise RuntimeError("DocumentsUI did not allow the real launcher to select Download.")
+        raise RuntimeError("DocumentsUI did not allow the real launcher to select Download/WaywardGameTest.")
 
     # Android may ask for a second explicit grant after the tree button is pressed.
     time.sleep(1)
@@ -287,6 +303,8 @@ def run_main_activity_game_session_acceptance() -> None:
 <body>
 <h1>WAYWARD MAIN ACTIVITY GAME SESSION</h1>
 <button id="pick">Open image-pack folder</button>
+<iframe id="picker-frame" src="picker-frame.html" title="Image-pack folder picker frame"
+        style="width:1px;height:1px;border:0"></iframe>
 <button id="single-button">Pick ordinary PNG file</button>
 <input id="single-input" type="file" accept=".png,image/png" hidden>
 <button id="zip-button">Pick multiple ZIP files</button>
@@ -296,23 +314,12 @@ def run_main_activity_game_session_acceptance() -> None:
 <script>
 document.getElementById('pick').addEventListener('click', async () => {
   try {
-    const directory = await window.showDirectoryPicker({mode: 'read'});
-    if (!directory || directory.kind !== 'directory' ||
-        typeof directory.getFileHandle !== 'function' ||
-        typeof directory.entries !== 'function') {
-      throw new Error('The folder API did not return a directory handle');
+    const frame = document.getElementById('picker-frame');
+    if (!frame || !frame.contentWindow ||
+        typeof frame.contentWindow.pickImagePackFolder !== 'function') {
+      throw new Error('The same-origin picker iframe did not load');
     }
-    const names = [];
-    for await (const [name, handle] of directory.entries()) names.push(name);
-    if (!names.includes('pixel.png')) throw new Error('pixel.png missing from directory handle listing');
-    const handle = await directory.getFileHandle('pixel.png');
-    const file = await handle.getFile();
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const signature = Array.from(bytes.slice(0, 8)).join(',');
-    if (signature !== '137,80,78,71,13,10,26,10') throw new Error('PNG read failed');
-    document.getElementById('result').textContent =
-      'PASS_GAME_SESSION_DIRECTORY_HANDLE name=' + directory.name +
-      ' listed=' + names.length + ' bytes=' + bytes.length;
+    await frame.contentWindow.pickImagePackFolder();
   } catch (error) {
     document.getElementById('result').textContent =
       'FAIL_GAME_SESSION_DIRECTORY_HANDLE ' + String(error && error.name) +
@@ -339,15 +346,51 @@ document.getElementById('zip-input').addEventListener('change', event => {
 </body></html>"""
     second_page = """<!doctype html><html><body><h1>SECOND_SESSION_PAGE</h1>
 <p>Back must return to the first game page, not the launcher.</p></body></html>"""
+    picker_page = """<!doctype html><html><body><script>
+window.pickImagePackFolder = async function() {
+  const report = parent.document.getElementById('result');
+  try {
+    const directory = await window.showDirectoryPicker({mode: 'read'});
+    if (!directory || directory.kind !== 'directory' ||
+        typeof directory.getFileHandle !== 'function' ||
+        typeof directory.entries !== 'function') {
+      throw new Error('The folder API did not return a directory handle');
+    }
+    const names = [];
+    for await (const [name, handle] of directory.entries()) names.push(name);
+    if (!names.includes('pixel.png')) throw new Error('pixel.png missing from directory handle listing');
+    const handle = await directory.getFileHandle('pixel.png');
+    const file = await handle.getFile();
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const signature = Array.from(bytes.slice(0, 8)).join(',');
+    if (signature !== '137,80,78,71,13,10,26,10') throw new Error('PNG read failed');
+    report.textContent = 'PASS_GAME_SESSION_DIRECTORY_HANDLE listed=' +
+      names.length + ' bytes=' + bytes.length + ' frame=iframe';
+  } catch (error) {
+    report.textContent = 'FAIL_GAME_SESSION_DIRECTORY_HANDLE ' +
+      String(error && error.name) + ': ' + String(error && error.message);
+    throw error;
+  }
+};
+</script></body></html>"""
     (fixture_dir / "Wayward_WML_ko.html").write_text(game_page, encoding="utf-8")
     (fixture_dir / "session-second.html").write_text(second_page, encoding="utf-8")
+    (fixture_dir / "picker-frame.html").write_text(picker_page, encoding="utf-8")
     for archive_name in ("test-one.zip", "test-two.zip"):
         with zipfile.ZipFile(fixture_dir / archive_name, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("fixture.txt", archive_name)
+    pixel_fixture = fixture_dir / "pixel.png"
+    pixel_fixture.write_bytes(make_png())
 
     adb("shell", "mkdir", "-p", FIXTURE_FOLDER)
-    adb("push", str(fixture_dir / "Wayward_WML_ko.html"), FIXTURE_FOLDER + "/Wayward_WML_ko.html")
-    adb("push", str(fixture_dir / "session-second.html"), FIXTURE_FOLDER + "/session-second.html")
+    adb("push", str(pixel_fixture), FIXTURE_FOLDER + "/pixel.png")
+    for archive_name in ("test-one.zip", "test-two.zip"):
+        adb("push", str(fixture_dir / archive_name), FIXTURE_FOLDER + "/" + archive_name)
+
+    adb("shell", "mkdir", "-p", GAME_FOLDER)
+    adb("push", str(fixture_dir / "Wayward_WML_ko.html"), GAME_FOLDER + "/Wayward_WML_ko.html")
+    adb("push", str(fixture_dir / "session-second.html"), GAME_FOLDER + "/session-second.html")
+    adb("push", str(fixture_dir / "picker-frame.html"), GAME_FOLDER + "/picker-frame.html")
     adb("shell", "appops", "set", "--uid", PACKAGE, "MANAGE_EXTERNAL_STORAGE", "allow")
     adb("logcat", "-c")
 
@@ -401,6 +444,8 @@ document.getElementById('zip-input').addEventListener('change', event => {
     )
     if "FAIL_GAME_SESSION_DIRECTORY_HANDLE" in game_xml:
         raise RuntimeError("The actual game session could not receive or read the JS directory handle.")
+    if "frame=iframe" not in game_xml:
+        raise RuntimeError("The folder picker did not execute and resolve inside the same-origin iframe.")
     print("PASS: actual MainActivity game WebView received a JS directory handle, enumerated Download, and read pixel.png.")
 
     single_button = node_bounds(game_xml, ("Pick ordinary PNG file",))
@@ -457,6 +502,50 @@ document.getElementById('zip-input').addEventListener('change', event => {
         )
     (ARTIFACTS / "android15-recents-after-game-back.txt").write_text(recent, encoding="utf-8")
     print("PASS: first BACK navigated the WebView; root BACK returned to the launcher; Recents contains one launcher task.")
+
+    diagnostics_button = node_bounds(home_xml, ("진단",))
+    if diagnostics_button is None:
+        raise RuntimeError("The launcher home screen did not expose the diagnostics share button.")
+    tap_bounds(diagnostics_button)
+    time.sleep(2)
+    chooser_state = adb("shell", "dumpsys", "activity", "activities", check=False, capture=True).stdout or ""
+    zip_listing = adb("shell", "run-as", PACKAGE, "ls", "-1", "cache/diagnostics",
+                      check=False, capture=True)
+    (ARTIFACTS / "android15-diagnostics-share-chooser.txt").write_text(
+        chooser_state + "\\n\\n" + (zip_listing.stdout or zip_listing.stderr or ""), encoding="utf-8"
+    )
+    if "ChooserActivity" not in chooser_state and "ResolverActivity" not in chooser_state:
+        raise RuntimeError("The Android native sharesheet did not open after tapping diagnostics.")
+    zip_names = re.findall(r"wayward-diagnostics-[0-9-]+\.zip", zip_listing.stdout or "")
+    if zip_listing.returncode != 0 or not zip_names:
+        raise RuntimeError("The diagnostics button did not produce a readable ZIP in app cache.")
+    exported_zip = ARTIFACTS / "android15-diagnostics-export.zip"
+    with exported_zip.open("wb") as output:
+        subprocess.run(
+            ["adb", "exec-out", "run-as", PACKAGE, "cat", "cache/diagnostics/" + zip_names[-1]],
+            check=True, stdout=output
+        )
+    with zipfile.ZipFile(exported_zip, "r") as archive:
+        names = set(archive.namelist())
+        if "metadata.json" not in names or "imagepack.ndjson" not in names:
+            raise RuntimeError("The shared ZIP is missing metadata or request-correlated image-pack logs.")
+        metadata = json.loads(archive.read("metadata.json").decode("utf-8"))
+        if not metadata.get("appVersion") or not metadata.get("androidSdk"):
+            raise RuntimeError("The shared ZIP metadata is missing the app or Android build information.")
+        events = [json.loads(line) for line in archive.read("imagepack.ndjson").decode("utf-8").splitlines() if line.strip()]
+        if not events or not any(item.get("requestId") for item in events):
+            raise RuntimeError("The ZIP has no correlated folder-picker request diagnostics.")
+    print("PASS: diagnostic ZIP created, metadata and correlated events verified, Android sharesheet opened.")
+
+    adb("shell", "input", "keyevent", "4")
+    adb("shell", "am", "force-stop", PACKAGE)
+    adb("shell", "am", "start", "-W", "-n", ACTIVITY)
+    wait_for_ui_contains(picker_local, picker_device, "내 게임", timeout_seconds=25)
+    journal = adb("shell", "run-as", PACKAGE, "ls", "-l", "files/diagnostics",
+                  check=False, capture=True)
+    if journal.returncode != 0 or "imagepack.ndjson" not in (journal.stdout or ""):
+        raise RuntimeError("Image-pack diagnostic journal did not survive app restart.")
+    print("PASS: image-pack diagnostic journal survived game exit and app restart.")
 
 
 def run_native_folder_acceptance() -> None:
@@ -625,6 +714,7 @@ def main() -> int:
         "PC 폴더",
         "현재 기기 폴더",
         "페어링",
+        "진단",
         "원격 PC 파일매니저",
     )
     missing = [label for label in expected_labels if label not in xml]
