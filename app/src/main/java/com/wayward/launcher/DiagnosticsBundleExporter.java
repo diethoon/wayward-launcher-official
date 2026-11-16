@@ -85,7 +85,9 @@ final class DiagnosticsBundleExporter {
         meta.put("package", activity.getPackageName());
         meta.put("appVersion", info.versionName == null ? "unknown" : info.versionName);
         meta.put("versionCode", versionCode);
-        meta.put("buildType", BuildConfig.DEBUG ? "debug" : "release");
+        meta.put("buildType",
+                (activity.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+                        ? "debug" : "release");
         meta.put("androidRelease", Build.VERSION.RELEASE == null ? "unknown" : Build.VERSION.RELEASE);
         meta.put("androidSdk", Build.VERSION.SDK_INT);
         meta.put("exportedAt", now);
