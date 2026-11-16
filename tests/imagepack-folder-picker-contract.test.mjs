@@ -22,6 +22,10 @@ assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT/, "ordinary files and ZIPs mu
 assert.match(picker, /web_file_chooser_called/, "HTML file-input calls must be correlated in the durable diagnostic journal");
 assert.match(picker, /web_file_chooser_activity_result/, "Android file-picker Activity results must be journaled");
 assert.match(picker, /web_file_chooser_callback_delivered/, "WebView file callback delivery or cancellation must be journaled");
+assert.match(picker, /WebFileChooser\(Activity activity, String sessionId\)/, "file-input diagnostics must share the active game-session ID");
+assert.match(main, /new WebFileChooser\(this,imagePackDiagnosticSessionId\)/, "the active session must flow into the ordinary file chooser");
+assert.match(smoke, /Pick pack\.json file/, "the real game pack JSON file-input path must be exercised");
+assert.match(smoke, /application\/json/, "the file-input acceptance test must use the MIME type selected by the actual game");
 assert.match(picker, /CATEGORY_OPENABLE/, "ordinary file picker must remain OPENABLE");
 assert.match(picker, /Intent\.EXTRA_ALLOW_MULTIPLE/, "ZIP multi-select must remain supported");
 assert.match(picker, /getClipData\(\)/, "ZIP selections must preserve ClipData support");
@@ -73,6 +77,8 @@ assert.match(diagnosticPaths, /cache-path name="diagnostics" path="diagnostics\/
 assert.match(imageDiagnostics, /imagepack\.ndjson/, "image-pack diagnostics must be stored separately from auto-uploaded launcher logs");
 assert.match(imageDiagnostics, /output\.getFD\(\)\.sync\(\)/, "image-pack diagnostic events must be synced to durable storage");
 assert.match(imageDiagnostics, /requestId/, "diagnostic events must carry a common request ID");
+assert.match(imageDiagnostics, /"acceptTypes"/, "file chooser MIME requests must be safely retained in diagnostics");
+assert.match(imageDiagnostics, /"selectedCount"/, "file chooser result counts must be safely retained in diagnostics");
 assert.match(exporter, /application\/zip/, "the collected diagnostic archive must be shared as a ZIP");
 assert.match(exporter, /Intent\.ACTION_SEND/, "the ZIP must be shared through Android's native share sheet");
 assert.match(exporter, /lastFailureStage/, "the exported metadata must report the last failure stage");
