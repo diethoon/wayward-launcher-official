@@ -149,7 +149,7 @@ final class RemoteHostConnection {
                 throw new IllegalArgumentException("지원하지 않는 Remote Host protocol입니다.");
             }
             this.protocolVersion = protocolVersion;
-            this.baseUrl = normalizeBaseUrl(baseUrl);
+            this.baseUrl = normalizeBootstrapBaseUrl(baseUrl);
             this.certificateSha256 = normalizeFingerprint(certificateSha256);
             this.qrNonce = requireText(qrNonce, "QR enrollment nonce").trim().toUpperCase(Locale.ROOT);
             if (!this.qrNonce.matches("[0-9A-F]{64}")) {
@@ -162,8 +162,8 @@ final class RemoteHostConnection {
         JSONObject value = new JSONObject(json);
         boolean hasBootstrapMarker = value.has("protocolVersion") || value.has("baseUrl") ||
                 value.has("certificateSha256") || value.has("qrNonce");
-        boolean hasFullManifestField = value.has("hostId") || value.has("publicKeyBase64") ||
-                value.has("publicKeyFingerprint") || value.has("signedPayloadBase64") ||
+        boolean hasFullManifestField = value.has("hostId") && value.has("publicKeyBase64") &&
+                value.has("publicKeyFingerprint") && value.has("signedPayloadBase64") &&
                 value.has("signatureBase64");
         return hasBootstrapMarker && !hasFullManifestField;
     }
