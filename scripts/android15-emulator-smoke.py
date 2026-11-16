@@ -116,7 +116,7 @@ def run_native_folder_acceptance() -> None:
     adb("shell", "mkdir", "-p", FIXTURE_FOLDER)
     adb("shell", "mkdir", "-p", "/sdcard/Documents")
     adb("shell", "mkdir", "-p", FIXTURE_FOLDER + "/__wayward_nav_child")
-    adb("shell", "sh", "-c", "printf outside > /sdcard/Documents/outside.txt")
+    adb("shell", "touch", "/sdcard/Documents/outside.txt")
     adb("shell", "rm", "-f", FIXTURE_FOLDER + "/__wayward_escape")
     adb("shell", "ln", "-s", "/sdcard/Documents", FIXTURE_FOLDER + "/__wayward_escape")
     adb("push", str(fixture), FIXTURE_FOLDER + "/pixel.png")
