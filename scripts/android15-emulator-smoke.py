@@ -118,11 +118,16 @@ def run_native_folder_acceptance() -> None:
     adb("shell", "mkdir", "-p", FIXTURE_FOLDER + "/__wayward_nav_child")
     adb("shell", "touch", "/sdcard/Documents/outside.txt")
     adb("shell", "rm", "-f", FIXTURE_FOLDER + "/__wayward_escape")
-    adb("shell", "ln", "-s", "/sdcard/Documents", FIXTURE_FOLDER + "/__wayward_escape")
+    symlink_result = adb("shell", "ln", "-s", "/sdcard/Documents", FIXTURE_FOLDER + "/__wayward_escape", check=False, capture=True)
+    symlink_fixture_created = symlink_result.returncode == 0
+    if not symlink_fixture_created:
+        print("SKIP: Android emulator shared storage does not permit creating a symbolic-link fixture.")
+        print((symlink_result.stderr or symlink_result.stdout or "").strip())
     adb("push", str(fixture), FIXTURE_FOLDER + "/pixel.png")
     adb("shell", "appops", "set", "--uid", PACKAGE, "MANAGE_EXTERNAL_STORAGE", "allow")
     adb("logcat", "-c")
-    adb("shell", "am", "start", "-W", "-n", PICKER_TEST_ACTIVITY)
+    adb("shell", "am", "start", "-W", "-n", PICKER_TEST_ACTIVITY,
+        "--ez", "verify_symlink_fixture", str(symlink_fixture_created).lower())
 
     picker_local = pathlib.Path("/tmp/wayward-imagepack-folder-picker.xml")
     picker_device = "/sdcard/wayward-imagepack-folder-picker.xml"
@@ -215,7 +220,8 @@ def run_native_folder_acceptance() -> None:
     print(revoked_log[-1200:])
 
     adb("shell", "appops", "set", "--uid", PACKAGE, "MANAGE_EXTERNAL_STORAGE", "allow")
-    adb("shell", "rm", "-f", FIXTURE_FOLDER + "/__wayward_escape")
+    if symlink_fixture_created:
+        adb("shell", "rm", "-f", FIXTURE_FOLDER + "/__wayward_escape")
 
 
 def main() -> int:

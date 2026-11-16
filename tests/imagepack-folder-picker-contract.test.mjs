@@ -74,5 +74,7 @@ assert.match(readFileSync(new URL("../tests/ImagePackAtomicFileWriterTest.java",
 assert.match(smoke, /MANAGE_EXTERNAL_STORAGE", "deny"/, "Android 15 smoke must verify permission revocation");
 assert.match(smoke, /__wayward_nav_child/, "Android 15 smoke must verify child and parent folder navigation");
 assert.match(readFileSync(new URL("../app/src/debug/java/com/wayward/launcher/ImagePackPickerAcceptanceActivity.java", import.meta.url), "utf8"), /verifyFilesystemOperations/, "Android 15 smoke must exercise filesystem CRUD");
+assert.match(smoke, /symlink_fixture_created = symlink_result\.returncode == 0/, "emulator smoke must detect whether its storage provider supports symlink fixtures");
+assert.match(readFileSync(new URL("../app/src/debug/java/com/wayward/launcher/ImagePackPickerAcceptanceActivity.java", import.meta.url), "utf8"), /verifySymlinkFixture/, "device symlink checks must only claim coverage when the fixture exists");
 
 console.log("Native image-pack filesystem/SAF versioned bridge contract tests passed.");
