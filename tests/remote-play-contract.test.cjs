@@ -112,26 +112,26 @@ const pairingActivity = read('app/src/main/java/com/wayward/launcher/RemotePairi
 const fileManagerActivity = read('app/src/main/java/com/wayward/launcher/RemotePcFileManagerActivity.java');
 assert.match(pairingActivity, /GmsBarcodeScanning\.getClient\(this\)/,
   'QR scanning must run in the launcher through Google Code Scanner');
-assert.match(pairingActivity, /areModulesAvailable\\(scanner\\)/,
+assert.match(pairingActivity, /areModulesAvailable\(scanner\)/,
   'the Google Code Scanner optional module must be checked before opening the scanner');
-assert.match(pairingActivity, /installModules\\(request\\)[\\s\\S]*?beginScan\\(\\)/,
+assert.match(pairingActivity, /installModules\(request\)[\s\S]*?beginScan\(\)/,
   'a missing scanner module must be installed and scanning retried automatically');
-assert.match(pairingActivity, /setBarcodeFormats\\(Barcode\\.FORMAT_QR_CODE\\)/,
+assert.match(pairingActivity, /setBarcodeFormats\(Barcode\.FORMAT_QR_CODE\)/,
   'the scanner must accept QR codes only');
-assert.match(pairingActivity, /enableAutoZoom\\(\\)/,
+assert.match(pairingActivity, /enableAutoZoom\(\)/,
   'the QR scanner must enable automatic zoom');
-assert.match(pairingActivity, /stage=qr_recognition[\\s\\S]*?stage=qr_parse[\\s\\S]*?stage=pc_pairing_auth[\\s\\S]*?stage=user_approval/,
+assert.match(pairingActivity, /stage=qr_recognition[\s\S]*?stage=qr_parse[\s\S]*?stage=pc_pairing_auth[\s\S]*?stage=user_approval/,
   'diagnostics must distinguish QR recognition, parsing, PC authentication and approval');
-assert.doesNotMatch(pairingActivity, /Log\\.[idw]\\([^\\n]*(?:raw|accessToken|pollingSecret)/i,
+assert.doesNotMatch(pairingActivity, /Log\.[idw]\([^\n]*(?:raw|accessToken|pollingSecret)/i,
   'diagnostic logs must never include QR contents or authentication secrets');
 assert.match(pairingActivity, /stage=folder_access result=failed/,
   'folder-list errors must be reported as a separate folder-access state');
-assert.match(pairingActivity, /RemoteHostClient\\.pairAndWaitForApproval\\(this, host\\)[\\s\\S]*?RemoteHostClient\\.getWorkspaceRoots\\(this, host\\)/,
+assert.match(pairingActivity, /RemoteHostClient\.pairAndWaitForApproval\(this, host\)[\s\S]*?RemoteHostClient\.getWorkspaceRoots\(this, host\)/,
   'pairing approval must complete before the optional workspace-root lookup');
-assert.match(pairingActivity, /setResult\\(RESULT_OK\\)/,
+assert.match(pairingActivity, /setResult\(RESULT_OK\)/,
   'a completed pairing must remain successful even when the folder lookup fails');
-assert.match(connection, /optInt\\("protocolVersion", 0\\) != 1/);
-assert.match(connection, /getString\\("baseUrl"\\)[\\s\\S]*?getString\\("hostId"\\)[\\s\\S]*?getString\\("publicKeyBase64"\\)[\\s\\S]*?getString\\("publicKeyFingerprint"\\)[\\s\\S]*?getString\\("certificateSha256"\\)[\\s\\S]*?getString\\("qrNonce"\\)[\\s\\S]*?getString\\("signedPayloadBase64"\\)[\\s\\S]*?getString\\("signatureBase64"\\)/,
+assert.match(connection, /optInt\("protocolVersion", 0\) != 1/);
+assert.match(connection, /getString\("baseUrl"\)[\s\S]*?getString\("hostId"\)[\s\S]*?getString\("publicKeyBase64"\)[\s\S]*?getString\("publicKeyFingerprint"\)[\s\S]*?getString\("certificateSha256"\)[\s\S]*?getString\("qrNonce"\)[\s\S]*?getString\("signedPayloadBase64"\)[\s\S]*?getString\("signatureBase64"\)/,
   'Android QR parser must preserve the Windows Host protocol v1 fields');
 assert.match(pairingActivity, /verifyAndStoreQr/);
 assert.match(pairingActivity, /pairAndWaitForApproval/);
