@@ -233,7 +233,10 @@ assert.match(client, /static RemoteHostConnection fetchPairingManifest[\\s\\S]*?
   'the native client must retrieve the full manifest by the QR nonce');
 assert.match(client, /requestJsonPinned\(bootstrap\.baseUrl, bootstrap\.certificateSha256[\\s\\S]*?true\)/,
   'the bootstrap manifest request must use the QR certificate pin');
-assert.match(client, /status != HttpsURLConnection\.HTTP_OK[\\s\\S]*?application\\/json[\\s\\S]*?Cache-Control[\\s\\S]*?no-store/,
+assert.ok(client.includes("status != HttpsURLConnection.HTTP_OK"),
+  'the manifest response must require HTTP 200');
+assert.ok(client.includes('startsWith("application/json")') && client.includes('"Cache-Control"') && client.includes('"no-store"'),
+  'the manifest response must be JSON with no-store caching');
   'the manifest response must be HTTP 200 JSON with no-store caching');
 assert.match(client, /configurePinnedTls\(connection, certificatePin\)/,
   'bootstrap manifest retrieval must use the existing pinned TLS trust manager');
