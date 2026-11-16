@@ -176,6 +176,7 @@ public final class RemotePlayCryptoInstrumentedTest {
 
         for (String invalidUrl : new String[] {
                 "http://192.168.1.81:8765/",
+                "https://192.168.1.81/",
                 "https://192.168.1.81:0/",
                 "https://192.168.1.81:65536/",
                 "https://192.168.1.81:8765/unexpected-path"
@@ -192,6 +193,12 @@ public final class RemotePlayCryptoInstrumentedTest {
         JSONObject extraField = new JSONObject(bootstrapQr.toString()).put("hostHint", "untrusted");
         assertThrows(IllegalArgumentException.class,
                 () -> RemoteHostConnection.fromBootstrapQrJson(extraField.toString()));
+
+        // A stray legacy field must not make a compact QR eligible for the legacy parser.
+        JSONObject mixedFormat = new JSONObject(bootstrapQr.toString()).put("hostId", hostId);
+        assertTrue(RemoteHostConnection.isBootstrapQrJson(mixedFormat.toString()));
+        assertThrows(IllegalArgumentException.class,
+                () -> RemoteHostConnection.fromBootstrapQrJson(mixedFormat.toString()));
 
         JSONObject tamperedManifest = fullManifest.toJson();
         tamperedManifest.put("signatureBase64",
