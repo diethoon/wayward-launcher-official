@@ -219,25 +219,34 @@ assert.match(naiStore, /wayward\.image\.providers\.v1/,
   'the existing NovelAI Keystore alias must remain intact');
 
 
-assert.match(connection, /static final class BootstrapInfo[\\s\\S]*?certificateSha256[\\s\\S]*?qrNonce/,
-  'bootstrap QR parsing must retain only protocol, base URL, certificate pin and nonce');
-assert.match(connection, /static boolean isBootstrapQrJson[\\s\\S]*?hasFullManifestField/,
+assert.ok(connection.includes("static final class BootstrapInfo") &&
+  connection.includes("final String certificateSha256") && connection.includes("final String qrNonce"),
+  'bootstrap QR parsing must retain protocol, base URL, certificate pin and nonce');
+assert.ok(connection.includes("static boolean isBootstrapQrJson") &&
+  connection.includes("hasFullManifestField"),
   'bootstrap and legacy full-manifest QR formats must be classified separately');
-assert.match(connection, /static BootstrapInfo fromBootstrapQrJson[\\s\\S]*?normalizeBaseUrl[\\s\\S]*?normalizeFingerprint[\\s\\S]*?\[0-9A-F\]\{64\}/,
-  'bootstrap QR fields must validate HTTPS address, certificate SHA-256 and nonce format');
-assert.match(connection, /static RemoteHostConnection fromManifestJson[\\s\\S]*?bootstrap\\.baseUrl\\.equals[\\s\\S]*?bootstrap\\.certificateSha256\\.equals[\\s\\S]*?bootstrap\\.qrNonce\\.equals/,
+assert.ok(connection.includes("static BootstrapInfo fromBootstrapQrJson") &&
+  connection.includes("normalizeBaseUrl(baseUrl)") && connection.includes("normalizeFingerprint(certificateSha256)") &&
+  connection.includes("[0-9A-F]{64}") && connection.includes("value.length() != 4"),
+  'bootstrap QR fields must validate HTTPS address, certificate SHA-256, nonce format and exact field count');
+assert.ok(connection.includes("static RemoteHostConnection fromManifestJson") &&
+  connection.includes("bootstrap.baseUrl.equals(manifestBaseUrl)") &&
+  connection.includes("bootstrap.certificateSha256.equals(manifestCertificate)") &&
+  connection.includes("bootstrap.qrNonce.equals(manifestNonce)"),
   'the fetched full manifest must exactly match the QR address, certificate pin and nonce');
-assert.match(connection, /static RemoteHostConnection fromQrJson/,
+assert.ok(connection.includes("static RemoteHostConnection fromQrJson"),
   'legacy full JSON QR parsing must remain supported');
-assert.match(client, /static RemoteHostConnection fetchPairingManifest[\\s\\S]*?\/v1\/host\/pairing-manifest\//,
+assert.ok(client.includes("static RemoteHostConnection fetchPairingManifest") &&
+  client.includes("/v1/host/pairing-manifest/"),
   'the native client must retrieve the full manifest by the QR nonce');
-assert.match(client, /requestJsonPinned\(bootstrap\.baseUrl, bootstrap\.certificateSha256[\\s\\S]*?true\)/,
+assert.ok(client.includes("requestJsonPinned(bootstrap.baseUrl, bootstrap.certificateSha256") &&
+  client.includes("path, \"GET\", null, null, true)"),
   'the bootstrap manifest request must use the QR certificate pin');
-assert.ok(client.includes("status != HttpsURLConnection.HTTP_OK"),
-  'the manifest response must require HTTP 200');
-assert.ok(client.includes('startsWith("application/json")') && client.includes('"Cache-Control"') && client.includes('"no-store"'),
-  'the manifest response must be JSON with no-store caching');
-assert.match(client, /configurePinnedTls\(connection, certificatePin\)/,
+assert.ok(client.includes("status != HttpsURLConnection.HTTP_OK") &&
+  client.includes('startsWith("application/json")') &&
+  client.includes('getHeaderField("Cache-Control")') && client.includes('"no-store"'),
+  'the manifest response must be HTTP 200 JSON with no-store caching');
+assert.ok(client.includes("configurePinnedTls(connection, certificatePin)"),
   'bootstrap manifest retrieval must use the existing pinned TLS trust manager');
 const bootstrapBranch = pairingActivity.indexOf('RemoteHostConnection.isBootstrapQrJson(raw)');
 const manifestFetch = pairingActivity.indexOf('RemoteHostClient.fetchPairingManifest(bootstrap)');
