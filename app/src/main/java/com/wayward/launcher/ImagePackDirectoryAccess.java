@@ -30,12 +30,13 @@ final class ImagePackDirectoryAccess {
     private static final String PREFS = "wayward_launcher";
     private static final String TAG = "WaywardImagePackSAF";
     private static final String EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY = "com.android.externalstorage.documents";
-    private static final String DEFAULT_INITIAL_DOCUMENT_ID = "primary:Download/Wayward_Faith/image-packs";
+    private static final String DEFAULT_INITIAL_DOCUMENT_ID = "primary:Download";
     private static final int MAX_FILE_BYTES = 32 * 1024 * 1024;
 
     private final Activity activity;
     private final WebView webView;
     private final String preferenceKey;
+    private final ImagePackFileSystemAccess fileSystemAccess;
     private Uri treeUri;
     private boolean writable;
     private String pendingRequestId;
@@ -47,7 +48,9 @@ final class ImagePackDirectoryAccess {
         String safeProfile = profileId == null || !profileId.matches("[A-Za-z0-9_-]{1,80}")
                 ? "default" : profileId;
         preferenceKey = "image_pack_tree_uri_" + safeProfile;
-        restorePersistedTree();
+        fileSystemAccess = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                ? new ImagePackFileSystemAccess(activity, webView, safeProfile) : null;
+        if (fileSystemAccess == null) restorePersistedTree();
     }
 
     void setInitialUriForTesting(Uri uri) {
@@ -55,6 +58,10 @@ final class ImagePackDirectoryAccess {
     }
 
     void openFolderPicker(String requestId) {
+        if (fileSystemAccess != null) {
+            fileSystemAccess.openFolderPicker(requestId);
+            return;
+        }
         if (requestId == null || !requestId.matches("[A-Za-z0-9_-]{1,80}")) return;
         activity.runOnUiThread(() -> {
             if (pendingRequestId != null) {
@@ -105,7 +112,12 @@ final class ImagePackDirectoryAccess {
         return "default_download_subfolder";
     }
 
+    void onResume() {
+        if (fileSystemAccess != null) fileSystemAccess.onResume();
+    }
+
     void handleActivityResult(int resultCode, Intent data) {
+        if (fileSystemAccess != null) return;
         if (pendingRequestId == null) return;
         if (resultCode != Activity.RESULT_OK || data == null || data.getData() == null) {
             Log.i(TAG, "picker_result result=cancelled resultCode=" + resultCode
@@ -176,12 +188,17 @@ final class ImagePackDirectoryAccess {
     }
 
     void cancelPending() {
+        if (fileSystemAccess != null) {
+            fileSystemAccess.cancelPending();
+            return;
+        }
         if (pendingRequestId != null) {
             finishPending(failure("AbortError", "The page was closed."));
         }
     }
 
     String getFolderInfoJson() {
+        if (fileSystemAccess != null) return fileSystemAccess.getFolderInfoJson();
         try {
             requireTree();
             JSONObject result = new JSONObject();
@@ -195,6 +212,7 @@ final class ImagePackDirectoryAccess {
     }
 
     String listDirectoryJson(String path) {
+        if (fileSystemAccess != null) return fileSystemAccess.listDirectoryJson(path);
         try {
             String documentId = resolveDirectory(path);
             JSONArray entries = new JSONArray();
@@ -218,6 +236,7 @@ final class ImagePackDirectoryAccess {
     }
 
     String readFileJson(String path) {
+        if (fileSystemAccess != null) return fileSystemAccess.readFileJson(path);
         try {
             Node node = resolveFile(path);
             if (node.size > MAX_FILE_BYTES) {
@@ -251,6 +270,7 @@ final class ImagePackDirectoryAccess {
     }
 
     String writeFileJson(String path, String mimeType, String encodedBytes) {
+        if (fileSystemAccess != null) return fileSystemAccess.writeFileJson(path, mimeType, encodedBytes);
         try {
             requireWritePermission();
             String[] parts = splitPath(path);
@@ -288,6 +308,7 @@ final class ImagePackDirectoryAccess {
     }
 
     String createDirectoryJson(String path) {
+        if (fileSystemAccess != null) return fileSystemAccess.createDirectoryJson(path);
         try {
             requireWritePermission();
             String[] parts = splitPath(path);
@@ -313,6 +334,7 @@ final class ImagePackDirectoryAccess {
     }
 
     String deleteEntryJson(String path) {
+        if (fileSystemAccess != null) return fileSystemAccess.deleteEntryJson(path);
         try {
             requireWritePermission();
             String[] parts = splitPath(path);

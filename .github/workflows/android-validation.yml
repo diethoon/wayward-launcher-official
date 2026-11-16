@@ -271,11 +271,8 @@ jobs:
           path: |
             artifacts/android15-launcher-home.png
             artifacts/android15-launcher-home.xml
-            artifacts/android15-documentsui-folder-picker.png
-            artifacts/android15-documentsui-folder-picker.xml
-            artifacts/android15-documentsui-permission-confirmation.png
-            artifacts/android15-documentsui-permission-confirmation.xml
-            artifacts/android15-documentsui-after-allow.png
+            artifacts/android15-imagepack-folder-picker.png
+            artifacts/android15-imagepack-folder-picker.xml
             artifacts/imagepack-acceptance-pixel.png
             artifacts/imagepack-acceptance-logcat.txt
             app/build/reports/androidTests/connected/debug

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Android 15 launcher smoke test with a real DocumentsUI SAF tree acceptance test."""
+"""Android 15 launcher smoke test with the native image-pack folder browser."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ DEVICE_XML = "/sdcard/wayward-launcher-home.xml"
 LOCAL_XML = pathlib.Path("/tmp/wayward-launcher-home.xml")
 LOCAL_PID = pathlib.Path("/tmp/wayward-launcher-app-pid.txt")
 LOCAL_CRASH = pathlib.Path("/tmp/wayward-launcher-crash.log")
-FIXTURE_FOLDER = "/sdcard/Download/Wayward_Faith/image-packs"
+FIXTURE_FOLDER = "/sdcard/Download"
 
 
 def run(command: list[str], *, check: bool = True, capture: bool = False) -> subprocess.CompletedProcess:
@@ -74,7 +74,7 @@ def node_bounds(xml: str, labels: tuple[str, ...]) -> tuple[int, int, int, int] 
         matches_label = any(label.casefold() in (text + " " + description).casefold() for label in labels)
         is_confirmation_button = resource_id == "android:id/button1" and any(
             marker.casefold() in (text + " " + description).casefold()
-            for marker in ("allow", "허용", "use this folder", "이 폴더 사용")
+            for marker in ("allow", "허용")
         )
         if matches_label or is_confirmation_button:
             match = re.search(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
@@ -102,106 +102,58 @@ def wait_for_log(marker: str, *, timeout_seconds: int = 45) -> str:
         if marker in latest:
             return latest
         if "FAIL " in latest:
-            raise RuntimeError("Image-pack DocumentsUI acceptance failed: " + latest[-4000:])
+            raise RuntimeError("Image-pack native folder acceptance failed: " + latest[-4000:])
         time.sleep(1)
     full_log = adb("logcat", "-d", "-v", "time", check=False, capture=True).stdout or ""
     (ARTIFACTS / "imagepack-acceptance-logcat.txt").write_text(full_log[-120000:], encoding="utf-8")
     raise RuntimeError("Timed out waiting for " + marker + ". Last acceptance log: " + latest[-4000:])
 
 
-def run_documentsui_acceptance() -> None:
+def run_native_folder_acceptance() -> None:
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     fixture = ARTIFACTS / "imagepack-acceptance-pixel.png"
     fixture.write_bytes(make_png())
     adb("shell", "mkdir", "-p", FIXTURE_FOLDER)
     adb("push", str(fixture), FIXTURE_FOLDER + "/pixel.png")
+    adb("shell", "appops", "set", "--uid", PACKAGE, "MANAGE_EXTERNAL_STORAGE", "allow")
     adb("logcat", "-c")
-    # Do not inject a test-only initial URI: this must exercise the same
-    # production default URI resolver used by MainActivity on first selection.
     adb("shell", "am", "start", "-W", "-n", PICKER_TEST_ACTIVITY)
 
-    picker_local = pathlib.Path("/tmp/wayward-documentsui-picker.xml")
-    picker_device = "/sdcard/wayward-documentsui-picker.xml"
+    picker_local = pathlib.Path("/tmp/wayward-imagepack-folder-picker.xml")
+    picker_device = "/sdcard/wayward-imagepack-folder-picker.xml"
     picker_xml = ""
-    use_folder = None
+    select_folder = None
     for _ in range(40):
         try:
             picker_xml = dump_ui(picker_local, picker_device)
-            use_folder = node_bounds(picker_xml, ("Use this folder", "이 폴더 사용"))
-            if use_folder is not None:
+            select_folder = node_bounds(picker_xml, ("이 폴더 선택", "Select this folder"))
+            if select_folder is not None:
                 break
-            folder_row = node_bounds(picker_xml, ("image-packs",))
-            if folder_row is not None:
-                tap_bounds(folder_row)
-                time.sleep(2)
-                picker_xml = dump_ui(picker_local, picker_device)
-                use_folder = node_bounds(picker_xml, ("Use this folder", "이 폴더 사용"))
-                if use_folder is not None:
-                    break
         except Exception:
             pass
         time.sleep(1)
 
-    (ARTIFACTS / "android15-documentsui-folder-picker.xml").write_text(
+    (ARTIFACTS / "android15-imagepack-folder-picker.xml").write_text(
         picker_xml, encoding="utf-8"
     )
-    screenshot(ARTIFACTS / "android15-documentsui-folder-picker.png")
-    if use_folder is None:
-        raise RuntimeError("Android 15 DocumentsUI did not expose the 'Use this folder' button.")
+    screenshot(ARTIFACTS / "android15-imagepack-folder-picker.png")
+    if select_folder is None:
+        raise RuntimeError("The native image-pack browser did not expose the '이 폴더 선택' button.")
 
-    tap_bounds(use_folder)
-
-    # Android 15 DocumentsUI shows an explicit permission-confirmation dialog.
-    # Only tap an actionable node; the title also contains the word "Allow".
-    confirmation = ""
-    confirmation_path = ARTIFACTS / "android15-documentsui-permission-confirmation.xml"
-    allow = None
-    for _ in range(20):
-        try:
-            confirmation = dump_ui(picker_local, picker_device)
-            confirmation_path.write_text(confirmation, encoding="utf-8")
-            allow = node_bounds(confirmation, ("Allow", "허용"))
-            if allow is not None:
-                screenshot(ARTIFACTS / "android15-documentsui-permission-confirmation.png")
-                tap_bounds(allow)
-                break
-        except Exception:
-            pass
-        time.sleep(1)
-    if allow is None:
-        raise RuntimeError("Android 15 permission confirmation did not expose a clickable Allow button.")
-
-    # Confirm that the second modal disappeared before waiting for app callbacks.
-    confirmation_dismissed = False
-    for _ in range(15):
-        try:
-            after_allow = dump_ui(picker_local, picker_device)
-            if "Allow Wayward Launcher to access files" not in after_allow:
-                confirmation_dismissed = True
-                confirmation_path.write_text(after_allow, encoding="utf-8")
-                screenshot(ARTIFACTS / "android15-documentsui-after-allow.png")
-                break
-        except Exception:
-            pass
-        time.sleep(1)
-    if not confirmation_dismissed:
-        raise RuntimeError("The DocumentsUI Allow confirmation button was not accepted.")
-
+    tap_bounds(select_folder)
     first_log = wait_for_log("PASS picked directory=")
     if "bytes=" not in first_log:
-        raise RuntimeError("The selected image file was not read through the native SAF directory handle.")
-    print("PASS: Android 15 DocumentsUI displayed 'Use this folder', accepted the folder, and the WebView bridge read pixel.png.")
+        raise RuntimeError("The selected image file was not read through the native file-system bridge.")
+    print("PASS: Android 15 used the launcher folder browser (not DocumentsUI) and read Download/pixel.png.")
     print(first_log[-1800:])
 
-    # Terminate the process to prove both SharedPreferences and Android's persisted
-    # UriPermission survive a real application restart.
     adb("shell", "am", "force-stop", PACKAGE)
     time.sleep(2)
     adb("logcat", "-c")
     adb("shell", "am", "start", "-W", "-n", PICKER_TEST_ACTIVITY,
         "--ez", "verify_existing", "true")
     second_log = wait_for_log("PASS persisted-after-restart", timeout_seconds=30)
-    print("PASS: the persisted tree grant and selected PNG survived a process restart.")
+    print("PASS: the selected filesystem folder and PNG survived a process restart.")
     print(second_log[-1400:])
 
 
@@ -271,7 +223,7 @@ def main() -> int:
     if (ARTIFACTS / "android15-launcher-home.png").stat().st_size == 0:
         raise RuntimeError("Android 15 home screenshot is empty.")
 
-    run_documentsui_acceptance()
+    run_native_folder_acceptance()
     run(["gradle", "--no-daemon", "connectedDebugAndroidTest"])
 
     print("PASS: Android 15 launcher startup and existing native instrumentation tests.")

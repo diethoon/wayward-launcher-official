@@ -78,6 +78,11 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
         }
     }
 
+    @Override protected void onResume() {
+        super.onResume();
+        if (access != null) access.onResume();
+    }
+
     @Override protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == ImagePackDirectoryAccess.REQUEST_CODE) {
