@@ -225,6 +225,9 @@ assert.ok(connection.includes("static final class BootstrapInfo") &&
 assert.ok(connection.includes("static boolean isBootstrapQrJson") &&
   connection.includes("hasFullManifestField"),
   'bootstrap and legacy full-manifest QR formats must be classified separately');
+assert.ok(connection.includes('value.has("hostId") && value.has("publicKeyBase64") &&') &&
+  connection.includes('value.has("publicKeyFingerprint") && value.has("signedPayloadBase64") &&'),
+  'only a complete legacy manifest may use the legacy QR parser; malformed bootstrap data must fail as bootstrap');
 assert.ok(connection.includes("static BootstrapInfo fromBootstrapQrJson") &&
   connection.includes("normalizeBootstrapBaseUrl(baseUrl)") && connection.includes("normalizeFingerprint(certificateSha256)") &&
   connection.includes("[0-9A-F]{64}") && connection.includes("value.length() != 4"),
