@@ -465,7 +465,7 @@ final class RemoteHostClient {
         String path = "/v1/host/pairing-manifest/" + bootstrap.qrNonce;
         JSONObject manifest = requestJsonPinned(bootstrap.baseUrl, bootstrap.certificateSha256,
                 path, "GET", null, null, true);
-        return RemoteHostConnection.fromManifestJson(manifest, bootstrap);
+        return RemoteHostConnection.fromManifestJson(bootstrap, manifest.toString());
     }
 
     private static HttpsURLConnection openPinned(RemoteHostConnection host, String path,
