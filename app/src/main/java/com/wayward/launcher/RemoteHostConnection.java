@@ -86,8 +86,11 @@ final class RemoteHostConnection {
     }
 
     private static boolean hasFullManifestField(JSONObject value) {
-        return value.has("hostId") || value.has("publicKeyBase64") ||
-                value.has("publicKeyFingerprint") || value.has("signedPayloadBase64") ||
+        // Only a complete signed manifest is treated as the legacy QR format.
+        // A compact QR with a stray legacy field remains a bootstrap candidate and
+        // is rejected by the exact four-field parser instead of falling back.
+        return value.has("hostId") && value.has("publicKeyBase64") &&
+                value.has("publicKeyFingerprint") && value.has("signedPayloadBase64") &&
                 value.has("signatureBase64");
     }
 
