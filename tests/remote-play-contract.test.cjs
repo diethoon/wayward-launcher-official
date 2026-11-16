@@ -218,4 +218,35 @@ assert.match(naiStore, /AES\/GCM\/NoPadding/,
 assert.match(naiStore, /wayward\.image\.providers\.v1/,
   'the existing NovelAI Keystore alias must remain intact');
 
+
+assert.match(connection, /static final class BootstrapInfo[\\s\\S]*?certificateSha256[\\s\\S]*?qrNonce/,
+  'bootstrap QR parsing must retain only protocol, base URL, certificate pin and nonce');
+assert.match(connection, /static boolean isBootstrapQrJson[\\s\\S]*?hasFullManifestField/,
+  'bootstrap and legacy full-manifest QR formats must be classified separately');
+assert.match(connection, /static BootstrapInfo fromBootstrapQrJson[\\s\\S]*?normalizeBaseUrl[\\s\\S]*?normalizeFingerprint[\\s\\S]*?\[0-9A-F\]\{64\}/,
+  'bootstrap QR fields must validate HTTPS address, certificate SHA-256 and nonce format');
+assert.match(connection, /static RemoteHostConnection fromManifestJson[\\s\\S]*?bootstrap\\.baseUrl\\.equals[\\s\\S]*?bootstrap\\.certificateSha256\\.equals[\\s\\S]*?bootstrap\\.qrNonce\\.equals/,
+  'the fetched full manifest must exactly match the QR address, certificate pin and nonce');
+assert.match(connection, /static RemoteHostConnection fromQrJson/,
+  'legacy full JSON QR parsing must remain supported');
+assert.match(client, /static RemoteHostConnection fetchPairingManifest[\\s\\S]*?\/v1\/host\/pairing-manifest\//,
+  'the native client must retrieve the full manifest by the QR nonce');
+assert.match(client, /requestJsonPinned\(bootstrap\.baseUrl, bootstrap\.certificateSha256[\\s\\S]*?true\)/,
+  'the bootstrap manifest request must use the QR certificate pin');
+assert.match(client, /status != HttpsURLConnection\.HTTP_OK[\\s\\S]*?application\\/json[\\s\\S]*?Cache-Control[\\s\\S]*?no-store/,
+  'the manifest response must be HTTP 200 JSON with no-store caching');
+assert.match(client, /configurePinnedTls\(connection, certificatePin\)/,
+  'bootstrap manifest retrieval must use the existing pinned TLS trust manager');
+const bootstrapBranch = pairingActivity.indexOf('RemoteHostConnection.isBootstrapQrJson(raw)');
+const manifestFetch = pairingActivity.indexOf('RemoteHostClient.fetchPairingManifest(bootstrap)');
+const verifyStore = pairingActivity.indexOf('RemoteHostClient.verifyAndStoreQr(this, scannedHost)');
+const pairingRequest = pairingActivity.indexOf('RemoteHostClient.pairAndWaitForApproval(this, host)');
+assert.ok(bootstrapBranch >= 0 && manifestFetch > bootstrapBranch && verifyStore > manifestFetch &&
+  pairingRequest > verifyStore,
+  'bootstrap fetch, manifest validation and existing Host verification must finish before pairing');
+assert.match(pairingActivity, /else\\s*\\{\\s*scannedHost = RemoteHostConnection\.fromQrJson\(raw\)/,
+  'legacy full JSON QR must remain on its original parsing path without bootstrap fallback');
+assert.match(client, /host\.verifySignedManifest\(\)[\\s\\S]*?verifyIdentityResponse\(host, identity\)[\\s\\S]*?RemoteHostStore\.saveConnection\(context, host\)/,
+  'Host signature and identity checks must complete before storing Host data');
+
 console.log('Remote Play native bridge, cache, ComfyUI and security contract checks passed');
