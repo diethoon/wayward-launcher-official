@@ -67,7 +67,7 @@ assert.match(main, /route\.addFlags\(Intent\.FLAG_ACTIVITY_REORDER_TO_FRONT\)/, 
 assert.doesNotMatch(manifest, /documentLaunchMode/, "MainActivity must not create a separate document task");
 assert.match(main, /else if\(sessionProfileId\(getIntent\(\)\)!=null\)\{[\s\S]*?finish\(\);/, "root BACK in a game session must finish only the session Activity");
 assert.match(main, /if\(web\.canGoBack\(\)\)\{\s*web\.goBack\(\);/, "BACK inside WebView history must stay inside the game");
-assert.match(main, /ImagePackFolderPickerScript\.installDocumentStart\(web, imagePackFolderPickerScript, origin\)/, "the directory adapter must register at document start when supported");
+assert.match(main, /ImagePackFolderPickerScript\.installDocumentStart\(\s*web,\s*imagePackFolderPickerScript,\s*origin\)/, "the directory adapter must register at document start when supported");
 assert.match(main, /ImagePackFolderPickerScript\.installAfterPageFinished\(/, "the directory adapter must have a runtime fallback");
 assert.match(readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackFolderPickerScript.java", import.meta.url), "utf8"), /isSameOrigin\(/, "runtime fallback must be restricted to the active game origin");
 assert.match(readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackFolderPickerScript.java", import.meta.url), "utf8"), /WebViewCompat\.addDocumentStartJavaScript/, "supported document-start injection must remain");
