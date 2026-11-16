@@ -1794,15 +1794,13 @@ public final class MainActivity extends Activity {
             MainActivity session = findActiveSessionActivity();
             if (session != null && session != this) {
                 String sessionId = session.activeProfileId;
-                // The owner Activity is already alive in this process. Invoke its
-                // settings action directly, then bring its document task forward.
-                // Relying only on NEW_DOCUMENT/onNewIntent can reorder the task without
-                // delivering the UI action on some Android document-task stacks.
+                // The owner Activity is already in this launcher task. Invoke its
+                // settings action directly, then move that existing session Activity to front.
                 try {
                     session.openImageGenPanel();
                     Intent route = new Intent(this, MainActivity.class);
                     route.setData(Uri.parse("wayward://session/" + Uri.encode(sessionId)));
-                    route.addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                    route.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
                     startActivity(route);
                     DiagnosticsLogger.event(this,"INFO","imagegen","session_settings_routed",null);
                     return;

@@ -63,6 +63,7 @@ assert.doesNotMatch(filesystem, /ACTION_OPEN_DOCUMENT_TREE/, "Android 11+ custom
 assert.match(main, /new ImagePackDirectoryAccess\(this,web,activeProfileId\)/, "the production game WebView must own the native image-pack bridge");
 assert.match(main, /imagePackDirectoryAccess\.onResume\(\)/, "the production activity must recheck all-files permission on resume");
 assert.doesNotMatch(main, /FLAG_ACTIVITY_NEW_DOCUMENT/, "game sessions must remain in the existing launcher task");
+assert.match(main, /route\.addFlags\(Intent\.FLAG_ACTIVITY_REORDER_TO_FRONT\)/, "an existing game session must be reordered in its task without creating a document task");
 assert.doesNotMatch(manifest, /documentLaunchMode/, "MainActivity must not create a separate document task");
 assert.match(main, /else if\(sessionProfileId\(getIntent\(\)\)!=null\)\{[\s\S]*?finish\(\);/, "root BACK in a game session must finish only the session Activity");
 assert.match(main, /if\(web\.canGoBack\(\)\)\{\s*web\.goBack\(\);/, "BACK inside WebView history must stay inside the game");
