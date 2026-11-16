@@ -281,6 +281,16 @@ jobs:
             artifacts/android15-launcher-home.xml
             artifacts/android15-imagepack-folder-picker.png
             artifacts/android15-imagepack-folder-picker.xml
+            artifacts/android15-game-tree-picker.xml
+            artifacts/android15-game-tree-picker-after-use.xml
+            artifacts/android15-game-tree-picker-after-use.png
+            artifacts/android15-game-tree-picker-returned.xml
+            artifacts/android15-documentsui-download-navigation.xml
+            artifacts/android15-main-activity-game-before-picker.xml
+            artifacts/android15-main-activity-imagepack-picker.xml
+            artifacts/android15-main-activity-game-handle-pass.xml
+            artifacts/android15-recents-after-game-back.txt
+            artifacts/android15-zip-multiselect.xml
             artifacts/imagepack-acceptance-pixel.png
             artifacts/imagepack-acceptance-logcat.txt
             app/build/reports/androidTests/connected/debug

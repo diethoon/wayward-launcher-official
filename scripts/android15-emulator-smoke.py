@@ -89,6 +89,25 @@ def tap_bounds(bounds: tuple[int, int, int, int]) -> None:
     adb("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
 
 
+def node_bounds_exact(xml: str, labels: tuple[str, ...]) -> tuple[int, int, int, int] | None:
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError:
+        return None
+    wanted = {label.casefold() for label in labels}
+    for node in root.iter("node"):
+        if node.attrib.get("clickable", "false") != "true":
+            continue
+        text = node.attrib.get("text", "").strip().casefold()
+        description = node.attrib.get("content-desc", "").strip().casefold()
+        if text not in wanted and description not in wanted:
+            continue
+        match = re.search(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if match:
+            return tuple(int(value) for value in match.groups())
+    return None
+
+
 def screenshot(path: pathlib.Path) -> None:
     with path.open("wb") as output:
         subprocess.run(["adb", "exec-out", "screencap", "-p"], check=True, stdout=output)
@@ -160,19 +179,34 @@ def choose_download_as_game_folder(local_path: pathlib.Path, device_path: str) -
         (ARTIFACTS / "android15-game-tree-picker.xml").write_text(latest, encoding="utf-8")
         raise RuntimeError("DocumentsUI did not allow the real launcher to select Download.")
 
-    # Android may ask for the tree grant after the folder button is pressed.
-    for _ in range(20):
+    # Android may ask for a second explicit grant after the tree button is pressed.
+    time.sleep(1)
+    latest = dump_ui(local_path, device_path)
+    (ARTIFACTS / "android15-game-tree-picker-after-use.xml").write_text(latest, encoding="utf-8")
+    screenshot(ARTIFACTS / "android15-game-tree-picker-after-use.png")
+    for _ in range(25):
         latest = dump_ui(local_path, device_path)
-        allow_button = node_bounds(latest, ("허용", "Allow"))
+        if "내 게임" in latest or "My games" in latest:
+            (ARTIFACTS / "android15-game-tree-picker-returned.xml").write_text(latest, encoding="utf-8")
+            return latest
+
+        # Match a positive button exactly; substring matching "Allow" could hit "Don't allow".
+        allow_button = node_bounds_exact(latest, ("허용", "Allow", "Allow access"))
         if allow_button is not None:
             tap_bounds(allow_button)
             time.sleep(1)
             continue
-        if "내 게임" in latest or "My games" in latest:
-            return latest
+
+        use_button = node_bounds(latest, ("이 폴더 사용", "Use this folder", "Use folder"))
+        if use_button is not None:
+            tap_bounds(use_button)
+            time.sleep(1)
+            continue
         time.sleep(1)
+
     (ARTIFACTS / "android15-game-tree-picker.xml").write_text(latest, encoding="utf-8")
-    raise RuntimeError("The launcher did not return to its home screen after the SAF grant.")
+    raise RuntimeError("The launcher did not return to its home screen after the SAF grant; last DocumentsUI state: "
+                       + latest[-4500:])
 
 
 def open_download_directory_in_documents_ui(local_path: pathlib.Path, device_path: str,
