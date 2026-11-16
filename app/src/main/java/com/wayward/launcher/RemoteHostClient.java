@@ -429,12 +429,43 @@ final class RemoteHostClient {
 
     private static JSONObject requestJsonPinned(String baseUrl, String certificatePin,
             String path, String method, JSONObject body, String authorization) throws Exception {
+        return requestJsonPinned(baseUrl, certificatePin, path, method, body, authorization, false);
+    }
+
+    private static JSONObject requestJsonPinned(String baseUrl, String certificatePin,
+            String path, String method, JSONObject body, String authorization,
+            boolean requireNoStoreJson) throws Exception {
         HttpsURLConnection connection = openPinned(baseUrl, certificatePin, path, method, body, authorization, null);
         try {
+            if (requireNoStoreJson) {
+                int status = connection.getResponseCode();
+                String contentType = connection.getContentType();
+                String cacheControl = connection.getHeaderField("Cache-Control");
+                if (status != HttpsURLConnection.HTTP_OK) {
+                    throw new IOException("Pairing manifest endpoint must return HTTP 200.");
+                }
+                if (contentType == null ||
+                        !contentType.toLowerCase(Locale.ROOT).startsWith("application/json")) {
+                    throw new IOException("Pairing manifest response must use application/json.");
+                }
+                if (cacheControl == null ||
+                        !cacheControl.toLowerCase(Locale.ROOT).contains("no-store")) {
+                    throw new SecurityException("Pairing manifest response must disable caching.");
+                }
+            }
             return new JSONObject(readResponseText(connection, MAX_JSON_RESPONSE_BYTES));
         } finally {
             connection.disconnect();
         }
+    }
+
+    static RemoteHostConnection fetchPairingManifest(RemoteHostConnection.BootstrapInfo bootstrap)
+            throws Exception {
+        if (bootstrap == null) throw new IllegalArgumentException("Bootstrap QR is missing.");
+        String path = "/v1/host/pairing-manifest/" + bootstrap.qrNonce;
+        JSONObject manifest = requestJsonPinned(bootstrap.baseUrl, bootstrap.certificateSha256,
+                path, "GET", null, null, true);
+        return RemoteHostConnection.fromManifestJson(manifest, bootstrap);
     }
 
     private static HttpsURLConnection openPinned(RemoteHostConnection host, String path,
