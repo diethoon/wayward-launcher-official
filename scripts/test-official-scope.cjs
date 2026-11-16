@@ -7,6 +7,7 @@ const application = fs.readFileSync('app/src/main/java/com/wayward/launcher/Laun
 const manifest = fs.readFileSync('app/src/main/AndroidManifest.xml', 'utf8');
 const gradle = fs.readFileSync('app/build.gradle', 'utf8');
 const naiSettings = fs.readFileSync('app/src/main/java/com/wayward/launcher/NovelAiSettingsActivity.java', 'utf8');
+const naiTokenStore = fs.readFileSync('app/src/main/java/com/wayward/launcher/NovelAiTokenStore.java', 'utf8');
 const glassStyle = fs.readFileSync('app/src/main/java/com/wayward/launcher/GlassButtonStyle.java', 'utf8');
 const webFileChooser = fs.readFileSync('app/src/main/java/com/wayward/launcher/WebFileChooser.java', 'utf8');
 
@@ -27,6 +28,10 @@ assert.match(main, /GlassButtonStyle\.bind\(this,b,false,10f\)/,
   'compact launcher buttons must use the common button style');
 assert.match(naiSettings, /GlassButtonStyle\.bind\(this, button, false, 12f\)/,
   'NovelAI settings actions must use the common button style');
+assert.match(naiTokenStore, /AndroidKeyStore/,
+  'NovelAI credentials must remain in the Android Keystore');
+assert.doesNotMatch(naiTokenStore, /cloudflare-worker|workers\.dev|openai-compatible/,
+  'the credential store must not double as an external provider registry');
 
 const glassTileStart = main.indexOf('private View glassModeTile(');
 const glassTileEnd = main.indexOf('private void openNovelAiSettings()', glassTileStart);

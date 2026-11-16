@@ -44,7 +44,8 @@ public final class NovelAiSettingsActivity extends Activity {
         TextView description = text(
                 "본인 NovelAI 계정의 Persistent API Token을 등록합니다.\n"
                 + "NovelAI 웹사이트 → Settings → Account → Get Persistent API Token에서 발급한 토큰을 붙여 넣으세요.\n\n"
-                + "입력한 토큰은 image.novelai.net의 계정 구독 정보 조회로 먼저 검증합니다. 이미지 생성은 하지 않으며, 검증 성공 후에만 이 기기의 Android 보안 저장소에 암호화해 보관합니다.",
+                + "입력한 토큰은 image.novelai.net의 계정 구독 정보 조회로 먼저 검증합니다. 이미지 생성은 하지 않으며, 검증 성공 후에만 이 기기의 Android 보안 저장소에 암호화해 보관합니다.\n\n"
+                + "앱 업데이트·게임 세션 변경·기기 재부팅 후에도 유지되며, 런처에서 직접 삭제하거나 앱 데이터/앱을 제거할 때만 사라집니다. 보안 키가 기기에 묶여 있어 다른 기기로 자동 이전되지는 않습니다.",
                 12, Color.rgb(87, 103, 118), false);
         description.setLineSpacing(dp(3), 1f);
         LinearLayout.LayoutParams descriptionParams = new LinearLayout.LayoutParams(-1, -2);
@@ -97,10 +98,10 @@ public final class NovelAiSettingsActivity extends Activity {
         clearButton.setOnClickListener(v -> confirmClear());
 
         try {
-            String existing = ImageProviderStore.readNovelAiToken(this);
+            String existing = NovelAiTokenStore.readToken(this);
             status.setText(existing.isEmpty()
                     ? "아직 토큰이 등록되지 않았습니다."
-                    : "토큰 등록됨 · Android 보안 저장소에 암호화 보관 중");
+                    : "토큰 등록됨 · 이 기기에서 직접 삭제할 때까지 암호화 보관");
             clearButton.setEnabled(!existing.isEmpty());
         } catch (Exception error) {
             status.setText("토큰 저장소를 읽지 못했습니다. " + message(error));
@@ -125,8 +126,8 @@ public final class NovelAiSettingsActivity extends Activity {
             boolean valid = false;
             try {
                 verifyPersistentToken(token);
-                ImageProviderStore.saveNovelAiToken(this, token);
-                result = "연결 성공 · 토큰을 이 기기의 Android 보안 저장소에 암호화해 저장했습니다.";
+                NovelAiTokenStore.saveToken(this, token);
+                result = "연결 성공 · 토큰을 이 기기에 암호화해 저장했습니다. 직접 삭제하기 전까지 유지됩니다.";
                 valid = true;
             } catch (Exception error) {
                 result = message(error);
@@ -174,7 +175,7 @@ public final class NovelAiSettingsActivity extends Activity {
                 .setNegativeButton("취소", null)
                 .setPositiveButton("삭제", (dialog, which) -> {
                     try {
-                        ImageProviderStore.saveNovelAiToken(this, "");
+                        NovelAiTokenStore.saveToken(this, "");
                         setResult(RESULT_OK);
                         Toast.makeText(this, "NovelAI 토큰을 삭제했습니다.", Toast.LENGTH_SHORT).show();
                         finish();
