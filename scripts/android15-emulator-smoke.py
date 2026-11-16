@@ -479,7 +479,7 @@ window.pickImagePackFolder = async function() {
     single_xml = wait_for_ui_contains(picker_local, picker_device, "PASS_SINGLE_FILE", timeout_seconds=25)
     if "PASS_SINGLE_FILE name=pack.json" not in single_xml:
         raise RuntimeError("The game image-pack JSON file chooser did not return pack.json to the page.")
-    print("PASS: the real game WebView ordinary file chooser returned pixel.png.")
+    print("PASS: the actual game pack.json file chooser returned its selected document.")
 
     zip_button = node_bounds(single_xml, ("Pick multiple ZIP files",))
     if zip_button is None:
@@ -557,7 +557,18 @@ window.pickImagePackFolder = async function() {
             raise RuntimeError("The shared ZIP metadata is missing the app or Android build information.")
         events = [json.loads(line) for line in archive.read("imagepack.ndjson").decode("utf-8").splitlines() if line.strip()]
         if not events or not any(item.get("requestId") for item in events):
-            raise RuntimeError("The ZIP has no correlated folder-picker request diagnostics.")
+            raise RuntimeError("The ZIP has no correlated image-picker request diagnostics.")
+        chooser_calls = [item for item in events if item.get("stage") == "web_file_chooser_called"]
+        chooser_results = [item for item in events if item.get("stage") == "web_file_chooser_callback_delivered"]
+        json_calls = [item for item in chooser_calls
+                      if "application/json" in str(item.get("details", {}).get("acceptTypes", ""))]
+        multiple_calls = [item for item in chooser_calls
+                          if item.get("details", {}).get("mode") == "multiple"]
+        if not json_calls or not multiple_calls or not chooser_results:
+            raise RuntimeError(
+                "The ZIP is missing the actual game pack.json / multiple-file chooser request "
+                "or its WebView callback result."
+            )
     print("PASS: diagnostic ZIP created, metadata and correlated events verified, Android sharesheet opened.")
 
     adb("shell", "input", "keyevent", "4")
