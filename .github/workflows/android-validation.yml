@@ -273,7 +273,10 @@ jobs:
             artifacts/android15-launcher-home.xml
             artifacts/android15-documentsui-folder-picker.png
             artifacts/android15-documentsui-folder-picker.xml
+            artifacts/android15-documentsui-permission-confirmation.png
+            artifacts/android15-documentsui-permission-confirmation.xml
             artifacts/imagepack-acceptance-pixel.png
+            artifacts/imagepack-acceptance-logcat.txt
             app/build/reports/androidTests/connected/debug
             app/build/outputs/androidTest-results/connected/debug
           if-no-files-found: warn

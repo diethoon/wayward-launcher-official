@@ -91,7 +91,7 @@ def screenshot(path: pathlib.Path) -> None:
 def wait_for_log(marker: str, *, timeout_seconds: int = 45) -> str:
     latest = ""
     for _ in range(timeout_seconds):
-        result = adb("logcat", "-d", "-s", "WaywardImagePackTest:I", "WaywardImagePackTest:E",
+        result = adb("logcat", "-d", "-s", "WaywardImagePackTest:V",
                      check=False, capture=True)
         latest = result.stdout or ""
         if marker in latest:
@@ -99,6 +99,8 @@ def wait_for_log(marker: str, *, timeout_seconds: int = 45) -> str:
         if "FAIL " in latest:
             raise RuntimeError("Image-pack DocumentsUI acceptance failed: " + latest[-4000:])
         time.sleep(1)
+    full_log = adb("logcat", "-d", "-v", "time", check=False, capture=True).stdout or ""
+    (ARTIFACTS / "imagepack-acceptance-logcat.txt").write_text(full_log[-120000:], encoding="utf-8")
     raise RuntimeError("Timed out waiting for " + marker + ". Last acceptance log: " + latest[-4000:])
 
 
@@ -144,11 +146,15 @@ def run_documentsui_acceptance() -> None:
     tap_bounds(use_folder)
 
     # On some Android 15 DocumentsUI builds a second confirmation dialog is shown.
+    confirmation = ""
+    confirmation_path = ARTIFACTS / "android15-documentsui-permission-confirmation.xml"
     for _ in range(12):
         try:
             confirmation = dump_ui(picker_local, picker_device)
+            confirmation_path.write_text(confirmation, encoding="utf-8")
             allow = node_bounds(confirmation, ("Allow", "허용"))
             if allow is not None:
+                screenshot(ARTIFACTS / "android15-documentsui-permission-confirmation.png")
                 tap_bounds(allow)
                 break
         except Exception:

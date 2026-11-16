@@ -93,8 +93,9 @@ final class ImagePackDirectoryAccess {
             activity.getContentResolver().takePersistableUriPermission(selected, grants);
             treeUri = selected;
             writable = (grants & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0;
-            activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE)
-                    .edit().putString(preferenceKey, selected.toString()).apply();
+            boolean saved = activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE)
+                    .edit().putString(preferenceKey, selected.toString()).commit();
+            if (!saved) throw new IllegalStateException("The image-pack folder URI could not be saved.");
 
             JSONObject result = new JSONObject();
             result.put("ok", true);

@@ -160,6 +160,13 @@
         return !!other && other.kind === "file" &&
           rootByHandle.get(other) === rootByHandle.get(handle) && other.__path === path;
       },
+      async queryPermission(options) {
+        return (!options || options.mode !== "readwrite" || permissions.writable)
+          ? "granted" : "denied";
+      },
+      async requestPermission(options) {
+        return this.queryPermission(options);
+      },
       async getFile() {
         const payload = nativeJson("readImagePackFile", path);
         const binary = atob(payload.data || "");
