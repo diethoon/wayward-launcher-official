@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.content.ClipData;
 import android.content.Intent;
 import android.net.Uri;
-import android.provider.DocumentsContract;
 import android.webkit.MimeTypeMap;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -24,16 +23,11 @@ final class WebFileChooser extends WebChromeClient {
     // Keep this distinct from MainActivity's 4101-4104 ActivityResult request codes.
     static final int REQUEST_CODE = 4105;
 
-    // MODE_OPEN_FOLDER was added to WebChromeClient.FileChooserParams in API 37.
-    // Keep its public value here because this launcher still compiles against SDK 35.
-    private static final int MODE_OPEN_FOLDER = 2;
-
     private final Activity activity;
     private final java.util.concurrent.atomic.AtomicInteger consoleErrorSamples =
             new java.util.concurrent.atomic.AtomicInteger();
     private ValueCallback<Uri[]> pendingCallback;
     private boolean allowMultiple;
-    private boolean pendingFolderSelection;
 
     WebFileChooser(Activity activity) {
         this.activity = activity;
@@ -67,31 +61,17 @@ final class WebFileChooser extends WebChromeClient {
             FileChooserParams fileChooserParams) {
         cancelPending();
         pendingCallback = filePathCallback;
-        pendingFolderSelection = fileChooserParams != null
-                && fileChooserParams.getMode() == MODE_OPEN_FOLDER;
-        allowMultiple = !pendingFolderSelection && fileChooserParams != null
+        // Folder selection is invoked directly by the native image-pack bridge.
+        // Keep this callback dedicated to ordinary and multiple file requests.
+        allowMultiple = fileChooserParams != null
                 && fileChooserParams.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE;
-
-        // Directory requests must use the tree picker. Keep ordinary/multiple file
-        // requests on the existing ACTION_OPEN_DOCUMENT path.
-        Intent picker = pendingFolderSelection
-                ? buildFolderPickerIntent()
-                : buildPickerIntent(fileChooserParams);
+        Intent picker = buildPickerIntent(fileChooserParams);
         try {
             activity.startActivityForResult(picker, REQUEST_CODE);
         } catch (Exception e) {
             deliver(null);
         }
         return true;
-    }
-
-    private Intent buildFolderPickerIntent() {
-        Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-        // Image packs are read-only. Persist the selected tree grant across app restarts.
-        picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        picker.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-        picker.addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
-        return picker;
     }
 
     private Intent buildPickerIntent(FileChooserParams params) {
@@ -147,29 +127,6 @@ final class WebFileChooser extends WebChromeClient {
             return;
         }
 
-        if (pendingFolderSelection) {
-            Uri selectedFolder = data.getData();
-            int readGrant = data.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION;
-            if (selectedFolder == null
-                    || !"content".equalsIgnoreCase(selectedFolder.getScheme())
-                    || !DocumentsContract.isTreeUri(selectedFolder)
-                    || readGrant == 0) {
-                deliver(null);
-                return;
-            }
-
-            try {
-                // Persist the exact tree grant before exposing the URI to WebView's
-                // File System Access directory handle. No whole-tree scan or copy.
-                activity.getContentResolver().takePersistableUriPermission(selectedFolder, readGrant);
-                deliver(new Uri[]{selectedFolder});
-            } catch (SecurityException error) {
-                DiagnosticsLogger.error(activity, "webview", "folder_picker_permission_failed", error);
-                deliver(null);
-            }
-            return;
-        }
-
         List<Uri> selected = new ArrayList<>();
         ClipData clip = data.getClipData();
         if (clip != null) {
@@ -196,7 +153,6 @@ final class WebFileChooser extends WebChromeClient {
         ValueCallback<Uri[]> callback = pendingCallback;
         pendingCallback = null;
         allowMultiple = false;
-        pendingFolderSelection = false;
         if (callback != null) callback.onReceiveValue(result);
     }
 }

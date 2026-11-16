@@ -101,8 +101,11 @@ jobs:
           javac -d "$test_dir" app/src/main/java/com/wayward/launcher/ImageServerModeCoordinator.java tests/ImageServerModeCoordinatorTest.java
           java -cp "$test_dir" com.wayward.launcher.ImageServerModeCoordinatorTest
 
-      - name: Test WebView file and image-pack folder chooser contracts
+      - name: Test WebView ordinary file and ZIP chooser contracts
         run: node tests/web-file-chooser-contract.test.mjs
+
+      - name: Test native image-pack SAF folder bridge contract
+        run: node tests/imagepack-folder-picker-contract.test.mjs
 
       - name: Test SAF image direct document-ID resolver
         run: |
@@ -268,6 +271,9 @@ jobs:
           path: |
             artifacts/android15-launcher-home.png
             artifacts/android15-launcher-home.xml
+            artifacts/android15-documentsui-folder-picker.png
+            artifacts/android15-documentsui-folder-picker.xml
+            artifacts/imagepack-acceptance-pixel.png
             app/build/reports/androidTests/connected/debug
             app/build/outputs/androidTest-results/connected/debug
           if-no-files-found: warn

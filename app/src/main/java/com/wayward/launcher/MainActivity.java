@@ -114,6 +114,7 @@ public final class MainActivity extends Activity {
     private Runnable imageGenPollRunnable;
     private WebView web;
     private WebFileChooser webFileChooser;
+    private ImagePackDirectoryAccess imagePackDirectoryAccess;
     private Button pairingButton;
     private RemoteHostDiscovery remoteHostDiscovery;
     private boolean remoteReconnectInProgress;
@@ -790,6 +791,10 @@ public final class MainActivity extends Activity {
             }
             return;
         }
+        if(req==ImagePackDirectoryAccess.REQUEST_CODE){
+            if(imagePackDirectoryAccess!=null)imagePackDirectoryAccess.handleActivityResult(result,data);
+            return;
+        }
         if(req==WebFileChooser.REQUEST_CODE){
             if(webFileChooser!=null)webFileChooser.handleActivityResult(result,data);
             return;
@@ -1071,7 +1076,7 @@ public final class MainActivity extends Activity {
         String domain=sessionDomain(activeProfileId);
         String origin=sessionOrigin(activeProfileId);
         int originPort=sessionPort(activeProfileId);
-        web=new WebView(this);WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setDatabaseEnabled(true);s.setUseWideViewPort(true);s.setLoadWithOverviewMode(true);s.setTextZoom(100);s.setSupportZoom(true);s.setBuiltInZoomControls(false);s.setDisplayZoomControls(false);s.setAllowFileAccess(false);s.setAllowContentAccess(false);s.setCacheMode(WebSettings.LOAD_DEFAULT);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);web.addJavascriptInterface(new HostBridge(),"WMLHost");
+        web=new WebView(this);WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setDatabaseEnabled(true);s.setUseWideViewPort(true);s.setLoadWithOverviewMode(true);s.setTextZoom(100);s.setSupportZoom(true);s.setBuiltInZoomControls(false);s.setDisplayZoomControls(false);s.setAllowFileAccess(false);s.setAllowContentAccess(false);s.setCacheMode(WebSettings.LOAD_DEFAULT);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);imagePackDirectoryAccess=new ImagePackDirectoryAccess(this,web,activeProfileId);web.addJavascriptInterface(new HostBridge(),"WMLHost");
         installGoogleAuthBridgeScript(origin);
         installImageGenDocumentStartScript(origin);
         FolderHandler folderHandler=new FolderHandler(tree,getAssets(),zipMods,origin);
@@ -1406,7 +1411,7 @@ public final class MainActivity extends Activity {
             return;
         }
         try {
-            for (String assetName : new String[] {"imagegen-proxy.js", "imagegen-studio-bridge.js"}) {
+            for (String assetName : new String[] {"imagegen-proxy.js", "imagegen-studio-bridge.js", "imagepack-folder-picker.js"}) {
                 try (InputStream in = getAssets().open(assetName)) {
                     ByteArrayOutputStream out = new ByteArrayOutputStream();
                     byte[] buffer = new byte[8192];
@@ -2004,7 +2009,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showHomePanel(){runOnUiThread(()->{if(web!=null)web.setVisibility(View.GONE);if(home!=null)home.setVisibility(View.VISIBLE);refreshStatus();refreshImageGenStatus();renderImageModePanel();});}
-    private void destroyWeb(){if(webFileChooser!=null){webFileChooser.cancelPending();webFileChooser=null;}if(web==null)return;web.removeJavascriptInterface("WMLHost");root.removeView(web);web.stopLoading();web.loadUrl("about:blank");web.destroy();web=null;}
+    private void destroyWeb(){if(webFileChooser!=null){webFileChooser.cancelPending();webFileChooser=null;}if(imagePackDirectoryAccess!=null){imagePackDirectoryAccess.cancelPending();imagePackDirectoryAccess=null;}if(web==null)return;web.removeJavascriptInterface("WMLHost");root.removeView(web);web.stopLoading();web.loadUrl("about:blank");web.destroy();web=null;}
     @Override public void onBackPressed(){if(web!=null&&web.getVisibility()==View.VISIBLE){if(web.canGoBack())web.goBack();else showHomePanel();return;}super.onBackPressed();}
     @Override protected void onDestroy(){
         String sessionId=sessionProfileId(getIntent());if(sessionId!=null)RUNNING_SESSIONS.remove(sessionId);
@@ -2015,6 +2020,27 @@ public final class MainActivity extends Activity {
     private String msg(Throwable e){return e==null||e.getMessage()==null?"알 수 없는 오류":e.getMessage();}
     private final class HostBridge{
         @JavascriptInterface public String version(){return "1.0.0";}
+        @JavascriptInterface public void chooseImagePackFolder(String requestId){
+            if(imagePackDirectoryAccess!=null)imagePackDirectoryAccess.openFolderPicker(requestId);
+        }
+        @JavascriptInterface public String listImagePackDirectory(String path){
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.listDirectoryJson(path);
+        }
+        @JavascriptInterface public String readImagePackFile(String path){
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.readFileJson(path);
+        }
+        @JavascriptInterface public String writeImagePackFile(String path,String mime,String data){
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.writeFileJson(path,mime,data);
+        }
+        @JavascriptInterface public String createImagePackDirectory(String path){
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.createDirectoryJson(path);
+        }
+        @JavascriptInterface public String deleteImagePackEntry(String path){
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.deleteEntryJson(path);
+        }
+        @JavascriptInterface public String getImagePackFolderInfo(){
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.getFolderInfoJson();
+        }
         @JavascriptInterface public String listModIds(){
             try{JSONObject r=new JSONObject();JSONArray a=new JSONArray();for(String id:allModIds())a.put(id);r.put("ok",true);r.put("ids",a);return r.toString();}
             catch(Exception e){try{JSONObject r=new JSONObject();r.put("ok",false);r.put("ids",new JSONArray());return r.toString();}catch(Exception ignored){return "{}";}}
