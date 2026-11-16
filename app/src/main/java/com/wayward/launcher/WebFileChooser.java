@@ -24,13 +24,16 @@ final class WebFileChooser extends WebChromeClient {
     static final int REQUEST_CODE = 4105;
 
     private final Activity activity;
+    private final String diagnosticSessionId;
     private final java.util.concurrent.atomic.AtomicInteger consoleErrorSamples =
             new java.util.concurrent.atomic.AtomicInteger();
     private ValueCallback<Uri[]> pendingCallback;
+    private String pendingRequestId = "";
     private boolean allowMultiple;
 
-    WebFileChooser(Activity activity) {
+    WebFileChooser(Activity activity, String sessionId) {
         this.activity = activity;
+        diagnosticSessionId = sessionId == null ? "" : sessionId;
     }
 
     @Override
@@ -59,16 +62,31 @@ final class WebFileChooser extends WebChromeClient {
             WebView webView,
             ValueCallback<Uri[]> filePathCallback,
             FileChooserParams fileChooserParams) {
-        cancelPending();
+        cancelPending("replaced_by_new_request");
         pendingCallback = filePathCallback;
+        pendingRequestId = "filechooser-" + java.util.UUID.randomUUID();
         // Folder selection is invoked directly by the native image-pack bridge.
         // Keep this callback dedicated to ordinary and multiple file requests.
         allowMultiple = fileChooserParams != null
                 && fileChooserParams.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE;
         Intent picker = buildPickerIntent(fileChooserParams);
+        org.json.JSONObject details = ImagePackDiagnostics.pageDetails(
+                webView == null ? null : webView.getUrl(), true);
+        try {
+            details.put("mode", allowMultiple ? "multiple" : "single");
+            String[] accepted = fileChooserParams == null ? null : fileChooserParams.getAcceptTypes();
+            if (accepted != null) details.put("acceptTypes", String.join(",", accepted));
+        } catch (Exception ignored) {}
+        ImagePackDiagnostics.event(activity, diagnosticSessionId, pendingRequestId,
+                "web_file_chooser_called", "info", details);
         try {
             activity.startActivityForResult(picker, REQUEST_CODE);
-        } catch (Exception e) {
+            ImagePackDiagnostics.event(activity, diagnosticSessionId, pendingRequestId,
+                    "web_file_chooser_activity_started", "info",
+                    ImagePackDiagnostics.details("mode", allowMultiple ? "multiple" : "single"));
+        } catch (Exception error) {
+            ImagePackDiagnostics.error(activity, diagnosticSessionId, pendingRequestId,
+                    "web_file_chooser_activity_launch_failed", error);
             deliver(null);
         }
         return true;
@@ -121,14 +139,35 @@ final class WebFileChooser extends WebChromeClient {
     }
 
     void handleActivityResult(int resultCode, Intent data) {
-        if (pendingCallback == null) return;
+        if (pendingCallback == null) {
+            ImagePackDiagnostics.event(activity, diagnosticSessionId, "",
+                    "web_file_chooser_result_without_pending_request", "warn",
+                    ImagePackDiagnostics.details("resultCode", resultCode));
+            return;
+        }
+        ClipData clip = data == null ? null : data.getClipData();
+        Uri single = data == null ? null : data.getData();
+        org.json.JSONObject details = ImagePackDiagnostics.details(
+                "resultCode", resultCode,
+                "result", resultCode == Activity.RESULT_OK && data != null ? "selected" : "cancelled",
+                "dataPresent", data != null,
+                "clipItemCount", clip == null ? 0 : clip.getItemCount(),
+                "resultFlags", data == null ? 0 : data.getFlags());
+        if (single != null) {
+            try {
+                details.put("uriScheme", single.getScheme() == null ? "none" : single.getScheme());
+                details.put("uriAuthority", single.getAuthority() == null ? "" : single.getAuthority());
+            } catch (Exception ignored) {}
+        }
+        ImagePackDiagnostics.event(activity, diagnosticSessionId, pendingRequestId,
+                "web_file_chooser_activity_result", 
+                resultCode == Activity.RESULT_OK && data != null ? "info" : "warn", details);
         if (resultCode != Activity.RESULT_OK || data == null) {
             deliver(null);
             return;
         }
 
         List<Uri> selected = new ArrayList<>();
-        ClipData clip = data.getClipData();
         if (clip != null) {
             for (int i = 0; i < clip.getItemCount(); i++) {
                 Uri uri = clip.getItemAt(i).getUri();
@@ -136,23 +175,43 @@ final class WebFileChooser extends WebChromeClient {
             }
         }
 
-        Uri single = data.getData();
         if (single != null && !selected.contains(single)) selected.add(single);
 
         if (!allowMultiple && selected.size() > 1) {
             selected = new ArrayList<>(selected.subList(0, 1));
         }
+        ImagePackDiagnostics.event(activity, diagnosticSessionId, pendingRequestId,
+                "web_file_chooser_uris_collected", "info",
+                ImagePackDiagnostics.details("selectedCount", selected.size(),
+                        "mode", allowMultiple ? "multiple" : "single"));
         deliver(selected.isEmpty() ? null : selected.toArray(new Uri[0]));
     }
 
     void cancelPending() {
+        cancelPending("activity_destroyed");
+    }
+
+    private void cancelPending(String reason) {
+        if (pendingCallback != null) {
+            ImagePackDiagnostics.event(activity, diagnosticSessionId, pendingRequestId,
+                    "web_file_chooser_cancelled", "warn",
+                    ImagePackDiagnostics.details("result", reason, "cancelled", true));
+        }
         deliver(null);
     }
 
     private void deliver(Uri[] result) {
         ValueCallback<Uri[]> callback = pendingCallback;
+        String requestId = pendingRequestId;
         pendingCallback = null;
+        pendingRequestId = "";
         allowMultiple = false;
-        if (callback != null) callback.onReceiveValue(result);
+        if (callback != null) {
+            ImagePackDiagnostics.event(activity, diagnosticSessionId, requestId,
+                    "web_file_chooser_callback_delivered", result == null ? "warn" : "info",
+                    ImagePackDiagnostics.details("selectedCount", result == null ? 0 : result.length,
+                            "cancelled", result == null));
+            callback.onReceiveValue(result);
+        }
     }
 }

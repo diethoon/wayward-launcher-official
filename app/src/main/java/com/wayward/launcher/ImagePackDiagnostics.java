@@ -35,6 +35,7 @@ final class ImagePackDiagnostics {
             "stack", "durationMs", "timedOut", "dispatchCount", "sameOriginFrameCount",
             "errorName", "errorMessage", "apiLevel", "pagePath", "writable", "mainFrame",
             "webViewAlive", "scriptBytes", "pendingRequest", "frameDepth", "frameCount",
+            "acceptTypes", "clipItemCount", "selectedCount", "dataPresent",
             "permissionBefore", "permissionAfter", "provider", "cancelled", "ok", "stage", "errorCode"
     ));
     private static final Pattern BEARER = Pattern.compile("(?i)(Bearer\\s+)[A-Za-z0-9._~+/-]+=*");

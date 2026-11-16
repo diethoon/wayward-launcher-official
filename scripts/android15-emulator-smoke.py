@@ -315,8 +315,8 @@ def run_main_activity_game_session_acceptance() -> None:
 <button id="pick">Open image-pack folder</button>
 <iframe id="picker-frame" src="picker-frame.html" title="Image-pack folder picker frame"
         style="width:1px;height:1px;border:0"></iframe>
-<button id="single-button">Pick ordinary PNG file</button>
-<input id="single-input" type="file" accept=".png,image/png" hidden>
+<button id="single-button">Pick pack.json file</button>
+<input id="single-input" type="file" accept=".json,application/json" hidden>
 <button id="zip-button">Pick multiple ZIP files</button>
 <input id="zip-input" type="file" accept=".zip,application/zip" multiple hidden>
 <a id="second" href="session-second.html">Open second internal page</a>
@@ -391,9 +391,15 @@ window.pickImagePackFolder = async function() {
             archive.writestr("fixture.txt", archive_name)
     pixel_fixture = fixture_dir / "pixel.png"
     pixel_fixture.write_bytes(make_png())
+    pack_fixture = fixture_dir / "pack.json"
+    pack_fixture.write_text(
+        '{"packFormat":1,"id":"wayward-android-test","folder":"wayward-android-test","entries":{}}',
+        encoding="utf-8"
+    )
 
     adb("shell", "mkdir", "-p", FIXTURE_FOLDER)
     adb("push", str(pixel_fixture), FIXTURE_FOLDER + "/pixel.png")
+    adb("push", str(pack_fixture), FIXTURE_FOLDER + "/pack.json")
     for archive_name in ("test-one.zip", "test-two.zip"):
         adb("push", str(fixture_dir / archive_name), FIXTURE_FOLDER + "/" + archive_name)
 
@@ -456,14 +462,14 @@ window.pickImagePackFolder = async function() {
         raise RuntimeError("The folder picker did not execute and resolve inside the same-origin iframe.")
     print("PASS: actual MainActivity game WebView received a JS directory handle, enumerated Download, and read pixel.png.")
 
-    single_button = node_bounds(game_xml, ("Pick ordinary PNG file",))
+    single_button = node_bounds(game_xml, ("Pick pack.json file",))
     if single_button is None:
         raise RuntimeError("The game page did not expose its ordinary file input trigger.")
     tap_bounds(single_button)
-    pick_single_document(picker_local, picker_device, "pixel.png")
+    pick_single_document(picker_local, picker_device, "pack.json")
     single_xml = wait_for_ui_contains(picker_local, picker_device, "PASS_SINGLE_FILE", timeout_seconds=25)
-    if "PASS_SINGLE_FILE name=pixel.png" not in single_xml:
-        raise RuntimeError("The ordinary file chooser did not return the selected PNG URI to the game page.")
+    if "PASS_SINGLE_FILE name=pack.json" not in single_xml:
+        raise RuntimeError("The game image-pack JSON file chooser did not return pack.json to the page.")
     print("PASS: the real game WebView ordinary file chooser returned pixel.png.")
 
     zip_button = node_bounds(single_xml, ("Pick multiple ZIP files",))

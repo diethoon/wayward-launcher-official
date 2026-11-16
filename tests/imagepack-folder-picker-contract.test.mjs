@@ -19,6 +19,9 @@ const extractionBackup = readFileSync(new URL("../app/src/main/res/xml/data_extr
 
 assert.match(picker, /onShowFileChooser\s*\(/, "WebView file chooser callback must be implemented");
 assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT/, "ordinary files and ZIPs must keep ACTION_OPEN_DOCUMENT");
+assert.match(picker, /web_file_chooser_called/, "HTML file-input calls must be correlated in the durable diagnostic journal");
+assert.match(picker, /web_file_chooser_activity_result/, "Android file-picker Activity results must be journaled");
+assert.match(picker, /web_file_chooser_callback_delivered/, "WebView file callback delivery or cancellation must be journaled");
 assert.match(picker, /CATEGORY_OPENABLE/, "ordinary file picker must remain OPENABLE");
 assert.match(picker, /Intent\.EXTRA_ALLOW_MULTIPLE/, "ZIP multi-select must remain supported");
 assert.match(picker, /getClipData\(\)/, "ZIP selections must preserve ClipData support");
