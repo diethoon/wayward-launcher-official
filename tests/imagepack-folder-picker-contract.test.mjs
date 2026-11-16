@@ -52,13 +52,13 @@ assert.match(access, /DEFAULT_INITIAL_DOCUMENT_ID = "primary:Download"/, "the An
 
 assert.match(legacyBackup, /exclude domain="sharedpref" path="wayward_launcher.xml"/,
   "legacy cloud backup must exclude the profile and game-session preferences file");
-assert.match(legacyBackup, /exclude domain="file" path="diagnostics\\//,
+assert.ok(legacyBackup.includes('exclude domain="file" path="diagnostics/"'),
   "legacy cloud backup must exclude local diagnostic journals");
 assert.match(extractionBackup, /<cloud-backup>[\\s\\S]*?exclude domain="sharedpref" path="wayward_launcher.xml"/,
   "Android cloud backup must exclude game registrations");
 assert.match(extractionBackup, /<device-transfer>[\\s\\S]*?exclude domain="sharedpref" path="wayward_launcher.xml"/,
   "Android device-to-device transfer must exclude game registrations");
-assert.equal((extractionBackup.match(/exclude domain="file" path="diagnostics\\//g) || []).length, 2,
+assert.equal(extractionBackup.split('exclude domain="file" path="diagnostics/"').length - 1, 2,
   "both cloud backup and device transfer must exclude picker diagnostics");
 assert.match(manifest, /android\.permission\.MANAGE_EXTERNAL_STORAGE/, "the app must declare all-files access");
 assert.match(manifest, /androidx\.core\.content\.FileProvider/, "diagnostic ZIP sharing must use a non-exported FileProvider");
