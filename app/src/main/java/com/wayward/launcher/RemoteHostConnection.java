@@ -50,6 +50,76 @@ final class RemoteHostConnection {
         this.signatureBase64 = requireText(signatureBase64, "Host signature");
     }
 
+    /**
+     * The compact QR carries only the bootstrap endpoint and the trust pin/nonce.
+     * It is not a trusted Host identity until the pinned HTTPS manifest is fetched
+     * and its signature and fields are verified.
+     */
+    static final class BootstrapInfo {
+        final int protocolVersion;
+        final String baseUrl;
+        final String certificateSha256;
+        final String qrNonce;
+
+        private BootstrapInfo(int protocolVersion, String baseUrl,
+                String certificateSha256, String qrNonce) {
+            if (protocolVersion != 1) {
+                throw new IllegalArgumentException("지원하지 않는 Remote Host protocol입니다.");
+            }
+            this.protocolVersion = protocolVersion;
+            this.baseUrl = normalizeBootstrapBaseUrl(baseUrl);
+            this.certificateSha256 = normalizeFingerprint(certificateSha256);
+            String nonce = requireText(qrNonce, "QR enrollment nonce")
+                    .trim().toUpperCase(Locale.ROOT);
+            if (!nonce.matches("[0-9A-F]{64}")) {
+                throw new IllegalArgumentException("QR enrollment nonce format is invalid.");
+            }
+            this.qrNonce = nonce;
+        }
+    }
+
+    static boolean isBootstrapQrJson(String json) throws Exception {
+        JSONObject value = new JSONObject(json);
+        return !hasFullManifestField(value);
+    }
+
+    private static boolean hasFullManifestField(JSONObject value) {
+        return value.has("hostId") && value.has("publicKeyBase64") &&
+                value.has("publicKeyFingerprint") && value.has("signedPayloadBase64") &&
+                value.has("signatureBase64");
+    }
+
+    static BootstrapInfo fromBootstrapQrJson(String json) throws Exception {
+        JSONObject value = new JSONObject(json);
+        if (value.length() != 4 ||
+                !value.has("protocolVersion") || !value.has("baseUrl") ||
+                !value.has("certificateSha256") || !value.has("qrNonce")) {
+            throw new IllegalArgumentException(
+                    "부트스트랩 QR에는 protocolVersion, baseUrl, certificateSha256, qrNonce만 있어야 합니다.");
+        }
+        return new BootstrapInfo(
+                value.getInt("protocolVersion"),
+                value.getString("baseUrl"),
+                value.getString("certificateSha256"),
+                value.getString("qrNonce"));
+    }
+
+    static RemoteHostConnection fromManifestJson(BootstrapInfo bootstrap, String json)
+            throws Exception {
+        if (bootstrap == null) throw new IllegalArgumentException("Bootstrap QR 정보가 없습니다.");
+        RemoteHostConnection manifest = fromQrJson(json);
+        if (!bootstrap.baseUrl.equals(manifest.baseUrl)) {
+            throw new SecurityException("매니페스트의 PC 주소가 QR 주소와 일치하지 않습니다.");
+        }
+        if (!bootstrap.certificateSha256.equals(manifest.certificateSha256)) {
+            throw new SecurityException("매니페스트의 TLS 인증서 지문이 QR과 일치하지 않습니다.");
+        }
+        if (!bootstrap.qrNonce.equals(manifest.qrNonce)) {
+            throw new SecurityException("매니페스트의 QR nonce가 스캔한 QR과 일치하지 않습니다.");
+        }
+        return manifest;
+    }
+
     static RemoteHostConnection fromQrJson(String json) throws Exception {
         JSONObject value = new JSONObject(json);
         if (value.optInt("protocolVersion", 0) != 1) {
@@ -297,6 +367,26 @@ final class RemoteHostConnection {
             throw new IllegalArgumentException("SHA-256 fingerprint 형식이 올바르지 않습니다.");
         }
         return normalized;
+    }
+
+    private static String normalizeBootstrapBaseUrl(String value) {
+        String trimmed = requireText(value, "Bootstrap Host URL").trim();
+        try {
+            URI uri = new URI(trimmed);
+            String path = uri.getRawPath();
+            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null ||
+                    uri.getPort() < 1 || uri.getPort() > 65535 ||
+                    uri.getRawUserInfo() != null || uri.getRawQuery() != null ||
+                    uri.getRawFragment() != null ||
+                    (path != null && !path.isEmpty() && !"/".equals(path)) ||
+                    !isPrivateLanIpv4(uri.getHost())) {
+                throw new IllegalArgumentException(
+                        "부트스트랩 PC 주소는 명시적 포트가 있는 HTTPS 사설 IPv4 루트 주소만 허용합니다.");
+            }
+            return normalizeBaseUrl(trimmed);
+        } catch (java.net.URISyntaxException error) {
+            throw new IllegalArgumentException("부트스트랩 PC 주소 형식이 올바르지 않습니다.", error);
+        }
     }
 
     private static String normalizeBaseUrl(String value) {
