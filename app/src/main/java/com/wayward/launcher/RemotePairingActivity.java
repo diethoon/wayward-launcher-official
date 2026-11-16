@@ -163,11 +163,22 @@ public final class RemotePairingActivity extends Activity {
         final RemoteHostConnection scannedHost;
         try {
             Log.i(TAG, "stage=qr_parse result=started");
-            scannedHost = RemoteHostConnection.fromQrJson(raw);
-            Log.i(TAG, "stage=qr_parse result=success protocol=1");
+            if (RemoteHostConnection.isBootstrapQrJson(raw)) {
+                Log.i(TAG, "stage=qr_parse result=success format=bootstrap_v1");
+                RemoteHostConnection.BootstrapInfo bootstrap =
+                        RemoteHostConnection.fromBootstrapQrJson(raw);
+                statusOnUi("PC 서명 매니페스트를 인증된 HTTPS 연결로 조회 중…");
+                Log.i(TAG, "stage=pairing_manifest_fetch result=started");
+                scannedHost = RemoteHostClient.fetchPairingManifest(bootstrap);
+                Log.i(TAG, "stage=pairing_manifest_fetch result=success");
+            } else {
+                scannedHost = RemoteHostConnection.fromQrJson(raw);
+                Log.i(TAG, "stage=qr_parse result=success format=full_manifest_v1");
+            }
         } catch (Exception error) {
-            Log.e(TAG, "stage=qr_parse result=failed error=" + error.getClass().getSimpleName());
-            runOnUiThread(() -> showFailure("QR 데이터 형식이 올바르지 않습니다: " +
+            Log.e(TAG, "stage=qr_parse_or_manifest_fetch result=failed error=" +
+                    error.getClass().getSimpleName());
+            runOnUiThread(() -> showFailure("QR 또는 PC 매니페스트 검증에 실패했습니다: " +
                     safeError(error)));
             return;
         }
