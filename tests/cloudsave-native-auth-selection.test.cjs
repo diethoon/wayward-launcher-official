@@ -63,18 +63,15 @@ assert.match(
   mainActivity,
   /clearToken\(ClearTokenRequest\.builder\(\)\.setToken\(token\)\.build\(\)\)/
 );
-assert.match(
-  mainActivity,
-  /@JavascriptInterface public void cancelGoogleDriveAuth\\(String nonce\\)/
-);
-assert.match(mainActivity, /pendingGoogleAuthRequestNonces\\.remove\\(req\\)/);
-assert.match(mainActivity, /reserveGoogleAuthRequestCode\\(nonce\\)/);
-assert.match(mainActivity, /startIntentSenderForResult\\(pending\\.getIntentSender\\(\\),requestCode,/);
-assert.match(mainActivity, /clearGoogleDriveAuthRequest\\(nonce\\)/);
-assert.match(mainActivity, /PENDING_GOOGLE_AUTH_RESULTS\\.remove\\(nonce\\)/);
-assert.match(mainActivity, /@JavascriptInterface public void revokeGoogleDriveAccess\\(String nonce\\)/);
-assert.match(mainActivity, /storeGoogleRevokeResult\\(nonce,true,null\\)/);
-assert.match(mainActivity, /storeGoogleRevokeResult\\(nonce,false,msg\\(error\\)\\)/);
+assert.ok(mainActivity.includes('@JavascriptInterface public void cancelGoogleDriveAuth(String nonce)'));
+assert.ok(mainActivity.includes('pendingGoogleAuthRequestNonces.remove(req)'));
+assert.ok(mainActivity.includes('reserveGoogleAuthRequestCode(nonce)'));
+assert.ok(mainActivity.includes('startIntentSenderForResult(pending.getIntentSender(),requestCode,'));
+assert.ok(mainActivity.includes('clearGoogleDriveAuthRequest(nonce)'));
+assert.ok(mainActivity.includes('PENDING_GOOGLE_AUTH_RESULTS.remove(nonce)'));
+assert.ok(mainActivity.includes('@JavascriptInterface public void revokeGoogleDriveAccess(String nonce)'));
+assert.ok(mainActivity.includes('storeGoogleRevokeResult(nonce,true,null)'));
+assert.ok(mainActivity.includes('storeGoogleRevokeResult(nonce,false,msg(error))'));
 
 // The WebView bridge forwards the account policy into the native adapter.
 assert.match(bridge, /const accountPolicy = parsed\.searchParams\.get\('login'\) \|\| 'remember'/);
