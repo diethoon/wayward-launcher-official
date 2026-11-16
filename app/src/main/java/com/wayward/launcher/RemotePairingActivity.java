@@ -151,7 +151,8 @@ public final class RemotePairingActivity extends Activity {
             return;
         }
         // Never log the QR payload: it contains the one-time enrollment nonce and trust material.
-        Log.i(TAG, "stage=qr_recognition result=success chars=" + raw.length());
+        int qrLength = raw.length();
+        Log.i(TAG, "stage=qr_recognition result=success chars=" + qrLength);
         processing = true;
         status.setText("QR 데이터 형식 확인 중…");
 
