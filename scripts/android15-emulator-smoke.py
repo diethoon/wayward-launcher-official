@@ -57,7 +57,13 @@ def make_png() -> bytes:
 
 
 def dump_ui(local_path: pathlib.Path, device_path: str) -> str:
-    adb("shell", "uiautomator", "dump", device_path)
+    result = adb("shell", "uiautomator", "dump", "--compressed", device_path,
+                 check=False, capture=True)
+    if result.returncode != 0:
+        raise RuntimeError(
+            "Android UI hierarchy dump failed (" + str(result.returncode) + "): " +
+            (result.stderr or result.stdout or "no diagnostic output")[-1200:]
+        )
     adb("pull", device_path, str(local_path))
     return local_path.read_text(encoding="utf-8", errors="replace")
 
@@ -137,11 +143,15 @@ def wait_for_log(marker: str, *, timeout_seconds: int = 45) -> str:
 def wait_for_ui_contains(local_path: pathlib.Path, device_path: str, marker: str,
                          *, timeout_seconds: int = 30) -> str:
     latest = ""
-    for _ in range(timeout_seconds):
+    deadline = time.monotonic() + timeout_seconds
+    while True:
         latest = dump_ui(local_path, device_path)
         if marker in latest:
             return latest
-        time.sleep(1)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(2, remaining))
     raise RuntimeError("Timed out waiting for UI marker " + marker + ": " + latest[-2500:])
 
 
@@ -396,9 +406,7 @@ window.pickImagePackFolder = async function() {
 
     picker_local = pathlib.Path("/tmp/wayward-main-activity-game.xml")
     picker_device = "/sdcard/wayward-main-activity-game.xml"
-    choose_download_as_game_folder(picker_local, picker_device)
-
-    home_xml = dump_ui(picker_local, picker_device)
+    home_xml = choose_download_as_game_folder(picker_local, picker_device)
     launch_button = node_bounds(home_xml, ("실행", "Launch"))
     if launch_button is None:
         raise RuntimeError("The registered Download game profile did not expose its launch button.")
@@ -418,7 +426,7 @@ window.pickImagePackFolder = async function() {
     # This must be ImagePackFileSystemAccess' own picker, not DocumentsUI or <input type=file>.
     folder_xml = ""
     select_folder = None
-    for _ in range(35):
+    for _ in range(18):
         try:
             folder_xml = dump_ui(picker_local, picker_device)
             select_folder = node_bounds(folder_xml, ("이 폴더 선택", "Select this folder"))
@@ -426,7 +434,7 @@ window.pickImagePackFolder = async function() {
                 break
         except Exception:
             pass
-        time.sleep(1)
+        time.sleep(2)
     (ARTIFACTS / "android15-main-activity-imagepack-picker.xml").write_text(
         folder_xml, encoding="utf-8"
     )
