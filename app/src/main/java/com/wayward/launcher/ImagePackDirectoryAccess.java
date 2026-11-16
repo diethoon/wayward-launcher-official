@@ -5,6 +5,8 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Build;
+import android.util.Log;
 import android.provider.DocumentsContract;
 import android.util.Base64;
 import android.webkit.WebView;
@@ -26,6 +28,9 @@ import java.util.List;
 final class ImagePackDirectoryAccess {
     static final int REQUEST_CODE = 4106;
     private static final String PREFS = "wayward_launcher";
+    private static final String TAG = "WaywardImagePackSAF";
+    private static final String EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY = "com.android.externalstorage.documents";
+    private static final String DEFAULT_INITIAL_DOCUMENT_ID = "primary:Download/Wayward_Faith/image-packs";
     private static final int MAX_FILE_BYTES = 32 * 1024 * 1024;
 
     private final Activity activity;
@@ -61,50 +66,111 @@ final class ImagePackDirectoryAccess {
                     | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                     | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
                     | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
-            if (initialUriForTesting != null) {
-                picker.putExtra(DocumentsContract.EXTRA_INITIAL_URI, initialUriForTesting);
-            }
+
+            Uri initialUri = resolveInitialPickerUri();
+            picker.putExtra(DocumentsContract.EXTRA_INITIAL_URI, initialUri);
+            Log.i(TAG, "picker_open action=OPEN_DOCUMENT_TREE api=" + Build.VERSION.SDK_INT
+                    + " initial=" + pickerInitialSource()
+                    + " flags=read,write,persistable,prefix");
             try {
                 activity.startActivityForResult(picker, REQUEST_CODE);
             } catch (Exception error) {
+                Log.e(TAG, "picker_open result=failed error=" + error.getClass().getSimpleName());
                 finishPending(failure("NotAllowedError", "Android folder picker could not be opened."));
             }
         });
     }
 
+    private Uri resolveInitialPickerUri() {
+        if (initialUriForTesting != null) return initialUriForTesting;
+        if (treeUri != null) {
+            try {
+                requireTree();
+                String documentId = DocumentsContract.getTreeDocumentId(treeUri);
+                return DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId);
+            } catch (Exception error) {
+                Log.w(TAG, "picker_initial_uri saved_tree_unavailable error=" +
+                        error.getClass().getSimpleName());
+            }
+        }
+        // Android 11+ forbids granting the storage-volume root and Download root.
+        // Start in the user's expected selectable Download subfolder instead.
+        return DocumentsContract.buildDocumentUri(
+                EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY, DEFAULT_INITIAL_DOCUMENT_ID);
+    }
+
+    private String pickerInitialSource() {
+        if (initialUriForTesting != null) return "test";
+        if (treeUri != null) return "saved_tree";
+        return "default_download_subfolder";
+    }
+
     void handleActivityResult(int resultCode, Intent data) {
         if (pendingRequestId == null) return;
         if (resultCode != Activity.RESULT_OK || data == null || data.getData() == null) {
+            Log.i(TAG, "picker_result result=cancelled resultCode=" + resultCode
+                    + " dataPresent=" + (data != null));
             finishPending(failure("AbortError", "Folder selection was cancelled."));
             return;
         }
 
         Uri selected = data.getData();
-        int grants = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION
+        int resultFlags = data.getFlags();
+        int grants = resultFlags & (Intent.FLAG_GRANT_READ_URI_PERMISSION
                 | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-        if (!"content".equalsIgnoreCase(selected.getScheme())
-                || !DocumentsContract.isTreeUri(selected)
-                || (grants & Intent.FLAG_GRANT_READ_URI_PERMISSION) == 0) {
+        boolean treeUriResult = "content".equalsIgnoreCase(selected.getScheme())
+                && DocumentsContract.isTreeUri(selected);
+        Log.i(TAG, "picker_result result=returned scheme="
+                + (selected.getScheme() == null ? "none" : selected.getScheme())
+                + " tree=" + treeUriResult
+                + " read=" + ((grants & Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0)
+                + " write=" + ((grants & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0)
+                + " persistable=" + ((resultFlags & Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION) != 0));
+
+        if (!treeUriResult || (grants & Intent.FLAG_GRANT_READ_URI_PERMISSION) == 0) {
+            Log.w(TAG, "picker_result result=rejected reason=not_readable_tree");
             finishPending(failure("SecurityError", "DocumentsUI did not return a readable SAF tree."));
             return;
         }
 
+        boolean persistableTaken = false;
         try {
             activity.getContentResolver().takePersistableUriPermission(selected, grants);
+            persistableTaken = true;
+            android.content.UriPermission persisted = null;
+            for (android.content.UriPermission permission :
+                    activity.getContentResolver().getPersistedUriPermissions()) {
+                if (selected.equals(permission.getUri()) && permission.isReadPermission()) {
+                    persisted = permission;
+                    break;
+                }
+            }
+            if (persisted == null) {
+                throw new SecurityException("The provider did not retain the selected tree grant.");
+            }
+
             treeUri = selected;
-            writable = (grants & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0;
+            writable = persisted.isWritePermission();
+            String displayName = rootName();
             boolean saved = activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE)
                     .edit().putString(preferenceKey, selected.toString()).commit();
             if (!saved) throw new IllegalStateException("The image-pack folder URI could not be saved.");
 
             JSONObject result = new JSONObject();
             result.put("ok", true);
-            result.put("name", rootName());
+            result.put("name", displayName);
             result.put("writable", writable);
+            Log.i(TAG, "picker_result result=success persistedRead=true persistedWrite=" + writable);
             finishPending(result);
         } catch (Exception error) {
             treeUri = null;
             writable = false;
+            if (persistableTaken) {
+                try {
+                    activity.getContentResolver().releasePersistableUriPermission(selected, grants);
+                } catch (Exception ignored) {}
+            }
+            Log.e(TAG, "picker_result result=failed error=" + error.getClass().getSimpleName());
             finishPending(failure("SecurityError", "The selected folder permission could not be retained."));
         }
     }
@@ -270,17 +336,24 @@ final class ImagePackDirectoryAccess {
     private void restorePersistedTree() {
         SharedPreferences preferences = activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE);
         String saved = preferences.getString(preferenceKey, "");
-        if (saved == null || saved.isEmpty()) return;
+        if (saved == null || saved.isEmpty()) {
+            Log.i(TAG, "tree_restore result=empty");
+            return;
+        }
         try {
             Uri candidate = Uri.parse(saved);
             for (android.content.UriPermission permission : activity.getContentResolver().getPersistedUriPermissions()) {
                 if (candidate.equals(permission.getUri()) && permission.isReadPermission()) {
                     treeUri = candidate;
                     writable = permission.isWritePermission();
+                    Log.i(TAG, "tree_restore result=success persistedRead=true persistedWrite=" + writable);
                     return;
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception error) {
+            Log.w(TAG, "tree_restore result=failed error=" + error.getClass().getSimpleName());
+        }
+        Log.w(TAG, "tree_restore result=stale_grant");
         preferences.edit().remove(preferenceKey).apply();
     }
 
