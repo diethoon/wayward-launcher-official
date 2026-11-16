@@ -265,13 +265,22 @@ def open_download_directory_in_documents_ui(local_path: pathlib.Path, device_pat
 
 def pick_single_document(local_path: pathlib.Path, device_path: str, filename: str) -> None:
     open_download_directory_in_documents_ui(local_path, device_path)
-    latest = dump_ui(local_path, device_path)
-    item = node_bounds(latest, (filename,))
-    if item is None:
-        item = node_bounds(latest, (filename,), require_clickable=False)
-    if item is None:
-        raise RuntimeError("The file picker did not list " + filename)
-    tap_bounds(item)
+    latest = ""
+    item = None
+    for _ in range(12):
+        latest = dump_ui(local_path, device_path)
+        item = node_bounds(latest, (filename,))
+        if item is None:
+            item = node_bounds(latest, (filename,), require_clickable=False)
+        if item is not None:
+            tap_bounds(item)
+            return
+        # Downloads can contain many entries; scroll the SAF list rather than
+        # treating a filename below the first viewport as a missing file.
+        adb("shell", "input", "swipe", "540", "1850", "540", "650", "350")
+        time.sleep(1)
+    (ARTIFACTS / "android15-single-file-picker-missing.xml").write_text(latest, encoding="utf-8")
+    raise RuntimeError("The file picker did not expose " + filename + " after scrolling Downloads.");
 
 
 def pick_multiple_zip_documents(local_path: pathlib.Path, device_path: str) -> None:
