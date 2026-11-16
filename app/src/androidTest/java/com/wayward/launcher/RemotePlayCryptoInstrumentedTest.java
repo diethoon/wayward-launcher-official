@@ -123,6 +123,86 @@ public final class RemotePlayCryptoInstrumentedTest {
     }
 
     @Test
+    public void bootstrapQrFetchManifestFieldsMustMatchBeforeHostSignatureIsTrusted() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        KeyPair keyPair = RemoteHostStore.getDeviceKeyPair(context);
+        String hostId = UUID.randomUUID().toString();
+        String fingerprint = RemoteHostConnection.sha256Hex(keyPair.getPublic().getEncoded());
+        String baseUrl = "https://192.168.1.81:8765/";
+        String certificatePin = "C".repeat(64);
+        String nonce = "A".repeat(64);
+        long issuedAt = System.currentTimeMillis();
+        RemoteHostConnection fullManifest = createSignedHostManifest(
+                keyPair, hostId, baseUrl, fingerprint, certificatePin, nonce,
+                issuedAt, issuedAt + 300_000L);
+
+        JSONObject bootstrapQr = new JSONObject()
+                .put("protocolVersion", 1)
+                .put("baseUrl", baseUrl)
+                .put("certificateSha256", certificatePin)
+                .put("qrNonce", nonce);
+        assertTrue(RemoteHostConnection.isBootstrapQrJson(bootstrapQr.toString()));
+        RemoteHostConnection.BootstrapInfo bootstrap =
+                RemoteHostConnection.fromBootstrapQrJson(bootstrapQr.toString());
+        RemoteHostConnection resolved = RemoteHostConnection.fromManifestJson(
+                fullManifest.toJson(), bootstrap);
+        resolved.verifySignedManifest();
+        assertEquals(hostId, resolved.hostId);
+
+        JSONObject legacyQr = fullManifest.toJson();
+        assertTrue(!RemoteHostConnection.isBootstrapQrJson(legacyQr.toString()));
+        assertEquals(hostId, RemoteHostConnection.fromQrJson(legacyQr.toString()).hostId);
+
+        JSONObject wrongAddress = new JSONObject(bootstrapQr.toString())
+                .put("baseUrl", "https://192.168.1.82:8765/");
+        assertThrows(SecurityException.class, () ->
+                RemoteHostConnection.fromManifestJson(fullManifest.toJson(),
+                        RemoteHostConnection.fromBootstrapQrJson(wrongAddress.toString())));
+
+        JSONObject wrongCertificate = new JSONObject(bootstrapQr.toString())
+                .put("certificateSha256", "D".repeat(64));
+        assertThrows(SecurityException.class, () ->
+                RemoteHostConnection.fromManifestJson(fullManifest.toJson(),
+                        RemoteHostConnection.fromBootstrapQrJson(wrongCertificate.toString())));
+
+        JSONObject wrongNonce = new JSONObject(bootstrapQr.toString())
+                .put("qrNonce", "B".repeat(64));
+        assertThrows(SecurityException.class, () ->
+                RemoteHostConnection.fromManifestJson(fullManifest.toJson(),
+                        RemoteHostConnection.fromBootstrapQrJson(wrongNonce.toString())));
+
+        for (String invalidUrl : new String[] {
+                "http://192.168.1.81:8765/",
+                "https://192.168.1.81:0/",
+                "https://192.168.1.81:65536/",
+                "https://192.168.1.81:8765/unexpected-path"
+        }) {
+            JSONObject invalid = new JSONObject(bootstrapQr.toString()).put("baseUrl", invalidUrl);
+            assertThrows(IllegalArgumentException.class,
+                    () -> RemoteHostConnection.fromBootstrapQrJson(invalid.toString()));
+        }
+
+        JSONObject malformedNonce = new JSONObject(bootstrapQr.toString()).put("qrNonce", "expired");
+        assertThrows(IllegalArgumentException.class,
+                () -> RemoteHostConnection.fromBootstrapQrJson(malformedNonce.toString()));
+
+        JSONObject tamperedManifest = fullManifest.toJson();
+        tamperedManifest.put("signatureBase64",
+                Base64.encodeToString(new byte[64], Base64.NO_WRAP));
+        RemoteHostConnection invalidSignature = RemoteHostConnection.fromManifestJson(
+                tamperedManifest, bootstrap);
+        assertThrows(SecurityException.class, invalidSignature::verifySignedManifest);
+
+        long expiredAt = System.currentTimeMillis() - 60_000L;
+        RemoteHostConnection expiredManifest = createSignedHostManifest(
+                keyPair, hostId, baseUrl, fingerprint, certificatePin, nonce,
+                expiredAt - 300_000L, expiredAt);
+        RemoteHostConnection expired = RemoteHostConnection.fromManifestJson(
+                expiredManifest.toJson(), bootstrap);
+        assertThrows(SecurityException.class, expired::verifySignedManifest);
+    }
+
+    @Test
     public void dynamicExternalPortsAreAcceptedWithoutChangingTheLanListenerPort() {
         for (int port : new int[] {8765, 43210, 50000}) {
             String external = "https://8.8.8.8:" + port + "/";
