@@ -5,7 +5,6 @@
   window.__waywardGoogleAuthBridgeInstalled = true;
 
   const AUTH_ORIGINS = new Set([
-    'https://wayward-cloud-auth.vercel.app',
     'https://jeiky224.github.io'
   ]);
   const DRIVE_SESSION_TOKEN_KEY = 'wml-google-drive-session-token-v1';
