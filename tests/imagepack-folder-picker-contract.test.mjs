@@ -16,7 +16,11 @@ assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT/, "ordinary files and ZIPs mu
 assert.match(picker, /CATEGORY_OPENABLE/, "ordinary file picker must remain OPENABLE");
 assert.match(picker, /Intent\.EXTRA_ALLOW_MULTIPLE/, "ZIP multi-select must remain supported");
 assert.match(picker, /getClipData\(\)/, "ZIP selections must preserve ClipData support");
-assert.doesNotMatch(picker, /MODE_OPEN_FOLDER|ACTION_OPEN_DOCUMENT_TREE/, "WebView mode 2 must not control image-pack folder selection");
+assert.match(picker, /MODE_OPEN_FOLDER\s*=\s*2/, "native folder mode must be handled explicitly");
+assert.match(picker, /buildFolderPickerIntent\(fileChooserParams\)/, "folder mode must use a directory picker");
+assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT_TREE/, "directory selection must not degrade into file selection");
+assert.match(picker, /DocumentsContract\.isTreeUri\(selected\)/, "folder results must be real SAF tree URIs");
+assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT/, "ordinary file and ZIP selection must remain unchanged");
 
 assert.match(bridge, /window\.showDirectoryPicker\s*=/, "the Image Studio directory API must be intercepted at document start");
 assert.match(bridge, /host\.chooseImagePackFolder\(id\)/, "the folder action must call the native launcher bridge directly");
@@ -61,7 +65,8 @@ assert.doesNotMatch(filesystem, /ACTION_OPEN_DOCUMENT_TREE/, "Android 11+ custom
 
 assert.match(main, /new ImagePackDirectoryAccess\(this,web,activeProfileId\)/, "the production game WebView must own the native image-pack bridge");
 assert.match(main, /imagePackDirectoryAccess\.onResume\(\)/, "the production activity must recheck all-files permission on resume");
-assert.match(main, /imagepack-folder-picker\.js/, "the directory adapter must be injected before game scripts");
+assert.match(main, /installDocumentStartAsset\("imagepack-folder-picker\.js", origin\)/, "the directory adapter must be registered independently");
+assert.match(main, /installDocumentStartAsset\("imagegen-proxy\.js", origin\)/, "image-generation scripts must remain installed separately");
 assert.match(main, /chooseImagePackFolder\(String requestId\)/, "WMLHost must preserve the existing folder action");
 assert.match(main, /listImagePackDirectory\(String path\)/, "WMLHost must preserve the existing directory-list method");
 assert.match(main, /readImagePackFile\(String path\)/, "WMLHost must preserve the existing file-read method");

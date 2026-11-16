@@ -1455,23 +1455,35 @@ public final class MainActivity extends Activity {
             if (imageGenStatus != null) imageGenStatus.setText("이 Android System WebView는 이미지 서버 연결 스크립트를 지원하지 않습니다. WebView 업데이트가 필요합니다.");
             return;
         }
+
+        // The image-pack folder bridge is required by game settings. Register it
+        // separately so an unrelated image-generation script failure cannot skip it.
         try {
-            for (String assetName : new String[] {"imagegen-proxy.js", "imagegen-studio-bridge.js", "imagepack-folder-picker.js"}) {
-                try (InputStream in = getAssets().open(assetName)) {
-                    ByteArrayOutputStream out = new ByteArrayOutputStream();
-                    byte[] buffer = new byte[8192];
-                    int count;
-                    while ((count = in.read(buffer)) >= 0) {
-                        if (count > 0) out.write(buffer, 0, count);
-                        if (out.size() > 64 * 1024) throw new IllegalStateException(assetName + " 파일이 너무 큽니다.");
-                    }
-                    String source = new String(out.toByteArray(), StandardCharsets.UTF_8);
-                    WebViewCompat.addDocumentStartJavaScript(
-                            web, source, Collections.singleton(origin));
-                }
-            }
+            installDocumentStartAsset("imagepack-folder-picker.js", origin);
+        } catch (Exception e) {
+            DiagnosticsLogger.error(this, "image-pack", "folder_picker_script_install", e);
+        }
+
+        try {
+            installDocumentStartAsset("imagegen-proxy.js", origin);
+            installDocumentStartAsset("imagegen-studio-bridge.js", origin);
         } catch (Exception e) {
             if (imageGenStatus != null) imageGenStatus.setText("이미지 생성 연결 스크립트를 준비하지 못했습니다: " + msg(e));
+        }
+    }
+
+    private void installDocumentStartAsset(String assetName, String origin) throws Exception {
+        try (InputStream in = getAssets().open(assetName)) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = in.read(buffer)) >= 0) {
+                if (count > 0) out.write(buffer, 0, count);
+                if (out.size() > 64 * 1024) throw new IllegalStateException(assetName + " 파일이 너무 큽니다.");
+            }
+            String source = new String(out.toByteArray(), StandardCharsets.UTF_8);
+            WebViewCompat.addDocumentStartJavaScript(
+                    web, source, Collections.singleton(origin));
         }
     }
 
