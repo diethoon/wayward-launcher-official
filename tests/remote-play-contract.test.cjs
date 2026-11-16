@@ -226,13 +226,13 @@ assert.ok(connection.includes("static boolean isBootstrapQrJson") &&
   connection.includes("hasFullManifestField"),
   'bootstrap and legacy full-manifest QR formats must be classified separately');
 assert.ok(connection.includes("static BootstrapInfo fromBootstrapQrJson") &&
-  connection.includes("normalizeBaseUrl(baseUrl)") && connection.includes("normalizeFingerprint(certificateSha256)") &&
+  connection.includes("normalizeBootstrapBaseUrl(baseUrl)") && connection.includes("normalizeFingerprint(certificateSha256)") &&
   connection.includes("[0-9A-F]{64}") && connection.includes("value.length() != 4"),
   'bootstrap QR fields must validate HTTPS address, certificate SHA-256, nonce format and exact field count');
-assert.ok(connection.includes("static RemoteHostConnection fromManifestJson") &&
-  connection.includes("bootstrap.baseUrl.equals(manifestBaseUrl)") &&
-  connection.includes("bootstrap.certificateSha256.equals(manifestCertificate)") &&
-  connection.includes("bootstrap.qrNonce.equals(manifestNonce)"),
+assert.ok(connection.includes("static RemoteHostConnection fromManifestJson(BootstrapInfo bootstrap, String json)") &&
+  connection.includes("bootstrap.baseUrl.equals(manifest.baseUrl)") &&
+  connection.includes("bootstrap.certificateSha256.equals(manifest.certificateSha256)") &&
+  connection.includes("bootstrap.qrNonce.equals(manifest.qrNonce)"),
   'the fetched full manifest must exactly match the QR address, certificate pin and nonce');
 assert.ok(connection.includes("static RemoteHostConnection fromQrJson"),
   'legacy full JSON QR parsing must remain supported');
