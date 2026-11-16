@@ -110,7 +110,7 @@ assert.match(main, /RemotePairingActivity\.class/,
   'the pairing action must open the in-launcher scanner');
 const pairingActivity = read('app/src/main/java/com/wayward/launcher/RemotePairingActivity.java');
 const fileManagerActivity = read('app/src/main/java/com/wayward/launcher/RemotePcFileManagerActivity.java');
-assert.match(pairingActivity, /GmsBarcodeScanning\.getClient\(this\)/,
+assert.match(pairingActivity, /GmsBarcodeScanning\.getClient\(this, options\)/,
   'QR scanning must run in the launcher through Google Code Scanner');
 assert.match(pairingActivity, /areModulesAvailable\(scanner\)/,
   'the Google Code Scanner optional module must be checked before opening the scanner');
