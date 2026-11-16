@@ -21,10 +21,12 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
     private ImagePackDirectoryAccess access;
     private WebView webView;
     private boolean verifyExisting;
+    private boolean verifyRevoked;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         verifyExisting = getIntent().getBooleanExtra("verify_existing", false);
+        verifyRevoked = getIntent().getBooleanExtra("verify_revoked", false);
         webView = new WebView(this);
         webView.getSettings().setJavaScriptEnabled(true);
         webView.getSettings().setDomStorageEnabled(true);
@@ -37,7 +39,9 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
         webView.addJavascriptInterface(new AcceptanceBridge(), "AcceptanceBridge");
         webView.setWebViewClient(new WebViewClient() {
             @Override public void onPageFinished(WebView view, String url) {
-                if (verifyExisting) {
+                if (verifyRevoked) {
+                    view.evaluateJavascript("window.AcceptanceBridge.verifyPermissionRevoked()", null);
+                } else if (verifyExisting) {
                     view.evaluateJavascript("window.AcceptanceBridge.verifyPersistedAccess()", null);
                 } else {
                     view.evaluateJavascript("document.getElementById('pick').click()", null);
@@ -58,6 +62,7 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
                     + "const bytes=new Uint8Array(await file.arrayBuffer());"
                     + "const signature=Array.from(bytes.slice(0,8)).join(',');"
                     + "if(signature!=='137,80,78,71,13,10,26,10')throw new Error('Selected file did not contain a PNG signature');"
+                    + "window.AcceptanceBridge.verifyFilesystemOperations();"
                     + "window.AcceptanceBridge.report('PASS picked directory='+directory.name+' bytes='+bytes.length);"
                     + "}catch(error){window.AcceptanceBridge.report('FAIL picked '+String(error&&error.name)+':'+String(error&&error.message));}"
                     + "});</script></body></html>";
@@ -138,7 +143,7 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
                 JSONObject info = new JSONObject(access.getFolderInfoJson());
                 JSONObject file = new JSONObject(access.readFileJson("pixel.png"));
                 if (!info.optBoolean("ok") || !file.optBoolean("ok")) {
-                    throw new IllegalStateException("Persisted SAF access is unavailable.");
+                    throw new IllegalStateException("Persisted filesystem access is unavailable.");
                 }
                 byte[] bytes = Base64.decode(file.getString("data"), Base64.DEFAULT);
                 byte[] signature = new byte[] {(byte) 137, 80, 78, 71, 13, 10, 26, 10};
@@ -152,5 +157,79 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
                 Log.e(TAG, "FAIL persisted-after-restart", error);
             }
         }
+
+        @JavascriptInterface public void verifyFilesystemOperations() {
+            try {
+                requireOk(new JSONObject(access.createDirectoryJson("acceptance-crud")), "create folder");
+                byte[] original = new byte[] {1, 2, 3, 4};
+                byte[] replacement = new byte[] {9, 8, 7, 6, 5, 4};
+                requireOk(new JSONObject(access.writeFileJson("acceptance-crud/replace.png", "image/png",
+                        Base64.encodeToString(original, Base64.NO_WRAP))), "create file");
+                requireBytes(original, new JSONObject(access.readFileJson("acceptance-crud/replace.png")), "read file");
+                requireOk(new JSONObject(access.writeFileJson("acceptance-crud/replace.png", "image/png",
+                        Base64.encodeToString(replacement, Base64.NO_WRAP))), "replace existing file");
+                requireBytes(replacement, new JSONObject(access.readFileJson("acceptance-crud/replace.png")), "read replaced file");
+                JSONObject children = new JSONObject(access.listDirectoryJson("acceptance-crud"));
+                if (!children.optBoolean("ok") || !children.optJSONArray("entries").toString().contains("replace.png")) {
+                    throw new IllegalStateException("New file is missing from the selected-root listing.");
+                }
+                requireOk(new JSONObject(access.deleteEntryJson("acceptance-crud/replace.png")), "delete file");
+                requireOk(new JSONObject(access.deleteEntryJson("acceptance-crud")), "delete folder");
+
+                assertRejected(access.listDirectoryJson("../Documents"), "list sibling folder");
+                assertRejected(access.readFileJson("../Documents/private.txt"), "read sibling file");
+                assertRejected(access.writeFileJson("../Documents/private.txt", "text/plain",
+                        Base64.encodeToString(new byte[] {0}, Base64.NO_WRAP)), "write sibling file");
+                assertRejected(access.createDirectoryJson("../Documents/forbidden"), "create sibling folder");
+                assertRejected(access.deleteEntryJson("../Documents/private.txt"), "delete sibling file");
+
+                JSONObject rootEntries = new JSONObject(access.listDirectoryJson(""));
+                if (!rootEntries.optBoolean("ok")) throw new IllegalStateException("Selected-root listing failed.");
+                if (rootEntries.optJSONArray("entries").toString().contains("__wayward_escape")) {
+                    throw new IllegalStateException("Escaping symbolic link was exposed in listing.");
+                }
+                assertRejected(access.listDirectoryJson("__wayward_escape"), "list through symbolic link");
+                assertRejected(access.readFileJson("__wayward_escape/outside.txt"), "read through symbolic link");
+                assertRejected(access.writeFileJson("__wayward_escape/injected.txt", "text/plain",
+                        Base64.encodeToString(new byte[] {1}, Base64.NO_WRAP)), "write through symbolic link");
+                Log.i(TAG, "PASS selected-root-boundary crud atomic-replace sibling-and-symlink-blocked");
+            } catch (Exception error) {
+                Log.e(TAG, "FAIL selected-root-boundary CRUD and symlink checks", error);
+            }
+        }
+
+        @JavascriptInterface public void verifyPermissionRevoked() {
+            try {
+                JSONObject info = new JSONObject(access.getFolderInfoJson());
+                JSONObject listing = new JSONObject(access.listDirectoryJson(""));
+                JSONObject read = new JSONObject(access.readFileJson("pixel.png"));
+                if (info.optBoolean("ok") || listing.optBoolean("ok") || read.optBoolean("ok")) {
+                    throw new IllegalStateException("Filesystem operations remained available after permission revocation.");
+                }
+                Log.i(TAG, "PASS permission-revoked filesystem operations denied");
+            } catch (Exception error) {
+                Log.e(TAG, "FAIL permission-revoked check", error);
+            }
+        }
+
+        private void requireOk(JSONObject result, String operation) {
+            if (!result.optBoolean("ok")) {
+                throw new IllegalStateException(operation + " failed: " + result.optString("name"));
+            }
+        }
+
+        private void assertRejected(String raw, String operation) throws Exception {
+            JSONObject result = new JSONObject(raw);
+            if (result.optBoolean("ok")) throw new IllegalStateException(operation + " was allowed.");
+        }
+
+        private void requireBytes(byte[] expected, JSONObject result, String operation) {
+            requireOk(result, operation);
+            byte[] actual = Base64.decode(result.optString("data"), Base64.DEFAULT);
+            if (!java.util.Arrays.equals(expected, actual)) {
+                throw new IllegalStateException(operation + " returned unexpected bytes.");
+            }
+        }
+
     }
 }

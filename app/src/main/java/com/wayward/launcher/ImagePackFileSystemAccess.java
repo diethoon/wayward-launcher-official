@@ -18,8 +18,10 @@ import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.StandardOpenOption;
 import java.io.IOException;
 import java.net.URLConnection;
 import java.util.ArrayList;
@@ -232,7 +234,8 @@ final class ImagePackFileSystemAccess {
 
     String getFolderInfoJson() {
         try {
-            File root = requireSelectedRoot();
+            ImagePackPathGuard guard = requirePathGuard();
+            File root = guard.rootDirectory();
             JSONObject result = new JSONObject();
             result.put("ok", true);
             result.put("name", root.equals(storageRoot) ? "내부 저장소" : root.getName());
@@ -246,13 +249,14 @@ final class ImagePackFileSystemAccess {
 
     String listDirectoryJson(String path) {
         try {
-            File directory = resolveDirectory(path);
+            ImagePackPathGuard guard = requirePathGuard();
+            File directory = guard.resolveDirectory(path);
             File[] children = directory.listFiles();
             if (children == null) throw new IOException("Directory listing is unavailable.");
             Arrays.sort(children, Comparator.comparing(File::getName, String.CASE_INSENSITIVE_ORDER));
             JSONArray entries = new JSONArray();
             for (File child : children) {
-                if (!isWithinStorage(child) || (!child.isDirectory() && !child.isFile())) continue;
+                if (!guard.isSafeListedEntry(child)) continue;
                 JSONObject item = new JSONObject();
                 item.put("name", child.getName());
                 item.put("kind", child.isDirectory() ? "directory" : "file");
@@ -273,11 +277,12 @@ final class ImagePackFileSystemAccess {
 
     String readFileJson(String path) {
         try {
-            File file = resolveFile(path);
+            File file = requirePathGuard().resolveFile(path);
             if (file.length() > MAX_FILE_BYTES) {
                 return failure("QuotaExceededError", "The image file exceeds the 32 MiB bridge limit.").toString();
             }
-            try (FileInputStream input = new FileInputStream(file);
+            try (InputStream input = Files.newInputStream(file.toPath(),
+                    StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS);
                  ByteArrayOutputStream output = new ByteArrayOutputStream()) {
                 byte[] buffer = new byte[16 * 1024];
                 int count;
@@ -304,19 +309,17 @@ final class ImagePackFileSystemAccess {
 
     String writeFileJson(String path, String mimeType, String encodedBytes) {
         try {
-            requireWriteAccess();
-            File target = resolveTarget(path);
-            if (target.exists() && !target.isFile()) {
-                throw new IllegalArgumentException("A directory already uses this name.");
-            }
+            ImagePackPathGuard guard = requirePathGuard();
+            requireWriteAccess(guard);
             byte[] bytes = Base64.decode(encodedBytes == null ? "" : encodedBytes, Base64.DEFAULT);
             if (bytes.length > MAX_FILE_BYTES) {
                 return failure("QuotaExceededError", "The image file exceeds the 32 MiB bridge limit.").toString();
             }
-            try (FileOutputStream output = new FileOutputStream(target, false)) {
-                output.write(bytes);
-                output.flush();
+            File target = guard.resolveTarget(path);
+            if (target.exists() && !target.isFile()) {
+                throw new IllegalArgumentException("A directory already uses this name.");
             }
+            ImagePackAtomicFileWriter.write(guard, path, bytes);
             JSONObject result = new JSONObject();
             result.put("ok", true);
             result.put("name", target.getName());
@@ -329,8 +332,9 @@ final class ImagePackFileSystemAccess {
 
     String createDirectoryJson(String path) {
         try {
-            requireWriteAccess();
-            File target = resolveTarget(path);
+            ImagePackPathGuard guard = requirePathGuard();
+            requireWriteAccess(guard);
+            File target = guard.resolveTarget(path);
             if (target.exists()) {
                 if (!target.isDirectory()) throw new IllegalArgumentException("A file already uses this name.");
             } else if (!target.mkdir()) {
@@ -347,8 +351,9 @@ final class ImagePackFileSystemAccess {
 
     String deleteEntryJson(String path) {
         try {
-            requireWriteAccess();
-            File target = resolveTarget(path);
+            ImagePackPathGuard guard = requirePathGuard();
+            requireWriteAccess(guard);
+            File target = guard.resolveTarget(path);
             if (!target.exists() || !target.delete()) {
                 throw new IOException("Entry deletion failed.");
             }
@@ -366,8 +371,11 @@ final class ImagePackFileSystemAccess {
         String saved = preferences.getString(preferenceKey, "");
         selectedRoot = null;
         if (saved == null || saved.isEmpty()) return;
-        File candidate = canonicalOrNull(new File(saved));
-        boolean pathAllowed = candidate != null && isWithinStorage(candidate);
+        File savedPath = new File(saved).getAbsoluteFile();
+        File candidate = canonicalOrNull(savedPath);
+        boolean pathWasCanonical = candidate != null
+                && savedPath.toPath().normalize().equals(candidate.toPath());
+        boolean pathAllowed = pathWasCanonical && isWithinStorage(candidate);
         if (pathAllowed && (!hasAllFilesAccess() || isUsableDirectory(candidate))) {
             selectedRoot = candidate;
         } else {
@@ -375,41 +383,21 @@ final class ImagePackFileSystemAccess {
         }
     }
 
-    private File requireSelectedRoot() throws IOException {
+    private ImagePackPathGuard requirePathGuard() throws IOException {
         if (!hasAllFilesAccess()) throw new SecurityException("MANAGE_EXTERNAL_STORAGE is not granted.");
-        if (!isUsableDirectory(selectedRoot)) throw new IllegalStateException("No selected folder.");
-        return selectedRoot.getCanonicalFile();
-    }
-
-    private void requireWriteAccess() throws IOException {
-        File root = requireSelectedRoot();
-        if (!root.canWrite()) throw new SecurityException("The selected folder is read-only.");
-    }
-
-    private File resolveDirectory(String path) throws IOException {
-        File current = requireSelectedRoot();
-        for (String part : splitPath(path)) {
-            current = new File(current, part);
-            if (!isUsableDirectory(current)) throw new IllegalArgumentException("Directory not found.");
-            current = current.getCanonicalFile();
+        if (selectedRoot == null) throw new IllegalStateException("No selected image-pack folder.");
+        ImagePackPathGuard guard = new ImagePackPathGuard(selectedRoot);
+        File root = guard.rootDirectory();
+        if (!root.canRead() || root.list() == null) {
+            throw new SecurityException("The selected image-pack folder is not readable.");
         }
-        return current;
+        return guard;
     }
 
-    private File resolveFile(String path) throws IOException {
-        File target = resolveTarget(path);
-        if (!target.isFile() || !target.canRead()) throw new IllegalArgumentException("File not found.");
-        return target;
-    }
-
-    private File resolveTarget(String path) throws IOException {
-        String[] parts = splitPath(path);
-        if (parts.length == 0) throw new IllegalArgumentException("A relative entry path is required.");
-        File parent = resolveDirectory(join(parts, parts.length - 1));
-        String name = validateName(parts[parts.length - 1]);
-        File target = new File(parent, name);
-        if (!isWithinStorage(target)) throw new SecurityException("Path is outside the selected folder.");
-        return target;
+    private void requireWriteAccess(ImagePackPathGuard guard) throws IOException {
+        if (!guard.rootDirectory().canWrite()) {
+            throw new SecurityException("The selected image-pack folder is read-only.");
+        }
     }
 
     private boolean isUsableDirectory(File directory) {

@@ -107,6 +107,14 @@ jobs:
       - name: Test native image-pack SAF folder bridge contract
         run: node tests/imagepack-folder-picker-contract.test.mjs
 
+      - name: Test image-pack selected-root path guard and atomic writes
+        run: |
+          test_dir="$RUNNER_TEMP/imagepack-filesystem-test"
+          mkdir -p "$test_dir"
+          javac -d "$test_dir" app/src/main/java/com/wayward/launcher/ImagePackPathGuard.java app/src/main/java/com/wayward/launcher/ImagePackAtomicFileWriter.java tests/ImagePackPathGuardTest.java tests/ImagePackAtomicFileWriterTest.java
+          java -cp "$test_dir" com.wayward.launcher.ImagePackPathGuardTest
+          java -cp "$test_dir" com.wayward.launcher.ImagePackAtomicFileWriterTest
+
       - name: Test SAF image direct document-ID resolver
         run: |
           test_dir="$RUNNER_TEMP/saf-image-resolver-test"

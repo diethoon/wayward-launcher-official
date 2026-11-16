@@ -6,6 +6,8 @@ const picker = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/W
 const access = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackDirectoryAccess.java", import.meta.url), "utf8");
 const bridge = readFileSync(new URL("../app/src/main/assets/imagepack-folder-picker.js", import.meta.url), "utf8");
 const filesystem = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackFileSystemAccess.java", import.meta.url), "utf8");
+const pathGuard = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackPathGuard.java", import.meta.url), "utf8");
+const atomicWriter = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackAtomicFileWriter.java", import.meta.url), "utf8");
 const manifest = readFileSync(new URL("../app/src/main/AndroidManifest.xml", import.meta.url), "utf8");
 const smoke = readFileSync(new URL("../scripts/android15-emulator-smoke.py", import.meta.url), "utf8");
 
@@ -41,8 +43,17 @@ assert.match(filesystem, /"이 폴더 선택"/, "the custom browser must provide
 assert.match(filesystem, /"새 폴더"/, "the custom browser must provide folder creation");
 assert.match(filesystem, /"↑ 상위 폴더"/, "the custom browser must support parent navigation");
 assert.match(filesystem, /image_pack_folder_path_/, "last selected path must be stored per profile");
-assert.match(filesystem, /FileInputStream/, "image files must be read through the normal filesystem");
-assert.match(filesystem, /FileOutputStream/, "image files must be written through the normal filesystem");
+assert.match(filesystem, /Files\.newInputStream\(file\.toPath\(\)/, "image files must be opened through the filesystem");
+assert.match(filesystem, /LinkOption\.NOFOLLOW_LINKS/, "image reads must not follow a swapped-in symbolic link");
+assert.match(filesystem, /ImagePackAtomicFileWriter\.write\(guard, path, bytes\)/, "file writes must use temporary-file atomic replacement");
+assert.match(atomicWriter, /File\.createTempFile\("\.wayward-imagepack-"/, "writes must use a sibling temporary file");
+assert.match(atomicWriter, /output\.getFD\(\)\.sync\(\)/, "temporary file contents must be synchronized before replacement");
+assert.match(atomicWriter, /StandardCopyOption\.ATOMIC_MOVE/, "completed files must be atomically moved over the target");
+assert.match(pathGuard, /selectedRootPath/, "the chosen folder must define the filesystem boundary");
+assert.match(pathGuard, /candidate\.startsWith\(selectedRootPath\)/, "canonical paths must remain beneath the selected folder");
+assert.match(pathGuard, /getCanonicalFile\(\)/, "path checks must resolve canonical paths");
+assert.match(pathGuard, /Files\.isSymbolicLink/, "symbolic links must be rejected from traversal and listing");
+assert.match(filesystem, /new ImagePackPathGuard\(selectedRoot\)/, "filesystem methods must use the selected-root guard");
 assert.match(filesystem, /target\.mkdir\(\)/, "folders must be created through the normal filesystem");
 assert.match(filesystem, /target\.delete\(\)/, "entries must be deleted through the normal filesystem");
 assert.doesNotMatch(filesystem, /Wayward_Faith|image-packs/, "no fixed image-pack folder name may be forced");
@@ -58,5 +69,10 @@ assert.match(readFileSync(new URL("../app/src/debug/java/com/wayward/launcher/Im
 assert.match(smoke, /appops", "set", "--uid", PACKAGE, "MANAGE_EXTERNAL_STORAGE", "allow"/, "the Android 15 emulator acceptance test must grant all-files access");
 assert.match(smoke, /run_native_folder_acceptance\(\)/, "the Android 15 smoke test must exercise the custom folder browser");
 assert.doesNotMatch(smoke, /run_documentsui_acceptance|ACTION_OPEN_DOCUMENT_TREE|이 폴더 사용|use this folder/i, "the Android 15 smoke test must drive the custom browser instead of the system picker");
+assert.match(readFileSync(new URL("../tests/ImagePackPathGuardTest.java", import.meta.url), "utf8"), /linked-documents/, "path tests must cover symbolic-link escape");
+assert.match(readFileSync(new URL("../tests/ImagePackAtomicFileWriterTest.java", import.meta.url), "utf8"), /simulated short write/, "writer tests must verify preservation after an incomplete write");
+assert.match(smoke, /MANAGE_EXTERNAL_STORAGE", "deny"/, "Android 15 smoke must verify permission revocation");
+assert.match(smoke, /__wayward_nav_child/, "Android 15 smoke must verify child and parent folder navigation");
+assert.match(readFileSync(new URL("../app/src/debug/java/com/wayward/launcher/ImagePackPickerAcceptanceActivity.java", import.meta.url), "utf8"), /verifyFilesystemOperations/, "Android 15 smoke must exercise filesystem CRUD");
 
 console.log("Native image-pack filesystem/SAF versioned bridge contract tests passed.");

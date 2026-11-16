@@ -99,10 +99,10 @@ def wait_for_log(marker: str, *, timeout_seconds: int = 45) -> str:
         result = adb("logcat", "-d", "-s", "WaywardImagePackTest:V",
                      check=False, capture=True)
         latest = result.stdout or ""
-        if marker in latest:
-            return latest
         if "FAIL " in latest:
             raise RuntimeError("Image-pack native folder acceptance failed: " + latest[-4000:])
+        if marker in latest:
+            return latest
         time.sleep(1)
     full_log = adb("logcat", "-d", "-v", "time", check=False, capture=True).stdout or ""
     (ARTIFACTS / "imagepack-acceptance-logcat.txt").write_text(full_log[-120000:], encoding="utf-8")
@@ -114,6 +114,11 @@ def run_native_folder_acceptance() -> None:
     fixture = ARTIFACTS / "imagepack-acceptance-pixel.png"
     fixture.write_bytes(make_png())
     adb("shell", "mkdir", "-p", FIXTURE_FOLDER)
+    adb("shell", "mkdir", "-p", "/sdcard/Documents")
+    adb("shell", "mkdir", "-p", FIXTURE_FOLDER + "/__wayward_nav_child")
+    adb("shell", "sh", "-c", "printf outside > /sdcard/Documents/outside.txt")
+    adb("shell", "rm", "-f", FIXTURE_FOLDER + "/__wayward_escape")
+    adb("shell", "ln", "-s", "/sdcard/Documents", FIXTURE_FOLDER + "/__wayward_escape")
     adb("push", str(fixture), FIXTURE_FOLDER + "/pixel.png")
     adb("shell", "appops", "set", "--uid", PACKAGE, "MANAGE_EXTERNAL_STORAGE", "allow")
     adb("logcat", "-c")
@@ -140,8 +145,51 @@ def run_native_folder_acceptance() -> None:
     if select_folder is None:
         raise RuntimeError("The native image-pack browser did not expose the '이 폴더 선택' button.")
 
+    # Confirm Download and exercise creation, child navigation, and parent navigation.
+    if "/Download" not in picker_xml:
+        raise RuntimeError("The native image-pack browser did not start in Download.")
+    create_folder_button = node_bounds(picker_xml, ("새 폴더",))
+    if create_folder_button is None:
+        raise RuntimeError("The custom folder browser did not expose its new-folder action.")
+    tap_bounds(create_folder_button)
+    time.sleep(1)
+    adb("shell", "input", "text", "__wayward_ui_created")
+    create_button = node_bounds(dump_ui(picker_local, picker_device), ("만들기",))
+    if create_button is None:
+        raise RuntimeError("The custom folder creation dialog did not expose its create action.")
+    tap_bounds(create_button)
+    time.sleep(1)
+    picker_xml = dump_ui(picker_local, picker_device)
+    if "__wayward_ui_created" not in picker_xml:
+        raise RuntimeError("The custom browser did not refresh after creating a folder.")
+
+    child_row = node_bounds(picker_xml, ("__wayward_nav_child",))
+    if child_row is None:
+        raise RuntimeError("The custom folder browser did not list its child directory.")
+    tap_bounds(child_row)
+    time.sleep(1)
+    child_xml = dump_ui(picker_local, picker_device)
+    if "/Download/__wayward_nav_child" not in child_xml:
+        raise RuntimeError("The custom folder browser did not navigate into its child directory.")
+
+    parent_row = node_bounds(child_xml, ("상위 폴더",))
+    if parent_row is None:
+        raise RuntimeError("The custom folder browser did not expose parent navigation.")
+    tap_bounds(parent_row)
+    time.sleep(1)
+    picker_xml = dump_ui(picker_local, picker_device)
+    if "/Download/__wayward_nav_child" in picker_xml or "/Download" not in picker_xml:
+        raise RuntimeError("The custom folder browser did not return to Download.")
+    select_folder = node_bounds(picker_xml, ("이 폴더 선택", "Select this folder"))
+    if select_folder is None:
+        raise RuntimeError("The folder selection action disappeared after parent navigation.")
+
     tap_bounds(select_folder)
     first_log = wait_for_log("PASS picked directory=")
+    if "FAIL " in first_log:
+        raise RuntimeError("Selected-root CRUD or symbolic-link boundary acceptance failed: " + first_log[-4000:])
+    if "PASS selected-root-boundary" not in first_log:
+        raise RuntimeError("Selected-root CRUD and boundary tests did not report success.")
     if "bytes=" not in first_log:
         raise RuntimeError("The selected image file was not read through the native file-system bridge.")
     print("PASS: Android 15 used the launcher folder browser (not DocumentsUI) and read Download/pixel.png.")
@@ -155,6 +203,19 @@ def run_native_folder_acceptance() -> None:
     second_log = wait_for_log("PASS persisted-after-restart", timeout_seconds=30)
     print("PASS: the selected filesystem folder and PNG survived a process restart.")
     print(second_log[-1400:])
+
+    adb("shell", "appops", "set", "--uid", PACKAGE, "MANAGE_EXTERNAL_STORAGE", "deny")
+    adb("shell", "am", "force-stop", PACKAGE)
+    time.sleep(2)
+    adb("logcat", "-c")
+    adb("shell", "am", "start", "-W", "-n", PICKER_TEST_ACTIVITY,
+        "--ez", "verify_revoked", "true")
+    revoked_log = wait_for_log("PASS permission-revoked", timeout_seconds=30)
+    print("PASS: revoking MANAGE_EXTERNAL_STORAGE denied listing and image reads.")
+    print(revoked_log[-1200:])
+
+    adb("shell", "appops", "set", "--uid", PACKAGE, "MANAGE_EXTERNAL_STORAGE", "allow")
+    adb("shell", "rm", "-f", FIXTURE_FOLDER + "/__wayward_escape")
 
 
 def main() -> int:
