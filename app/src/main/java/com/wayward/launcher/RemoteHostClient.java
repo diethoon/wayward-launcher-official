@@ -83,7 +83,7 @@ final class RemoteHostClient {
         RemoteHostStore.saveConnection(context, host);
         clearSession();
         Log.i(PAIRING_TAG, "stage=pc_identity_auth result=success");
-        return "PC Host 신원과 TLS 인증서 핀 검증 완료\\nHost ID: " + host.hostId;
+        return "PC Host 신원과 TLS 인증서 핀 검증 완료\nHost ID: " + host.hostId;
     }
 
     static RemoteHostConnection discoverHost(
