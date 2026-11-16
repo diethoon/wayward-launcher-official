@@ -63,14 +63,26 @@ assert.match(
   mainActivity,
   /clearToken\(ClearTokenRequest\.builder\(\)\.setToken\(token\)\.build\(\)\)/
 );
+assert.match(
+  mainActivity,
+  /@JavascriptInterface public void cancelGoogleDriveAuth\\(String nonce\\)/
+);
+assert.match(mainActivity, /pendingGoogleAuthRequestNonces\\.remove\\(req\\)/);
+assert.match(mainActivity, /reserveGoogleAuthRequestCode\\(nonce\\)/);
+assert.match(mainActivity, /startIntentSenderForResult\\(pending\\.getIntentSender\\(\\),requestCode,/);
+assert.match(mainActivity, /clearGoogleDriveAuthRequest\\(nonce\\)/);
+assert.match(mainActivity, /PENDING_GOOGLE_AUTH_RESULTS\\.remove\\(nonce\\)/);
+assert.match(mainActivity, /@JavascriptInterface public void revokeGoogleDriveAccess\\(String nonce\\)/);
+assert.match(mainActivity, /storeGoogleRevokeResult\\(nonce,true,null\\)/);
+assert.match(mainActivity, /storeGoogleRevokeResult\\(nonce,false,msg\\(error\\)\\)/);
 
 // The WebView bridge forwards the account policy into the native adapter.
 assert.match(bridge, /const accountPolicy = parsed\.searchParams\.get\('login'\) \|\| 'remember'/);
 assert.match(bridge, /const forceSelectAccount = accountPolicy === 'select_account'/);
 assert.match(bridge, /'https:\/\/jeiky224\.github\.io'/,
   'current CloudSave Pages auth origin must be intercepted');
-assert.match(bridge, /'https:\/\/wayward-cloud-auth\.vercel\.app'/,
-  'legacy Vercel auth origin remains compatible');
+assert.doesNotMatch(bridge, /vercel\.app/i,
+  'legacy Vercel authentication origin must not be allowed');
 assert.match(bridge, /host\.startGoogleDriveAuthWithPolicy\(nonce, forceSelectAccount\)/);
 assert.match(bridge, /else if \(!forceSelectAccount && hasLegacyStart\)/);
 assert.match(bridge, /host\.startGoogleDriveAuth\(nonce\);/);
