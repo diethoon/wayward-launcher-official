@@ -145,7 +145,7 @@ public final class RemotePlayCryptoInstrumentedTest {
         RemoteHostConnection.BootstrapInfo bootstrap =
                 RemoteHostConnection.fromBootstrapQrJson(bootstrapQr.toString());
         RemoteHostConnection resolved = RemoteHostConnection.fromManifestJson(
-                fullManifest.toJson(), bootstrap);
+                bootstrap, fullManifest.toJson().toString());
         resolved.verifySignedManifest();
         assertEquals(hostId, resolved.hostId);
 
@@ -156,20 +156,23 @@ public final class RemotePlayCryptoInstrumentedTest {
         JSONObject wrongAddress = new JSONObject(bootstrapQr.toString())
                 .put("baseUrl", "https://192.168.1.82:8765/");
         assertThrows(SecurityException.class, () ->
-                RemoteHostConnection.fromManifestJson(fullManifest.toJson(),
-                        RemoteHostConnection.fromBootstrapQrJson(wrongAddress.toString())));
+                RemoteHostConnection.fromManifestJson(
+                        RemoteHostConnection.fromBootstrapQrJson(wrongAddress.toString()),
+                        fullManifest.toJson().toString()));
 
         JSONObject wrongCertificate = new JSONObject(bootstrapQr.toString())
                 .put("certificateSha256", "D".repeat(64));
         assertThrows(SecurityException.class, () ->
-                RemoteHostConnection.fromManifestJson(fullManifest.toJson(),
-                        RemoteHostConnection.fromBootstrapQrJson(wrongCertificate.toString())));
+                RemoteHostConnection.fromManifestJson(
+                        RemoteHostConnection.fromBootstrapQrJson(wrongCertificate.toString()),
+                        fullManifest.toJson().toString()));
 
         JSONObject wrongNonce = new JSONObject(bootstrapQr.toString())
                 .put("qrNonce", "B".repeat(64));
         assertThrows(SecurityException.class, () ->
-                RemoteHostConnection.fromManifestJson(fullManifest.toJson(),
-                        RemoteHostConnection.fromBootstrapQrJson(wrongNonce.toString())));
+                RemoteHostConnection.fromManifestJson(
+                        RemoteHostConnection.fromBootstrapQrJson(wrongNonce.toString()),
+                        fullManifest.toJson().toString()));
 
         for (String invalidUrl : new String[] {
                 "http://192.168.1.81:8765/",
@@ -193,16 +196,14 @@ public final class RemotePlayCryptoInstrumentedTest {
         JSONObject tamperedManifest = fullManifest.toJson();
         tamperedManifest.put("signatureBase64",
                 Base64.encodeToString(new byte[64], Base64.NO_WRAP));
-        RemoteHostConnection invalidSignature = RemoteHostConnection.fromManifestJson(
-                tamperedManifest, bootstrap);
+        RemoteHostConnection invalidSignature = RemoteHostConnection.fromManifestJson(bootstrap, tamperedManifest.toString());
         assertThrows(SecurityException.class, invalidSignature::verifySignedManifest);
 
         long expiredAt = System.currentTimeMillis() - 60_000L;
         RemoteHostConnection expiredManifest = createSignedHostManifest(
                 keyPair, hostId, baseUrl, fingerprint, certificatePin, nonce,
                 expiredAt - 300_000L, expiredAt);
-        RemoteHostConnection expired = RemoteHostConnection.fromManifestJson(
-                expiredManifest.toJson(), bootstrap);
+        RemoteHostConnection expired = RemoteHostConnection.fromManifestJson(bootstrap, expiredManifest.toJson().toString());
         assertThrows(SecurityException.class, expired::verifySignedManifest);
     }
 
