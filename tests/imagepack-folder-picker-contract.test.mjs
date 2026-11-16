@@ -45,7 +45,7 @@ assert.match(bridge, /deleteImagePackEntry/, "the directory API must retain entr
 assert.match(helper, /typeof frame\.showDirectoryPicker==='function'/, "runtime verification must check the real API function, not only a marker");
 assert.match(helper, /frame\.eval\(source\)/, "runtime fallback must reach same-origin child frames");
 assert.match(access, /Build\.VERSION\.SDK_INT >= Build\.VERSION_CODES\.R/, "Android 11+ must use the filesystem backend");
-assert.match(access, /new ImagePackFileSystemAccess\(activity, webView, safeProfile\)/, "filesystem access must remain scoped to the active user profile");
+assert.match(access, /new ImagePackFileSystemAccess\(activity, webView, safeProfile, diagnosticSessionId\)/, "filesystem access must remain scoped to the active user profile and diagnostic session");
 assert.match(access, /Intent\.ACTION_OPEN_DOCUMENT_TREE/, "Android 10 must keep the existing SAF tree picker");
 assert.match(access, /takePersistableUriPermission\(selected, grants\)/, "Android 10 must retain persisted SAF permissions");
 assert.match(access, /DEFAULT_INITIAL_DOCUMENT_ID = "primary:Download"/, "the Android 10 SAF picker must start in Download");
