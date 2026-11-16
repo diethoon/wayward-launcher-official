@@ -163,7 +163,9 @@ Updated: 2026-11-15 (Asia/Seoul)
 - Android 15 diagnostics artifact ID: `14170075280`, archive SHA-256: `56498ee0826a38ffaeddc5ac16eedabd543ef10303c31149ec16e9199a7454fe`.
 - No physical Android handset, physical Windows Host or WAN router path was exercised. The Manager still creates the QR from an active private IPv4 Host listener. Once the QR payload is shared, its signed public endpoint can also carry initial Host identity/pairing requests if the private route is unreachable; the existing nonce and explicit Manager approval remain mandatory. Later reconnect can also use that signed endpoint where router mapping and upstream access allow it.
 
-## WebView SAF image-pack directory picker — 2026-11-16
+## WebView SAF image-pack directory picker — initial attempt (superseded) — 2026-11-16
+
+> Historical first attempt only. The `MODE_OPEN_FOLDER` callback approach below did not solve Android 15 selection. It was superseded by the native button bridge and Android 15 DocumentsUI acceptance recorded in the later section, which is the current result.
 
 - Latest Android implementation baseline before this fix: `work/remote-play-ux-v1-20261115` @ `ab185a4005b6ac86784c49b76e454d9a86d2c1e4`. Default `main` was newer by a documentation-only commit; the active product-code branch above was used.
 - Code commit: `5f8303ae1bcda8fea697a19410b07c5d6e152035`.
