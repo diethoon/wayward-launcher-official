@@ -24,10 +24,6 @@ LOCAL_XML = pathlib.Path("/tmp/wayward-launcher-home.xml")
 LOCAL_PID = pathlib.Path("/tmp/wayward-launcher-app-pid.txt")
 LOCAL_CRASH = pathlib.Path("/tmp/wayward-launcher-crash.log")
 FIXTURE_FOLDER = "/sdcard/Download/Wayward_Faith/image-packs"
-FIXTURE_INITIAL_URI = (
-    "content://com.android.externalstorage.documents/document/"
-    "primary%3ADownload%2FWayward_Faith%2Fimage-packs"
-)
 
 
 def run(command: list[str], *, check: bool = True, capture: bool = False) -> subprocess.CompletedProcess:
@@ -120,8 +116,9 @@ def run_documentsui_acceptance() -> None:
     adb("shell", "mkdir", "-p", FIXTURE_FOLDER)
     adb("push", str(fixture), FIXTURE_FOLDER + "/pixel.png")
     adb("logcat", "-c")
-    adb("shell", "am", "start", "-W", "-n", PICKER_TEST_ACTIVITY,
-        "--es", "initial_uri", FIXTURE_INITIAL_URI)
+    # Do not inject a test-only initial URI: this must exercise the same
+    # production default URI resolver used by MainActivity on first selection.
+    adb("shell", "am", "start", "-W", "-n", PICKER_TEST_ACTIVITY)
 
     picker_local = pathlib.Path("/tmp/wayward-documentsui-picker.xml")
     picker_device = "/sdcard/wayward-documentsui-picker.xml"
@@ -133,7 +130,7 @@ def run_documentsui_acceptance() -> None:
             use_folder = node_bounds(picker_xml, ("Use this folder", "이 폴더 사용"))
             if use_folder is not None:
                 break
-            folder_row = node_bounds(picker_xml, ("WaywardImagePackFixture",))
+            folder_row = node_bounds(picker_xml, ("image-packs",))
             if folder_row is not None:
                 tap_bounds(folder_row)
                 time.sleep(2)
