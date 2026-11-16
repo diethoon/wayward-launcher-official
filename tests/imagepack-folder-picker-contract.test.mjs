@@ -32,6 +32,8 @@ assert.match(access, /picker_result result=success persistedRead=true/,
 assert.match(access, /FLAG_GRANT_PERSISTABLE_URI_PERMISSION/, "the native picker must request a persisted grant");
 assert.match(access, /takePersistableUriPermission\(selected, grants\)/, "the selected tree grant must be persisted");
 assert.match(readFileSync(new URL("../scripts/android15-emulator-smoke.py", import.meta.url), "utf8"), /if not clickable:/, "the Android 15 test must only tap clickable confirmation controls");
+assert.doesNotMatch(readFileSync(new URL("../scripts/android15-emulator-smoke.py", import.meta.url), "utf8"), /--es",\s*"initial_uri"/,
+  "the Android 15 acceptance test must exercise the production default SAF initial-URI resolver, not inject a test-only URI");
 assert.match(readFileSync(new URL("../app/src/debug/java/com/wayward/launcher/ImagePackPickerAcceptanceActivity.java", import.meta.url), "utf8"), /const fileHandle=await directory\.getFileHandle\(\x27pixel\.png\x27\);[\s\S]*const file=await fileHandle\.getFile\(\);/, "the Android 15 acceptance page must await the directory handle before reading its file");
 assert.match(access, /putString\(preferenceKey, selected\.toString\(\)\)\.commit\(\)/, "the selected tree URI must be durably saved before returning to the WebView");
 assert.match(access, /buildChildDocumentsUriUsingTree/, "SAF queries must be limited to the requested directory level");
