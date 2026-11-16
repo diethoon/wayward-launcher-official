@@ -90,10 +90,12 @@ final class RemoteHostConnection {
 
     static boolean isBootstrapQrJson(String json) throws Exception {
         JSONObject value = new JSONObject(json);
-        return value.has("protocolVersion") && value.has("baseUrl") &&
-                value.has("certificateSha256") && value.has("qrNonce") &&
-                !value.has("hostId") && !value.has("publicKeyBase64") &&
-                !value.has("signedPayloadBase64") && !value.has("signatureBase64");
+        boolean hasBootstrapMarker = value.has("protocolVersion") || value.has("baseUrl") ||
+                value.has("certificateSha256") || value.has("qrNonce");
+        boolean hasFullManifestField = value.has("hostId") || value.has("publicKeyBase64") ||
+                value.has("publicKeyFingerprint") || value.has("signedPayloadBase64") ||
+                value.has("signatureBase64");
+        return hasBootstrapMarker && !hasFullManifestField;
     }
 
     static BootstrapInfo fromBootstrapQrJson(String json) throws Exception {
