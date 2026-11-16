@@ -23,10 +23,10 @@ DEVICE_XML = "/sdcard/wayward-launcher-home.xml"
 LOCAL_XML = pathlib.Path("/tmp/wayward-launcher-home.xml")
 LOCAL_PID = pathlib.Path("/tmp/wayward-launcher-app-pid.txt")
 LOCAL_CRASH = pathlib.Path("/tmp/wayward-launcher-crash.log")
-FIXTURE_FOLDER = "/sdcard/Documents/WaywardImagePackFixture"
+FIXTURE_FOLDER = "/sdcard/Download/Wayward_Faith/image-packs"
 FIXTURE_INITIAL_URI = (
     "content://com.android.externalstorage.documents/document/"
-    "primary%3ADocuments%2FWaywardImagePackFixture"
+    "primary%3ADownload%2FWayward_Faith%2Fimage-packs"
 )
 
 
