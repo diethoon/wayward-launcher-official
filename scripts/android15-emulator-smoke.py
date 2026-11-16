@@ -59,7 +59,7 @@ def dump_ui(local_path: pathlib.Path, device_path: str) -> str:
     return local_path.read_text(encoding="utf-8", errors="replace")
 
 
-def node_bounds(xml: str, labels: tuple[str, ...]) -> tuple[int, int, int, int] | None:
+def node_bounds(xml: str, labels: tuple[str, ...], *, require_clickable: bool = True) -> tuple[int, int, int, int] | None:
     try:
         root = ET.fromstring(xml)
     except ET.ParseError:
@@ -69,7 +69,7 @@ def node_bounds(xml: str, labels: tuple[str, ...]) -> tuple[int, int, int, int] 
         description = node.attrib.get("content-desc", "")
         clickable = node.attrib.get("clickable", "false") == "true"
         resource_id = node.attrib.get("resource-id", "")
-        if not clickable:
+        if require_clickable and not clickable:
             continue
         matches_label = any(label.casefold() in (text + " " + description).casefold() for label in labels)
         is_confirmation_button = resource_id == "android:id/button1" and any(
@@ -168,7 +168,7 @@ def run_native_folder_acceptance() -> None:
     if "__wayward_ui_created" not in picker_xml:
         raise RuntimeError("The custom browser did not refresh after creating a folder.")
 
-    child_row = node_bounds(picker_xml, ("__wayward_nav_child",))
+    child_row = node_bounds(picker_xml, ("__wayward_nav_child",), require_clickable=False)
     if child_row is None:
         raise RuntimeError("The custom folder browser did not list its child directory.")
     tap_bounds(child_row)
@@ -177,7 +177,7 @@ def run_native_folder_acceptance() -> None:
     if "/Download/__wayward_nav_child" not in child_xml:
         raise RuntimeError("The custom folder browser did not navigate into its child directory.")
 
-    parent_row = node_bounds(child_xml, ("상위 폴더",))
+    parent_row = node_bounds(child_xml, ("상위 폴더",), require_clickable=False)
     if parent_row is None:
         raise RuntimeError("The custom folder browser did not expose parent navigation.")
     tap_bounds(parent_row)
