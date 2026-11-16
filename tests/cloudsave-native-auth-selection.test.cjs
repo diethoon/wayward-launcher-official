@@ -80,6 +80,10 @@ assert.match(bridge, /'https:\/\/jeiky224\.github\.io'/,
   'current CloudSave Pages auth origin must be intercepted');
 assert.doesNotMatch(bridge, /vercel\.app/i,
   'legacy Vercel authentication origin must not be allowed');
+assert.match(bridge, /AUTH_PATHS = new Set/);
+assert.match(bridge, /'\/cloud\/file-auth\.html'/);
+assert.match(bridge, /'\/cloud\/auth-061\.html'/);
+
 assert.match(bridge, /host\.startGoogleDriveAuthWithPolicy\(nonce, forceSelectAccount\)/);
 assert.match(bridge, /else if \(!forceSelectAccount && hasLegacyStart\)/);
 assert.match(bridge, /host\.startGoogleDriveAuth\(nonce\);/);
