@@ -80,28 +80,32 @@ final class RemoteHostConnection {
 
     static boolean isBootstrapQrJson(String json) throws Exception {
         JSONObject value = new JSONObject(json);
-        return !hasFullManifestField(value);
+        boolean hasBootstrapMarker = value.has("protocolVersion") || value.has("baseUrl") ||
+                value.has("certificateSha256") || value.has("qrNonce");
+        return hasBootstrapMarker && !hasFullManifestField(value);
     }
 
     private static boolean hasFullManifestField(JSONObject value) {
-        return value.has("hostId") && value.has("publicKeyBase64") &&
-                value.has("publicKeyFingerprint") && value.has("signedPayloadBase64") &&
+        return value.has("hostId") || value.has("publicKeyBase64") ||
+                value.has("publicKeyFingerprint") || value.has("signedPayloadBase64") ||
                 value.has("signatureBase64");
     }
 
     static BootstrapInfo fromBootstrapQrJson(String json) throws Exception {
         JSONObject value = new JSONObject(json);
-        if (value.length() != 4 ||
+        if (!isBootstrapQrJson(json) || value.length() != 4 ||
                 !value.has("protocolVersion") || !value.has("baseUrl") ||
                 !value.has("certificateSha256") || !value.has("qrNonce")) {
             throw new IllegalArgumentException(
                     "부트스트랩 QR에는 protocolVersion, baseUrl, certificateSha256, qrNonce만 있어야 합니다.");
         }
-        return new BootstrapInfo(
-                value.getInt("protocolVersion"),
-                value.getString("baseUrl"),
-                value.getString("certificateSha256"),
-                value.getString("qrNonce"));
+        Object version = value.get("protocolVersion");
+        if (!(version instanceof Number) || ((Number) version).intValue() != 1 ||
+                ((Number) version).doubleValue() != 1.0d) {
+            throw new IllegalArgumentException("지원하지 않는 Remote Host protocol입니다.");
+        }
+        return new BootstrapInfo(1, value.getString("baseUrl"),
+                value.getString("certificateSha256"), value.getString("qrNonce"));
     }
 
     static RemoteHostConnection fromManifestJson(BootstrapInfo bootstrap, String json)
@@ -135,77 +139,6 @@ final class RemoteHostConnection {
                 value.getString("qrNonce"),
                 value.getString("signedPayloadBase64"),
                 value.getString("signatureBase64"));
-    }
-
-    /** Minimal QR trust anchor used to retrieve the full signed Host manifest. */
-    static final class BootstrapInfo {
-        final int protocolVersion;
-        final String baseUrl;
-        final String certificateSha256;
-        final String qrNonce;
-
-        BootstrapInfo(int protocolVersion, String baseUrl, String certificateSha256, String qrNonce) {
-            if (protocolVersion != 1) {
-                throw new IllegalArgumentException("지원하지 않는 Remote Host protocol입니다.");
-            }
-            this.protocolVersion = protocolVersion;
-            this.baseUrl = normalizeBootstrapBaseUrl(baseUrl);
-            this.certificateSha256 = normalizeFingerprint(certificateSha256);
-            this.qrNonce = requireText(qrNonce, "QR enrollment nonce").trim().toUpperCase(Locale.ROOT);
-            if (!this.qrNonce.matches("[0-9A-F]{64}")) {
-                throw new IllegalArgumentException("QR enrollment nonce format is invalid.");
-            }
-        }
-    }
-
-    static boolean isBootstrapQrJson(String json) throws Exception {
-        JSONObject value = new JSONObject(json);
-        boolean hasBootstrapMarker = value.has("protocolVersion") || value.has("baseUrl") ||
-                value.has("certificateSha256") || value.has("qrNonce");
-        boolean hasFullManifestField = value.has("hostId") && value.has("publicKeyBase64") &&
-                value.has("publicKeyFingerprint") && value.has("signedPayloadBase64") &&
-                value.has("signatureBase64");
-        return hasBootstrapMarker && !hasFullManifestField;
-    }
-
-    static BootstrapInfo fromBootstrapQrJson(String json) throws Exception {
-        JSONObject value = new JSONObject(json);
-        if (!isBootstrapQrJson(json) || value.length() != 4) {
-            throw new IllegalArgumentException("부트스트랩 QR은 지정된 네 필드만 포함해야 합니다.");
-        }
-        Object version = value.get("protocolVersion");
-        if (!(version instanceof Number) || ((Number) version).intValue() != 1 ||
-                ((Number) version).doubleValue() != 1.0d) {
-            throw new IllegalArgumentException("지원하지 않는 Remote Host protocol입니다.");
-        }
-        return new BootstrapInfo(1, value.getString("baseUrl"),
-                value.getString("certificateSha256"), value.getString("qrNonce"));
-    }
-
-    static RemoteHostConnection fromManifestJson(JSONObject manifest, BootstrapInfo bootstrap)
-            throws Exception {
-        if (manifest == null || bootstrap == null) {
-            throw new IllegalArgumentException("Host pairing manifest or bootstrap QR is missing.");
-        }
-        Object version = manifest.get("protocolVersion");
-        if (!(version instanceof Number) || ((Number) version).intValue() != bootstrap.protocolVersion ||
-                ((Number) version).doubleValue() != bootstrap.protocolVersion) {
-            throw new SecurityException("Host manifest protocol does not match the QR.");
-        }
-        String manifestBaseUrl = normalizeBaseUrl(manifest.getString("baseUrl"));
-        String manifestCertificate = normalizeFingerprint(manifest.getString("certificateSha256"));
-        String manifestNonce = requireText(manifest.getString("qrNonce"), "Manifest QR nonce")
-                .trim().toUpperCase(Locale.ROOT);
-        if (!bootstrap.baseUrl.equals(manifestBaseUrl)) {
-            throw new SecurityException("Host manifest address does not match the QR.");
-        }
-        if (!bootstrap.certificateSha256.equals(manifestCertificate)) {
-            throw new SecurityException("Host manifest certificate fingerprint does not match the QR.");
-        }
-        if (!bootstrap.qrNonce.equals(manifestNonce)) {
-            throw new SecurityException("Host manifest nonce does not match the QR.");
-        }
-        return fromQrJson(manifest.toString());
     }
 
     void verifySignedManifest() throws Exception {
