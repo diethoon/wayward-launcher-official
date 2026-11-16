@@ -160,7 +160,7 @@ final class WebFileChooser extends WebChromeClient {
             } catch (Exception ignored) {}
         }
         ImagePackDiagnostics.event(activity, diagnosticSessionId, pendingRequestId,
-                "web_file_chooser_activity_result", 
+                "web_file_chooser_activity_result",
                 resultCode == Activity.RESULT_OK && data != null ? "info" : "warn", details);
         if (resultCode != Activity.RESULT_OK || data == null) {
             deliver(null);
