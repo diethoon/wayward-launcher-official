@@ -1239,7 +1239,7 @@ public final class MainActivity extends Activity {
         PENDING_GOOGLE_AUTH_RESULTS.remove(nonce);
     }
 
-    private void beginGoogleDriveAuth(String nonce,boolean selectAccount){
+    private void beginGoogleDriveAuth(String nonce,boolean forceSelectAccount){
         if(nonce==null||!nonce.matches("[a-f0-9]{48}"))return;
         if(!pendingGoogleAuthNonce.isEmpty()){
             storeGoogleAuthResult(nonce,null,"이미 다른 Google 권한 요청이 진행 중입니다.");
@@ -1251,7 +1251,7 @@ public final class MainActivity extends Activity {
             AuthorizationRequest.Builder requestBuilder=AuthorizationRequest.builder()
                     .setRequestedScopes(Collections.singletonList(
                             new Scope("https://www.googleapis.com/auth/drive.appdata")));
-            if(selectAccount){
+            if(forceSelectAccount){
                 requestBuilder.setPrompt(AuthorizationRequest.Prompt.SELECT_ACCOUNT);
             }
             AuthorizationRequest request=requestBuilder.build();
