@@ -11,6 +11,7 @@
     <device-transfer>
         <!-- Apply the same exclusions to phone-to-phone migration. -->
         <exclude domain="sharedpref" path="wayward_launcher.xml" />
+        <exclude domain="root" path="app_webview/" />
         <exclude domain="file" path="diagnostics/" />
         <exclude domain="file" path="image-providers.enc" />
         <exclude domain="file" path="image-providers.enc.tmp" />
