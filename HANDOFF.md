@@ -418,3 +418,7 @@ Updated: 2026-11-15 (Asia/Seoul)
 
 ### Diagnostic uploader contract follows retry-selected archive — 2026-11-18
 - The current implementation now deliberately selects either the failed ZIP retained by `findPendingArchive()` or a newly created ZIP, stores that selection in `selectedArchive`, and uploads/shares that exact object. Updated the static contract from the original local variable name `archive` to `selectedArchive`; behavior is unchanged and retry semantics remain explicitly covered by the instrumentation test.
+
+
+### Diagnostic upload/share same-file assertion — 2026-11-18
+- Tightened the retry-aware contract: it now asserts both Cloudflare upload and Android sharesheet receive the same `selectedArchive` object, for either a new diagnostic ZIP or a retry of a previously failed one.

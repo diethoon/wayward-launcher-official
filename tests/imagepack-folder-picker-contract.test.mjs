@@ -126,8 +126,10 @@ assert.match(uploader, /https:\/\/wayward-launcher-diagnostics-/,
 const bundleUploader = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/DiagnosticsBundleUploader.java", import.meta.url), "utf8");
 assert.match(main, /DiagnosticsBundleUploader\.upload\(this, selectedArchive/,
   "the diagnostics button must automatically upload the selected new or retry ZIP on explicit tap");
+assert.match(main, /DiagnosticsBundleExporter\.share\(this, selectedArchive\)/,
+  "the existing Android sharesheet must use the same selected ZIP file sent to Cloudflare");
 assert.match(exporter, /static void share\(Activity activity, File archive\)/,
-  "the existing native share sheet must use the same ZIP as Cloudflare upload");
+  "the existing native share flow must continue accepting a generated ZIP without rebuilding it");
 assert.match(bundleUploader, /https:\/\/wayward-diagnostics-ingest\.trpgengine\.workers\.dev/,
   "manual ZIP upload must target the existing Cloudflare ingestion Worker");
 assert.match(bundleUploader, /\/v1\/ticket/,
