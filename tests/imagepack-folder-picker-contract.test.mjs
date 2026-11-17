@@ -29,7 +29,7 @@ assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT/, "ordinary files and ZIPs mu
 assert.match(picker, /web_file_chooser_called/, "HTML file-input calls must be correlated in the durable diagnostic journal");
 assert.match(picker, /web_file_chooser_activity_result/, "Android file-picker Activity results must be journaled");
 assert.match(picker, /web_file_chooser_callback_delivered/, "WebView file callback delivery or cancellation must be journaled");
-assert.match(picker, /MODE_OPEN_MULTIPLE/, "the actual pack.json input must preserve HTML multiple-selection mode");
+assert.match(picker, /WebFileChooserRequestPolicy\\.allowsMultipleFiles\\(kind\\)/, "the actual pack.json input must preserve MODE_OPEN_MULTIPLE semantics through the centralized request classifier");
 assert.match(picker, /EXTRA_ALLOW_MULTIPLE/, "the native document picker must receive the multi-select flag");
 assert.match(picker, /WebFileChooser\(Activity activity, String sessionId\)/, "file-input diagnostics must share the active game-session ID");
 assert.match(main, /new WebFileChooser\(this,imagePackDiagnosticSessionId\)/, "the active session must flow into the ordinary file chooser");
