@@ -37,6 +37,18 @@ final class ImageGenProxy {
             return;
         }
         final android.content.Context appContext=web.getContext().getApplicationContext();
+        final String apiPath=Uri.parse(safePath).getPath();
+        ImageGenStatusStore.State runtime=ImageGenStatusStore.read(appContext.getFilesDir());
+        boolean healthRequest="/api/image/health".equals(apiPath);
+        if(healthRequest){
+            if(!runtime.isAvailable()&&!runtime.isStarting()){
+                deliver(web,requestId,errorResponse(503,"이미지 생성 서버가 실행되지 않았습니다. 이미지팩 전용 모드입니다."));
+                return;
+            }
+        }else if(!runtime.isReady()){
+            deliver(web,requestId,errorResponse(503,"이미지 생성 서버가 꺼져 있습니다. 외부 생성 서버로 전환하지 않습니다."));
+            return;
+        }
         final long startedAt=System.currentTimeMillis();
         new Thread(() -> {
             HttpURLConnection connection = null;

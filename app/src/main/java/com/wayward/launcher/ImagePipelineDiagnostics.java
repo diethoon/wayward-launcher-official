@@ -47,6 +47,11 @@ final class ImagePipelineDiagnostics {
             "provider_http_error", "provider_http_request_failed", "webview_image_network_error",
             "native_image_decode_bounds_succeeded", "native_image_decode_bounds_failed", "webview_image_http_error",
             "webview_image_resource_error", "webview_image_resource_slow",
+            "launcher_imagegen_request_intercepted", "launcher_imagegen_request_dispatched", "launcher_imagegen_request_dispatch_failed",
+            "studio_backend_probe_completed", "studio_backend_probe_failed", "studio_backend_probe_hooked",
+            "studio_connection_bridge_wrapped", "studio_settings_opened", "studio_settings_open_failed",
+            "generated_image_dom_rewrite_installed", "generated_image_dom_rewrite_unavailable", "generated_image_url_rewritten",
+            "studio_roster_discovery_completed", "studio_roster_discovery_retry",
             "saf_image_open_timing", "saf_directory_query_timing", "saf_image_cache_completed"
     ));
     private static final Set<String> ALLOWED = new HashSet<>(Arrays.asList(
