@@ -434,3 +434,8 @@ Updated: 2026-11-15 (Asia/Seoul)
 
 ### Bounded QR image decode contract updated — 2026-11-18
 - Updated the developer QR image source contract to match the memory-safe decoder: ACTION_OPEN_DOCUMENT URI is opened through `loadBoundedQrImage`, the sampled Bitmap plus EXIF rotation is passed through `InputImage.fromBitmap`, and callback completion recycles the temporary Bitmap. This prevents regression to unbounded full-resolution image allocation.
+
+
+### Preserve the Cloudflare upload outcome in the filtered image-pack journal — 2026-11-18
+- Android 15 run #44144324486 completed the real ticketed Cloudflare upload far enough to write the `diagnostics_cloud_upload_succeeded` event. The test failed because `ImagePackDiagnostics.filter()` removed the callback's `success` boolean: the field was not in its explicit `ALLOWED` set, so the durable event retained the stage but stored empty details and could not prove the successful submission.
+- Added only the non-sensitive boolean fields `success` and `retryingPreviousZip` to the existing details allowlist. The ticket, ZIP contents, user files, URI values, and authentication material remain excluded. This makes the local diagnostic journal accurately record whether the user-triggered ZIP upload succeeded and whether the same ZIP is being retried.

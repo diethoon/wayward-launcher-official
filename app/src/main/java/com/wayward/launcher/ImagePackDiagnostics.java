@@ -36,7 +36,8 @@ final class ImagePackDiagnostics {
             "errorName", "errorMessage", "apiLevel", "pagePath", "writable", "mainFrame",
             "webViewAlive", "scriptBytes", "pendingRequest", "frameDepth", "frameCount",
             "acceptTypes", "clipItemCount", "selectedCount", "dataPresent",
-            "permissionBefore", "permissionAfter", "provider", "cancelled", "ok", "stage", "errorCode"
+            "permissionBefore", "permissionAfter", "provider", "cancelled", "ok", "success",
+            "retryingPreviousZip", "stage", "errorCode"
     ));
     private static final Pattern BEARER = Pattern.compile("(?i)(Bearer\\s+)[A-Za-z0-9._~+/-]+=*");
     private static final Pattern SECRET = Pattern.compile("(?i)((?:access|refresh)?_?(?:token|api[_-]?key|secret|password|cookie)\\s*[:=]\\s*[\\\"']?)[^\\s,;\\\"'}&]+");
