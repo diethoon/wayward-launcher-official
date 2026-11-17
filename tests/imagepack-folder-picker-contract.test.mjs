@@ -159,9 +159,20 @@ assert.match(main, /diagnostics=compactButton\("진단"/, "the launcher home scr
 assert.match(main, /DiagnosticsBundleExporter\.share\(this\)/, "the diagnostics button must open the Android share flow");
 assert.match(access, /__waywardNativeImagePackPickerDispatch/, "native completion must resolve the original frame instead of main-frame-only delivery");
 assert.match(main, /imagePackDirectoryAccess\.onResume\(\)/, "the production activity must recheck all-files permission on resume");
-assert.doesNotMatch(main, /FLAG_ACTIVITY_NEW_DOCUMENT/, "game sessions must remain in the existing launcher task");
-assert.match(main, /route\.addFlags\(Intent\.FLAG_ACTIVITY_REORDER_TO_FRONT\)/, "an existing game session must be reordered in its task without creating a document task");
-assert.doesNotMatch(manifest, /documentLaunchMode/, "MainActivity must not create a separate document task");
+const gameLaunch = main.split("private void launchProfileSession(String id)")[1]
+  .split("private static MainActivity findSessionActivity")[0];
+assert.match(gameLaunch, /intent\.addFlags\(Intent\.FLAG_ACTIVITY_NEW_DOCUMENT\)/,
+  "profile sessions must use their distinct URI as a document-task key");
+assert.doesNotMatch(gameLaunch, /FLAG_ACTIVITY_REORDER_TO_FRONT/,
+  "component-only reordering must not route one profile into another profile's MainActivity");
+const imageGenRoute = main.split("private void openImageGenPanel()")[1]
+  .split("Runnable openSettings")[0];
+assert.match(imageGenRoute, /route\.addFlags\(Intent\.FLAG_ACTIVITY_NEW_DOCUMENT\)/,
+  "Image Studio must route to the URI-matched owner session task");
+assert.doesNotMatch(imageGenRoute, /FLAG_ACTIVITY_REORDER_TO_FRONT/,
+  "Image Studio must not reorder to an arbitrary MainActivity instance");
+assert.doesNotMatch(manifest, /documentLaunchMode/,
+  "document-task behavior must be opt-in on session intents, not global manifest behavior");
 assert.match(main, /else if\(sessionProfileId\(getIntent\(\)\)!=null\)\{[\s\S]*?finish\(\);/, "root BACK in a game session must finish only the session Activity");
 assert.match(main, /if\(web\.canGoBack\(\)\)\{\s*web\.goBack\(\);/, "BACK inside WebView history must stay inside the game");
 assert.match(main, /ImagePackFolderPickerScript\.installDocumentStart\(\s*web,\s*imagePackFolderPickerScript,\s*origin\)/, "the directory adapter must register at document start when supported");

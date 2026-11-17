@@ -261,25 +261,26 @@ def count_main_activity_instances() -> tuple[int, set[int], str]:
 
 
 def read_launcher_events() -> list[dict]:
-    result = adb("shell", "run-as", PACKAGE, "cat", "files/diagnostics/launcher.ndjson",
-                 check=False, capture=True)
-    if result.returncode != 0:
-        return []
     events = []
-    for line in (result.stdout or "").splitlines():
-        try:
-            item = json.loads(line)
-            details = item.get("details", "")
-            if isinstance(details, str):
-                try:
-                    item["parsedDetails"] = json.loads(details) if details else {}
-                except json.JSONDecodeError:
-                    item["parsedDetails"] = {}
-            else:
-                item["parsedDetails"] = details if isinstance(details, dict) else {}
-            events.append(item)
-        except json.JSONDecodeError:
+    for journal in ("launcher.previous.ndjson", "launcher.ndjson"):
+        result = adb("shell", "run-as", PACKAGE, "cat", "files/diagnostics/" + journal,
+                     check=False, capture=True)
+        if result.returncode != 0:
             continue
+        for line in (result.stdout or "").splitlines():
+            try:
+                item = json.loads(line)
+                details = item.get("details", "")
+                if isinstance(details, str):
+                    try:
+                        item["parsedDetails"] = json.loads(details) if details else {}
+                    except json.JSONDecodeError:
+                        item["parsedDetails"] = {}
+                else:
+                    item["parsedDetails"] = details if isinstance(details, dict) else {}
+                events.append(item)
+            except json.JSONDecodeError:
+                continue
     return events
 
 
@@ -814,9 +815,9 @@ window.pickImagePackFolder = async function() {
     print("PASS: the real game WebView ZIP multi-select callback returned both selected files.")
 
     first_count, first_tasks, first_state = count_main_activity_instances()
-    if first_count != 2 or len(first_tasks) != 1:
+    if first_count != 2 or len(first_tasks) != 2:
         (ARTIFACTS / "android15-game-activity-stack-before-relaunch.txt").write_text(first_state, encoding="utf-8")
-        raise RuntimeError("Expected launcher + one game-session Activity in one Task; found activities="
+        raise RuntimeError("Expected launcher and first game session in separate URI-keyed Tasks; found activities="
                            + str(first_count) + " taskIds=" + repr(sorted(first_tasks)))
     events = read_launcher_events()
     first_created = [event for event in events if event.get("event") == "game_webview_created"]
@@ -888,8 +889,8 @@ window.pickImagePackFolder = async function() {
     (ARTIFACTS / "android15-game-activity-stack-two-sessions.txt").write_text(
         second_stack, encoding="utf-8"
     )
-    if count_before_second != 2 or count_after_second != 3 or len(second_tasks) != 1:
-        raise RuntimeError("Launching a different profile did not create exactly one independent session Activity in the same Task. "
+    if count_before_second != 2 or count_after_second != 3 or len(second_tasks) != 3:
+        raise RuntimeError("Launching a different profile did not create exactly one independent Activity in its own URI-keyed Task. "
                            + "activities=" + str(count_after_second) + " taskIds=" + repr(sorted(second_tasks)))
     events = read_launcher_events()
     all_created = [event for event in events if event.get("event") == "game_webview_created"]
@@ -929,8 +930,8 @@ window.pickImagePackFolder = async function() {
     (ARTIFACTS / "android15-game-activity-stack-routed-existing.txt").write_text(
         route_state, encoding="utf-8"
     )
-    if count_before_route != 3 or count_after_route != count_before_route or len(routed_tasks) != 1:
-        raise RuntimeError("Returning to the existing profile created another MainActivity or Task. "
+    if count_before_route != 3 or count_after_route != count_before_route or len(routed_tasks) != 3:
+        raise RuntimeError("Returning to an existing profile created another Activity/Task instead of reusing its URI-keyed Task. "
                            + "activities=" + str(count_after_route) + " taskIds=" + repr(sorted(routed_tasks)))
     events = read_launcher_events()
     routed = [
@@ -975,14 +976,15 @@ window.pickImagePackFolder = async function() {
     second_profile_buttons = node_bounds_all_exact(home_xml, ("실행", "Launch"))
     if len(second_profile_buttons) != 2:
         raise RuntimeError("The prior second-session Activity lost its game profile actions.")
-    count_before_second_reuse, _, _ = count_main_activity_instances()
+    count_before_second_reuse, second_reuse_tasks, _ = count_main_activity_instances()
     tap_bounds(second_profile_buttons[1])
     second_game_xml = wait_for_ui_contains(
         picker_local, picker_device, "WAYWARD SECOND GAME SESSION", timeout_seconds=25
     )
-    count_after_second_reuse, _, _ = count_main_activity_instances()
-    if count_before_second_reuse != 2 or count_after_second_reuse != count_before_second_reuse:
-        raise RuntimeError("Returning to the second profile created a duplicate Activity.")
+    count_after_second_reuse, second_reuse_tasks_after, _ = count_main_activity_instances()
+    if (count_before_second_reuse != 2 or count_after_second_reuse != count_before_second_reuse
+            or len(second_reuse_tasks) != 2 or second_reuse_tasks_after != second_reuse_tasks):
+        raise RuntimeError("Returning to the second profile did not reuse its original Activity and document Task.")
     if node_bounds(second_game_xml, ("Interact with game",)) is None:
         raise RuntimeError("The second game did not return to its original WebView content.")
     adb("shell", "input", "keyevent", "4")

@@ -998,16 +998,17 @@ public final class MainActivity extends Activity {
         Intent intent=new Intent(this,MainActivity.class);
         intent.setData(Uri.parse("wayward://session/"+Uri.encode(id)));
         intent.putExtra(EXTRA_GAME_LAUNCH_REQUEST_ID,requestId);
+        // Each profile has a distinct wayward://session/{id} base-intent URI.
+        // NEW_DOCUMENT makes Android match that URI against document-task roots,
+        // so a relaunch targets the correct profile Activity instead of the most
+        // recent MainActivity instance in another game's task.
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT);
         if(existing!=null&&existing!=this){
-            // The unique session URI distinguishes this Activity from other MainActivity
-            // instances in the same task. REORDER_TO_FRONT delivers onNewIntent to that
-            // session instead of creating another WebView for an already-running profile.
-            intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-            DiagnosticsLogger.event(this,"INFO","game-session","game_launch_reordered_existing_activity",
-                    gameLifecycleDetails(id,requestId,"existing_session"));
+            DiagnosticsLogger.event(this,"INFO","game-session","game_launch_existing_document_task",
+                    gameLifecycleDetails(id,requestId,"existing_profile_document_task"));
         }else{
-            DiagnosticsLogger.event(this,"INFO","game-session","game_launch_new_activity",
-                    gameLifecycleDetails(id,requestId,"new_session"));
+            DiagnosticsLogger.event(this,"INFO","game-session","game_launch_new_document_task",
+                    gameLifecycleDetails(id,requestId,"new_profile_document_task"));
         }
         startActivity(intent);
     }
@@ -2030,13 +2031,13 @@ public final class MainActivity extends Activity {
             MainActivity session = findActiveSessionActivity();
             if (session != null && session != this) {
                 String sessionId = session.activeProfileId;
-                // The owner Activity is already in this launcher task. Invoke its
-                // settings action directly, then move that existing session Activity to front.
+                // Resolve the owner through its URI-keyed document task. Component-only
+                // reordering can select a different MainActivity instance.
                 try {
                     session.openImageGenPanel();
                     Intent route = new Intent(this, MainActivity.class);
                     route.setData(Uri.parse("wayward://session/" + Uri.encode(sessionId)));
-                    route.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                    route.addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT);
                     startActivity(route);
                     DiagnosticsLogger.event(this,"INFO","imagegen","session_settings_routed",null);
                     return;
