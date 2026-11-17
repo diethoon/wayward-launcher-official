@@ -173,11 +173,16 @@ assert.doesNotMatch(imageGenRoute, /FLAG_ACTIVITY_REORDER_TO_FRONT/,
   "Image Studio must not reorder to an arbitrary MainActivity instance");
 assert.doesNotMatch(manifest, /documentLaunchMode/,
   "document-task behavior must be opt-in on session intents, not global manifest behavior");
-const gameSessionActivity = manifest.split('<activity\\n            android:name=".GameSessionActivity"')[1]?.split("/>")[0] || "";
+const gameSessionActivity = manifest.match(/<activity\\s+android:name="\\.GameSessionActivity"[\\s\\S]*?\\/>/)?.[0] || "";
 assert.ok(gameSessionActivity.length > 0,
   "the dedicated game-session activity must be declared");
 assert.ok(gameSessionActivity.includes('android:taskAffinity="${applicationId}.games"'),
   "the real game-session activity must use a task affinity separate from the app-icon launcher task");
+assert.doesNotMatch(manifest, /<activity-alias/,
+  "game task affinity must be defined on a real activity, not an alias that inherits MainActivity affinity");
+const gameSessionSource = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/GameSessionActivity.java", import.meta.url), "utf8");
+assert.match(gameSessionSource, /extends MainActivity/,
+  "the dedicated session activity must reuse the existing launcher implementation");
 assert.match(main, /new Intent\(this,GameSessionActivity\.class\)/,
   "game and Image Studio routes must target the dedicated session Activity class");
 assert.match(main, /public class MainActivity extends Activity/,

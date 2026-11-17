@@ -1022,11 +1022,17 @@ window.pickImagePackFolder = async function() {
         "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER", "-n", ACTIVITY)
     home_xml = wait_for_ui_contains(picker_local, picker_device, "내 게임", timeout_seconds=20)
     foreground_count, _, foreground_state = count_main_activity_instances()
-    if foreground_count != 1:
-        raise RuntimeError("Background/foreground returned with duplicate launcher Activities.")
     (ARTIFACTS / "android15-game-activity-stack-after-background.txt").write_text(
         foreground_state, encoding="utf-8"
     )
+    if foreground_count != 1:
+        route_debug = capture_game_route_diagnostics(
+            "duplicate-launcher-after-background", picker_local, picker_device
+        )
+        raise RuntimeError(
+            "Background/foreground returned with duplicate launcher/session Activity records: "
+            + str(foreground_count) + "; diagnostics=" + json.dumps(route_debug, ensure_ascii=False)
+        )
     adb("shell", "am", "force-stop", PACKAGE)
     # Simulate the actual launcher icon intent flags (NEW_TASK | RESET_TASK_IF_NEEDED).
     adb("shell", "am", "start", "-W", "-f", "0x10200000",
