@@ -244,7 +244,7 @@ public class MainActivity extends Activity {
         b.setOnClickListener(v->action.run());return b;
     }
     private void shareDiagnosticsZip(){
-        ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "", "diagnostics_button_tapped",
+        ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "", "diagnostics_share_button_tapped",
                 "info", null);
         try {
             File archive = DiagnosticsBundleExporter.create(this);
@@ -272,7 +272,7 @@ public class MainActivity extends Activity {
                     "info", null);
         } catch (Exception error) {
             ImagePackDiagnostics.error(this, imagePackDiagnosticSessionId, "",
-                    "diagnostics_share_or_upload_start_failed", error);
+                    "diagnostics_share_failed", error);
             Toast.makeText(this, "진단 ZIP 수집 실패: " + msg(error), Toast.LENGTH_LONG).show();
         }
     }

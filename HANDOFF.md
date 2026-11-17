@@ -336,3 +336,7 @@ Updated: 2026-11-15 (Asia/Seoul)
 
 ### QR image success log privacy contract — 2026-11-18
 - Updated the image-recognition success log to use a separate numeric `qrCharacterCount` variable rather than referencing the QR payload variable in the Log call. The logged value remains length-only; QR contents are never emitted.
+
+
+### Preserve existing ZIP-share failure event names — 2026-11-18
+- Restored the original `diagnostics_share_button_tapped` and `diagnostics_share_failed` event names so existing diagnostics contracts and downstream triage remain compatible. The new Cloudflare upload continues to use its separate `diagnostics_cloud_upload_*` event family.
