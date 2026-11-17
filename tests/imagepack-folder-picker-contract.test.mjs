@@ -339,4 +339,3 @@ assert.doesNotMatch(pairing, /Log\.[idw]\(TAG,.*raw|Log\.[idw]\(TAG,.*imageUri/,
   "image QR payloads and selected image URIs must never be logged");
 assert.match(build, /play-services-mlkit-barcode-scanning:18\.3\.1/,
   "the supported ML Kit image barcode API must be included without replacing the camera scanner");
-
