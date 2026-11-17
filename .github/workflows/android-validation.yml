@@ -268,7 +268,7 @@ jobs:
 
       - name: Android 15 emulator startup and Native crypto tests
         id: android15_smoke
-        timeout-minutes: 8
+        timeout-minutes: 15
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -300,6 +300,7 @@ jobs:
             artifacts/android15-main-activity-game-before-picker.xml
             artifacts/android15-main-activity-imagepack-picker.xml
             artifacts/android15-main-activity-game-handle-pass.xml
+            artifacts/android15-folder-picker-*
             artifacts/android15-recents-after-game-back.txt
             artifacts/android15-zip-multiselect.xml
             artifacts/android15-diagnostics-share-chooser.txt

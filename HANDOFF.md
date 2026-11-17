@@ -257,3 +257,8 @@ Updated: 2026-11-15 (Asia/Seoul)
 - The #44011729007 Android 15 smoke returned to the MainActivity home with zero registered profiles after the first DocumentsUI attempt. The job log did not distinguish a cancelled picker from a permission callback failure or a folder row navigation error.
 - Instrumented the smoke helper to snapshot each distinct DocumentsUI state, and to persist launcher.ndjson plus Activity state if MainActivity returns without the requested profile name being visible. The helper now refuses to treat the permanent home label "내 게임" as proof of successful registration; it requires the selected folder's actual registered profile name.
 - This is test-only diagnostic hardening; it does not alter the product picker or weaken the acceptance assertion.
+
+
+### Emulator diagnostics artifact retention and timeout — 2026-11-17
+- Added the new per-state DocumentsUI XML and launcher/Activity diagnostic files (`android15-folder-picker-*`) to the Android 15 diagnostics artifact upload.
+- Increased only the Android 15 emulator step timeout from 8 to 15 minutes to accommodate the newly expanded two-profile Activity/WebView lifecycle scenario. The build and deterministic test steps are unchanged.
