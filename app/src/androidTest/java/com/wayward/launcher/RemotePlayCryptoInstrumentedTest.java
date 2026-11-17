@@ -24,6 +24,21 @@ import static org.junit.Assert.assertTrue;
 @RunWith(AndroidJUnit4.class)
 public final class RemotePlayCryptoInstrumentedTest {
     @Test
+    public void developerQrImageSamplingBoundsDecodedMemoryAndRejectsInvalidDimensions() {
+        assertEquals(1, RemotePairingActivity.calculateQrImageSampleSize(1024, 768));
+        int sample = RemotePairingActivity.calculateQrImageSampleSize(12000, 8000);
+        assertTrue(sample >= 4);
+        long decodedPixels = ((12000L + sample - 1L) / sample)
+                * ((8000L + sample - 1L) / sample);
+        assertTrue(decodedPixels <= 8_000_000L);
+        assertTrue(RemotePairingActivity.calculateQrImageSampleSize(4096, 4096) >= 2);
+        assertThrows(IllegalArgumentException.class,
+                () -> RemotePairingActivity.calculateQrImageSampleSize(0, 100));
+        assertThrows(IllegalArgumentException.class,
+                () -> RemotePairingActivity.calculateQrImageSampleSize(100001, 100));
+    }
+
+    @Test
     public void androidKeystoreDeviceIdentityIsStableAndCanSignHostProofs() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
 

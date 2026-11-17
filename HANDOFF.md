@@ -408,3 +408,9 @@ Updated: 2026-11-15 (Asia/Seoul)
 
 ### ② 진단 ZIP 재시도 런타임 계측 — 2026-11-18
 - Added `DiagnosticsBundleUploaderInstrumentedTest`: creates a private cache ZIP fixture, asserts no pending marker initially, simulates failed upload by writing the pending marker, verifies the exact same filename is selected for retry, and verifies the marker disappears only when the success-path cleanup is called. The test always removes its own fixture.
+
+
+### ③ Developer QR image memory safety — 2026-11-18
+- Replaced full-resolution `InputImage.fromFilePath()` decoding with a bounded decode: read dimensions only first, reject invalid or extreme (>100,000 px) source dimensions, choose power-of-two sampling to cap output to 4096 px per side and 8 million pixels, preserve EXIF rotation, then decode and pass the sampled bitmap to ML Kit.
+- The temporary bitmap is recycled after ML Kit success/failure, after optional scanner module setup fails, or if the Activity is finishing. The selected URI and QR payload are never logged or persisted.
+- Added Android instrumentation covering standard image no-resize, 12k×8k sampling and pixel ceiling, 4096-square source sampling, zero dimensions and extreme dimensions.

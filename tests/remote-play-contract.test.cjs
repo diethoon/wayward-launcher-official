@@ -290,4 +290,15 @@ assert.ok(instrumented.includes("publicIpv4ExternalBootstrapQrFetchesAndValidate
   instrumented.includes("100.64.0.1") && instrumented.includes("198.18.0.1") &&
   instrumented.includes("missingMapping") && instrumented.includes("endpointCandidates(parsed)"),
   'Android instrumentation must exercise the external QR contract, reserved/CGNAT filtering and endpoint deduplication');
+
+assert.match(pairingActivity, /BitmapFactory\.Options[\s\S]*?inJustDecodeBounds = true[\s\S]*?inSampleSize = sampleSize/,
+  'the developer QR importer must inspect dimensions and downsample before allocating the bitmap');
+assert.match(pairingActivity, /MAX_QR_IMAGE_PIXELS = 8_000_000L/,
+  'the developer QR importer must enforce a decoded-pixel allocation limit');
+assert.match(pairingActivity, /recycleQrBitmap\(bitmap\)/,
+  'the temporary selected image bitmap must be recycled on QR success and failure');
+assert.match(pairingActivity, /ExifInterface\.TAG_ORIENTATION/,
+  'the image QR reader must apply EXIF rotation before decoding');
+assert.match(instrumented, /developerQrImageSamplingBoundsDecodedMemoryAndRejectsInvalidDimensions/,
+  'Android instrumentation must verify large QR image downsampling and invalid dimensions');
 console.log('Remote Play native bridge, cache, ComfyUI and security contract checks passed');

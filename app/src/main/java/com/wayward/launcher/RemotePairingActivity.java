@@ -3,7 +3,10 @@ package com.wayward.launcher;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.media.ExifInterface;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
@@ -28,11 +31,15 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
 
 public final class RemotePairingActivity extends Activity {
     private static final String TAG = "WaywardRemotePair";
     private static final int REQUEST_QR_IMAGE = 5803;
+    private static final int MAX_QR_IMAGE_DIMENSION = 4096;
+    private static final long MAX_QR_IMAGE_PIXELS = 8_000_000L;
+    private static final int MAX_QR_SOURCE_DIMENSION = 100_000;
     private TextView status;
     private TextView imageImportButton;
     private boolean processing;
@@ -193,32 +200,109 @@ public final class RemotePairingActivity extends Activity {
         new Thread(() -> decodeQrImage(selectedImage), "Wayward-Pairing-QR-Image").start();
     }
 
+    static int calculateQrImageSampleSize(int width, int height) {
+        if (width <= 0 || height <= 0 || width > MAX_QR_SOURCE_DIMENSION
+                || height > MAX_QR_SOURCE_DIMENSION) {
+            throw new IllegalArgumentException("QR 이미지 크기가 올바르지 않습니다.");
+        }
+        int sample = 1;
+        while (true) {
+            long decodedWidth = (width + (long) sample - 1L) / sample;
+            long decodedHeight = (height + (long) sample - 1L) / sample;
+            if (decodedWidth <= MAX_QR_IMAGE_DIMENSION
+                    && decodedHeight <= MAX_QR_IMAGE_DIMENSION
+                    && decodedWidth * decodedHeight <= MAX_QR_IMAGE_PIXELS) {
+                return sample;
+            }
+            if (sample >= (1 << 20)) {
+                throw new IllegalArgumentException("QR 이미지 크기를 안전하게 축소할 수 없습니다.");
+            }
+            sample *= 2;
+        }
+    }
+
+    private static final class BoundedQrImage {
+        final Bitmap bitmap;
+        final int rotationDegrees;
+        BoundedQrImage(Bitmap bitmap, int rotationDegrees) {
+            this.bitmap = bitmap;
+            this.rotationDegrees = rotationDegrees;
+        }
+    }
+
+    private BoundedQrImage loadBoundedQrImage(Uri imageUri) throws IOException {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        try (InputStream input = getContentResolver().openInputStream(imageUri)) {
+            if (input == null) throw new IOException("Image provider returned no stream.");
+            BitmapFactory.decodeStream(input, null, bounds);
+        }
+        final int sampleSize;
+        try {
+            sampleSize = calculateQrImageSampleSize(bounds.outWidth, bounds.outHeight);
+        } catch (IllegalArgumentException error) {
+            throw new IOException("The selected image dimensions are invalid or too large.", error);
+        }
+
+        int rotationDegrees = 0;
+        try (InputStream exifInput = getContentResolver().openInputStream(imageUri)) {
+            if (exifInput != null) {
+                ExifInterface exif = new ExifInterface(exifInput);
+                int orientation = exif.getAttributeInt(
+                        ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+                if (orientation == ExifInterface.ORIENTATION_ROTATE_90) rotationDegrees = 90;
+                else if (orientation == ExifInterface.ORIENTATION_ROTATE_180) rotationDegrees = 180;
+                else if (orientation == ExifInterface.ORIENTATION_ROTATE_270) rotationDegrees = 270;
+            }
+        }
+
+        BitmapFactory.Options decode = new BitmapFactory.Options();
+        decode.inJustDecodeBounds = false;
+        decode.inSampleSize = sampleSize;
+        decode.inScaled = false;
+        decode.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        Bitmap bitmap;
+        try (InputStream input = getContentResolver().openInputStream(imageUri)) {
+            if (input == null) throw new IOException("Image provider returned no stream.");
+            bitmap = BitmapFactory.decodeStream(input, null, decode);
+        }
+        if (bitmap == null) throw new IOException("The selected image could not be decoded.");
+        return new BoundedQrImage(bitmap, rotationDegrees);
+    }
+
     private void decodeQrImage(Uri imageUri) {
         BarcodeScanner scanner = null;
+        Bitmap retainedBitmap = null;
         try {
-            InputImage image = InputImage.fromFilePath(this, imageUri);
+            BoundedQrImage decoded = loadBoundedQrImage(imageUri);
+            retainedBitmap = decoded.bitmap;
+            InputImage image = InputImage.fromBitmap(decoded.bitmap, decoded.rotationDegrees);
             BarcodeScannerOptions options = new BarcodeScannerOptions.Builder()
                     .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
                     .build();
             scanner = BarcodeScanning.getClient(options);
             BarcodeScanner client = scanner;
+            Bitmap bitmapForCallbacks = retainedBitmap;
             ModuleInstall.getClient(this).areModulesAvailable(client)
                     .addOnSuccessListener(availability -> {
-                        if (isFinishing()) {
+                        if (isFinishing() || isDestroyed()) {
                             closeScanner(client);
+                            recycleQrBitmap(bitmapForCallbacks);
                             return;
                         }
                         if (availability.areModulesAvailable()) {
-                            processQrImage(client, image);
+                            processQrImage(client, image, bitmapForCallbacks);
                         } else {
                             statusOnUi("이미지 QR 인식 모듈 준비 중…");
                             ModuleInstallRequest request = ModuleInstallRequest.newBuilder()
                                     .addApi(client)
                                     .build();
                             ModuleInstall.getClient(this).installModules(request)
-                                    .addOnSuccessListener(response -> processQrImage(client, image))
+                                    .addOnSuccessListener(response ->
+                                            processQrImage(client, image, bitmapForCallbacks))
                                     .addOnFailureListener(error -> {
                                         closeScanner(client);
+                                        recycleQrBitmap(bitmapForCallbacks);
                                         showImageImportFailure(
                                                 "이미지 QR 인식 모듈을 준비하지 못했습니다. Google Play services를 확인하세요.",
                                                 "scanner_module_install_failed");
@@ -227,25 +311,30 @@ public final class RemotePairingActivity extends Activity {
                     })
                     .addOnFailureListener(error -> {
                         closeScanner(client);
+                        recycleQrBitmap(bitmapForCallbacks);
                         showImageImportFailure(
                                 "이미지 QR 인식기를 준비하지 못했습니다. 잠시 후 다시 시도하세요.",
                                 "scanner_module_check_failed");
                     });
         } catch (IOException error) {
             if (scanner != null) closeScanner(scanner);
-            showImageImportFailure("선택한 이미지를 읽지 못했습니다. 다른 이미지 파일을 선택하세요.",
+            recycleQrBitmap(retainedBitmap);
+            showImageImportFailure("선택한 이미지를 읽지 못했습니다. 너무 큰 이미지거나 손상된 파일일 수 있습니다.",
                     "image_read_failed");
         } catch (Exception error) {
             if (scanner != null) closeScanner(scanner);
+            recycleQrBitmap(retainedBitmap);
             showImageImportFailure("이미지에서 QR 코드를 분석하지 못했습니다. 다른 이미지를 선택하세요.",
                     "image_decode_failed");
         }
     }
 
-    private void processQrImage(BarcodeScanner scanner, InputImage image) {
-        scanner.process(image)
-                .addOnSuccessListener(barcodes -> {
+    private void processQrImage(BarcodeScanner scanner, InputImage image, Bitmap bitmap) {
+        try {
+            scanner.process(image)
+                    .addOnSuccessListener(barcodes -> {
                     closeScanner(scanner);
+                    recycleQrBitmap(bitmap);
                     if (isFinishing() || isDestroyed()) return;
                     int count = barcodes == null ? 0 : barcodes.size();
                     if (count == 0) {
@@ -277,9 +366,20 @@ public final class RemotePairingActivity extends Activity {
                 })
                 .addOnFailureListener(error -> {
                     closeScanner(scanner);
+                    recycleQrBitmap(bitmap);
                     showImageImportFailure("선택한 이미지에서 QR 코드를 인식하지 못했습니다. 다른 이미지를 선택하세요.",
                             "qr_recognition_failed");
                 });
+        } catch (Exception error) {
+            closeScanner(scanner);
+            recycleQrBitmap(bitmap);
+            showImageImportFailure("선택한 이미지에서 QR 코드를 인식하지 못했습니다. 다른 이미지를 선택하세요.",
+                    "qr_recognition_failed");
+        }
+    }
+
+    private static void recycleQrBitmap(Bitmap bitmap) {
+        if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle();
     }
 
     private void showImageImportFailure(String message, String reason) {
