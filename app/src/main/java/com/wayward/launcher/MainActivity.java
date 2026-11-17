@@ -244,15 +244,35 @@ public class MainActivity extends Activity {
         b.setOnClickListener(v->action.run());return b;
     }
     private void shareDiagnosticsZip(){
-        ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "", "diagnostics_share_button_tapped",
+        ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "", "diagnostics_button_tapped",
                 "info", null);
         try {
-            DiagnosticsBundleExporter.share(this);
+            File archive = DiagnosticsBundleExporter.create(this);
+            ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "",
+                    "diagnostics_cloud_upload_requested", "info",
+                    new JSONObject().put("fileSize", archive.length()));
+            DiagnosticsBundleUploader.upload(this, archive, (success, result) -> {
+                if (isFinishing() || isDestroyed()) return;
+                JSONObject details = new JSONObject();
+                try {
+                    details.put("success", success);
+                    details.put("result", result == null ? "" : result);
+                    details.put("fileSize", archive.length());
+                } catch (Exception ignored) {}
+                ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "",
+                        success ? "diagnostics_cloud_upload_succeeded" : "diagnostics_cloud_upload_failed",
+                        success ? "info" : "error", details);
+                Toast.makeText(this,
+                        success ? "진단 로그 자동 전송 완료" : "진단 로그 자동 전송 실패 · ZIP은 기기에 보존됨",
+                        Toast.LENGTH_LONG).show();
+            });
+            // Preserve the existing Android share sheet using the exact same ZIP.
+            DiagnosticsBundleExporter.share(this, archive);
             ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "", "diagnostics_share_chooser_opened",
                     "info", null);
         } catch (Exception error) {
             ImagePackDiagnostics.error(this, imagePackDiagnosticSessionId, "",
-                    "diagnostics_share_failed", error);
+                    "diagnostics_share_or_upload_start_failed", error);
             Toast.makeText(this, "진단 ZIP 수집 실패: " + msg(error), Toast.LENGTH_LONG).show();
         }
     }

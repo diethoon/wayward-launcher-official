@@ -69,7 +69,13 @@ final class DiagnosticsBundleExporter {
     }
 
     static void share(Activity activity) throws Exception {
-        File archive = create(activity);
+        share(activity, create(activity));
+    }
+
+    static void share(Activity activity, File archive) throws Exception {
+        if (archive == null || !archive.isFile() || archive.length() <= 0L) {
+            throw new IllegalArgumentException("진단 ZIP 파일을 찾을 수 없습니다.");
+        }
         Uri contentUri = FileProvider.getUriForFile(activity,
                 activity.getPackageName() + ".diagnostics", archive);
         Intent send = new Intent(Intent.ACTION_SEND);

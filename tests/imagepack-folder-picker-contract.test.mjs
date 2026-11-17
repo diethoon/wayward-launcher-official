@@ -122,6 +122,31 @@ assert.match(launcherLogger, /"ERROR".equalsIgnoreCase\(level\) \|\| "WARN".equa
   "automatic upload must remain limited to errors and warnings");
 assert.match(uploader, /https:\/\/wayward-launcher-diagnostics-/,
   "diagnostic events must be sent over HTTPS");
+
+const bundleUploader = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/DiagnosticsBundleUploader.java", import.meta.url), "utf8");
+assert.match(main, /DiagnosticsBundleUploader\.upload\(this, archive/,
+  "the diagnostics button must automatically upload the generated ZIP on explicit tap");
+assert.match(exporter, /static void share\(Activity activity, File archive\)/,
+  "the existing native share sheet must use the same ZIP as Cloudflare upload");
+assert.match(bundleUploader, /https:\/\/wayward-diagnostics-ingest\.trpgengine\.workers\.dev/,
+  "manual ZIP upload must target the existing Cloudflare ingestion Worker");
+assert.match(bundleUploader, /\/v1\/ticket/,
+  "the Cloudflare Worker must issue a one-time checksum-bound upload ticket");
+assert.match(bundleUploader, /\/v1\/upload/,
+  "the Cloudflare Worker must receive ZIPs only through the ticketed upload endpoint");
+assert.match(bundleUploader, /MessageDigest\.getInstance\("SHA-256"\)/,
+  "the ZIP must be SHA-256 checked before ticket creation");
+assert.match(bundleUploader, /application\/zip/,
+  "the final ticketed upload must preserve application/zip content type");
+assert.match(bundleUploader, /DiagnosticsLogger\.deviceId/,
+  "the worker's per-install rate limit must use the stable local install identifier");
+assert.match(bundleUploader, /MAX_BUNDLE_BYTES/,
+  "the uploader must honor the Worker 5 MiB size ceiling");
+assert.match(bundleUploader, /setConnectTimeout|setReadTimeout/,
+  "network operations must have bounded timeouts");
+assert.doesNotMatch(bundleUploader, /readPending|DiagnosticsLogger\.acknowledge/,
+  "the ZIP uploader must not alter the independent WARN/ERROR event queue");
+
 assert.match(uploader, /DiagnosticsLogger\.acknowledge\(app, ids\)/,
   "locally retained events must only be acknowledged after successful upload");
 assert.match(main, /DiagnosticsUploader\.uploadPending\(this\)/,
