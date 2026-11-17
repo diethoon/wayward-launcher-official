@@ -283,21 +283,23 @@ def pick_single_document(local_path: pathlib.Path, device_path: str, filename: s
     raise RuntimeError("The file picker did not expose " + filename + " after scrolling Downloads.");
 
 
-def pick_multiple_zip_documents(local_path: pathlib.Path, device_path: str) -> None:
+def pick_multiple_documents(
+    local_path: pathlib.Path, device_path: str, filenames: tuple[str, str], artifact_name: str
+) -> None:
     latest = open_download_directory_in_documents_ui(local_path, device_path)
-    first = node_bounds(latest, ("test-one.zip",), require_clickable=False)
+    first = node_bounds(latest, (filenames[0],), require_clickable=False)
     if first is None:
-        raise RuntimeError("The ZIP picker did not list test-one.zip")
+        raise RuntimeError("The file picker did not list " + filenames[0])
     left, top, right, bottom = first
     x, y = str((left + right) // 2), str((top + bottom) // 2)
     adb("shell", "input", "swipe", x, y, x, y, "1000")
     time.sleep(1)
 
     latest = dump_ui(local_path, device_path)
-    second = node_bounds(latest, ("test-two.zip",), require_clickable=False)
+    second = node_bounds(latest, (filenames[1],), require_clickable=False)
     if second is None:
-        (ARTIFACTS / "android15-zip-multiselect.xml").write_text(latest, encoding="utf-8")
-        raise RuntimeError("The ZIP picker did not list test-two.zip in selection mode.")
+        (ARTIFACTS / artifact_name).write_text(latest, encoding="utf-8")
+        raise RuntimeError("The file picker did not list " + filenames[1] + " in multi-select mode.")
     tap_bounds(second)
     time.sleep(1)
 
@@ -308,8 +310,14 @@ def pick_multiple_zip_documents(local_path: pathlib.Path, device_path: str) -> N
             tap_bounds(action)
             return
         time.sleep(1)
-    (ARTIFACTS / "android15-zip-multiselect.xml").write_text(latest, encoding="utf-8")
-    raise RuntimeError("The ZIP picker did not expose its multi-select confirmation action.")
+    (ARTIFACTS / artifact_name).write_text(latest, encoding="utf-8")
+    raise RuntimeError("The file picker did not expose its multi-select confirmation action.")
+
+
+def pick_multiple_zip_documents(local_path: pathlib.Path, device_path: str) -> None:
+    pick_multiple_documents(
+        local_path, device_path, ("test-one.zip", "test-two.zip"), "android15-zip-multiselect.xml"
+    )
 
 
 def run_main_activity_game_session_acceptance() -> None:
@@ -324,8 +332,8 @@ def run_main_activity_game_session_acceptance() -> None:
 <button id="pick">Open image-pack folder</button>
 <iframe id="picker-frame" src="picker-frame.html" title="Image-pack folder picker frame"
         style="width:1px;height:1px;border:0"></iframe>
-<button id="single-button">Pick pack.json file</button>
-<input id="single-input" type="file" accept=".json,application/json" hidden>
+<button id="single-button">Pick multiple pack.json files</button>
+<input id="single-input" type="file" accept=".json,application/json" multiple hidden>
 <button id="zip-button">Pick multiple ZIP files</button>
 <input id="zip-input" type="file" accept=".zip,application/zip" multiple hidden>
 <a id="second" href="session-second.html">Open second internal page</a>
@@ -348,9 +356,11 @@ document.getElementById('pick').addEventListener('click', async () => {
 document.getElementById('single-button').addEventListener('click', () =>
   document.getElementById('single-input').click());
 document.getElementById('single-input').addEventListener('change', event => {
-  const file = event.target.files && event.target.files[0];
+  const names = Array.from(event.target.files || []).map(file => file.name);
   document.getElementById('file-result').textContent =
-    file ? 'PASS_SINGLE_FILE name=' + file.name : 'FAIL_SINGLE_FILE no file';
+    names.includes('pack-one.json') && names.includes('pack-two.json')
+      ? 'PASS_PACK_JSON_MULTI_FILES names=' + names.join(',')
+      : 'FAIL_PACK_JSON_MULTI_FILES names=' + names.join(',');
 });
 document.getElementById('zip-button').addEventListener('click', () =>
   document.getElementById('zip-input').click());
@@ -400,15 +410,18 @@ window.pickImagePackFolder = async function() {
             archive.writestr("fixture.txt", archive_name)
     pixel_fixture = fixture_dir / "pixel.png"
     pixel_fixture.write_bytes(make_png())
-    pack_fixture = fixture_dir / "pack.json"
-    pack_fixture.write_text(
-        '{"packFormat":1,"id":"wayward-android-test","folder":"wayward-android-test","entries":{}}',
-        encoding="utf-8"
-    )
+    for index, filename in enumerate(("pack-one.json", "pack-two.json"), start=1):
+        pack_fixture = fixture_dir / filename
+        pack_fixture.write_text(
+            '{"packFormat":1,"id":"wayward-android-test-' + str(index) +
+            '","folder":"wayward-android-test-' + str(index) + '","entries":{}}',
+            encoding="utf-8"
+        )
 
     adb("shell", "mkdir", "-p", FIXTURE_FOLDER)
     adb("push", str(pixel_fixture), FIXTURE_FOLDER + "/pixel.png")
-    adb("push", str(pack_fixture), FIXTURE_FOLDER + "/pack.json")
+    for filename in ("pack-one.json", "pack-two.json"):
+        adb("push", str(fixture_dir / filename), FIXTURE_FOLDER + "/" + filename)
     for archive_name in ("test-one.zip", "test-two.zip"):
         adb("push", str(fixture_dir / archive_name), FIXTURE_FOLDER + "/" + archive_name)
 
@@ -471,15 +484,20 @@ window.pickImagePackFolder = async function() {
         raise RuntimeError("The folder picker did not execute and resolve inside the same-origin iframe.")
     print("PASS: actual MainActivity game WebView received a JS directory handle, enumerated Download, and read pixel.png.")
 
-    single_button = node_bounds(game_xml, ("Pick pack.json file",))
+    single_button = node_bounds(game_xml, ("Pick multiple pack.json files",))
     if single_button is None:
-        raise RuntimeError("The game page did not expose its ordinary file input trigger.")
+        raise RuntimeError("The game page did not expose its image-pack JSON multi-file input trigger.")
     tap_bounds(single_button)
-    pick_single_document(picker_local, picker_device, "pack.json")
-    single_xml = wait_for_ui_contains(picker_local, picker_device, "PASS_SINGLE_FILE", timeout_seconds=25)
-    if "PASS_SINGLE_FILE name=pack.json" not in single_xml:
-        raise RuntimeError("The game image-pack JSON file chooser did not return pack.json to the page.")
-    print("PASS: the actual game pack.json file chooser returned its selected document.")
+    pick_multiple_documents(
+        picker_local, picker_device, ("pack-one.json", "pack-two.json"),
+        "android15-pack-json-multiselect.xml"
+    )
+    single_xml = wait_for_ui_contains(
+        picker_local, picker_device, "PASS_PACK_JSON_MULTI_FILES", timeout_seconds=25
+    )
+    if "PASS_PACK_JSON_MULTI_FILES" not in single_xml or "pack-one.json" not in single_xml or "pack-two.json" not in single_xml:
+        raise RuntimeError("The actual game pack.json multi-file input did not return both selected JSON files.")
+    print("PASS: the actual game pack.json multi-file input returned both selected pack files.")
 
     zip_button = node_bounds(single_xml, ("Pick multiple ZIP files",))
     if zip_button is None:

@@ -22,9 +22,11 @@ assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT/, "ordinary files and ZIPs mu
 assert.match(picker, /web_file_chooser_called/, "HTML file-input calls must be correlated in the durable diagnostic journal");
 assert.match(picker, /web_file_chooser_activity_result/, "Android file-picker Activity results must be journaled");
 assert.match(picker, /web_file_chooser_callback_delivered/, "WebView file callback delivery or cancellation must be journaled");
+assert.match(picker, /MODE_OPEN_MULTIPLE/, "the actual pack.json input must preserve HTML multiple-selection mode");
+assert.match(picker, /EXTRA_ALLOW_MULTIPLE/, "the native document picker must receive the multi-select flag");
 assert.match(picker, /WebFileChooser\(Activity activity, String sessionId\)/, "file-input diagnostics must share the active game-session ID");
 assert.match(main, /new WebFileChooser\(this,imagePackDiagnosticSessionId\)/, "the active session must flow into the ordinary file chooser");
-assert.match(smoke, /Pick pack\.json file/, "the real game pack JSON file-input path must be exercised");
+assert.match(smoke, /Pick multiple pack\.json files/, "the real game multi-pack JSON file-input path must be exercised");
 assert.match(smoke, /application\/json/, "the file-input acceptance test must use the MIME type selected by the actual game");
 assert.match(picker, /CATEGORY_OPENABLE/, "ordinary file picker must remain OPENABLE");
 assert.match(picker, /Intent\.EXTRA_ALLOW_MULTIPLE/, "ZIP multi-select must remain supported");
@@ -135,7 +137,7 @@ assert.match(smoke, /PASS_GAME_SESSION_DIRECTORY_HANDLE/, "the game session must
 assert.match(smoke, /picker-frame\.html/, "the integration test must invoke the folder picker from a same-origin iframe");
 assert.match(smoke, /ChooserActivity|ResolverActivity/, "Android 15 smoke must verify the diagnostic ZIP share sheet opens");
 assert.match(smoke, /wayward-diagnostics-/, "Android 15 smoke must verify a diagnostic ZIP was generated");
-assert.match(smoke, /PASS_SINGLE_FILE/, "the game session must regression-test ordinary file selection");
+assert.match(smoke, /PASS_PACK_JSON_MULTI_FILES/, "the game session must regression-test multiple real pack.json selection");
 assert.match(smoke, /PASS_ZIP_MULTI_FILES/, "the game session must regression-test ZIP multi-selection");
 assert.match(smoke, /dumpsys", "activity", "recents"/, "the Android 15 test must inspect the actual Recent Apps task list");
 assert.doesNotMatch(smoke, /run_documentsui_acceptance/i, "the Android 15 smoke test must also exercise an actual MainActivity game session");
