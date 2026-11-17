@@ -124,20 +124,20 @@ assert.match(main.slice(webStart, webEnd), /installImageGenDocumentStartScript\(
 // an isolated per-request range so a late result cannot satisfy a later callback.
 const mainRequestCodeNames = ['PICK_TREE', 'PICK_MOD_ZIP', 'REQUEST_NAI_SETTINGS'];
 const mainRequestCodes = mainRequestCodeNames.map((name) => {
-  const match = main.match(new RegExp(\`\\\\b\${name}\\\\s*=\\\\s*(\\\\d+)\`));
-  assert(match, \`MainActivity request code \${name} must exist\`);
+  const match = main.match(new RegExp("\\b" + name + "\\s*=\\s*(\\d+)"));
+  assert(match, 'MainActivity request code ' + name + ' must exist');
   return Number(match[1]);
 });
-const chooserMinMatch = webFileChooser.match(/REQUEST_CODE_MIN\\s*=\\s*(\\d+)/);
-const chooserMaxMatch = webFileChooser.match(/REQUEST_CODE_MAX\\s*=\\s*(\\d+)/);
+const chooserMinMatch = webFileChooser.match(/REQUEST_CODE_MIN\s*=\s*(\d+)/);
+const chooserMaxMatch = webFileChooser.match(/REQUEST_CODE_MAX\s*=\s*(\d+)/);
 assert(chooserMinMatch && chooserMaxMatch, 'WebView per-request code range must exist');
 const chooserMin = Number(chooserMinMatch[1]);
 const chooserMax = Number(chooserMaxMatch[1]);
 assert.ok(chooserMin >= 1 && chooserMax <= 65534 && chooserMin < chooserMax,
   'WebView chooser request-code range must be valid and bounded');
-assert.match(webFileChooser, /NEXT_REQUEST_CODE\\.getAndUpdate\\(/,
+assert.match(webFileChooser, /NEXT_REQUEST_CODE\.getAndUpdate\(/,
   'each file chooser request must reserve a distinct ActivityResult code');
-assert.match(webFileChooser, /static boolean isRequestCode\\(int requestCode\\)/,
+assert.match(webFileChooser, /static boolean isRequestCode\(int requestCode\)/,
   'MainActivity must route the reserved WebView chooser range');
 assert.match(main, /REQUEST_GOOGLE_AUTH_MIN=60000/);
 assert.match(main, /REQUEST_GOOGLE_AUTH_MAX=65534/);
