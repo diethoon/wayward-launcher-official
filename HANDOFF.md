@@ -340,3 +340,7 @@ Updated: 2026-11-15 (Asia/Seoul)
 
 ### Preserve existing ZIP-share failure event names — 2026-11-18
 - Restored the original `diagnostics_share_button_tapped` and `diagnostics_share_failed` event names so existing diagnostics contracts and downstream triage remain compatible. The new Cloudflare upload continues to use its separate `diagnostics_cloud_upload_*` event family.
+
+
+### Same-ZIP upload/share contract — 2026-11-18
+- Updated the diagnostics contract to assert that the Cloudflare uploader and Android native sharesheet receive the same generated `archive` object. The old one-argument share contract no longer describes the preserved share path after adding upload.
