@@ -29,7 +29,7 @@ assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT/, "ordinary files and ZIPs mu
 assert.match(picker, /web_file_chooser_called/, "HTML file-input calls must be correlated in the durable diagnostic journal");
 assert.match(picker, /web_file_chooser_activity_result/, "Android file-picker Activity results must be journaled");
 assert.match(picker, /web_file_chooser_callback_delivered/, "WebView file callback delivery or cancellation must be journaled");
-assert.match(picker, /WebFileChooserRequestPolicy\\.allowsMultipleFiles\\(kind\\)/, "the actual pack.json input must preserve MODE_OPEN_MULTIPLE semantics through the centralized request classifier");
+assert.match(picker, /WebFileChooserRequestPolicy\.allowsMultipleFiles\(kind\)/, "the actual pack.json input must preserve MODE_OPEN_MULTIPLE semantics through the centralized request classifier");
 assert.match(picker, /EXTRA_ALLOW_MULTIPLE/, "the native document picker must receive the multi-select flag");
 assert.match(picker, /WebFileChooser\(Activity activity, String sessionId\)/, "file-input diagnostics must share the active game-session ID");
 assert.match(main, /new WebFileChooser\(this,imagePackDiagnosticSessionId\)/, "the active session must flow into the ordinary file chooser");
@@ -339,3 +339,4 @@ assert.doesNotMatch(pairing, /Log\.[idw]\(TAG,.*raw|Log\.[idw]\(TAG,.*imageUri/,
   "image QR payloads and selected image URIs must never be logged");
 assert.match(build, /play-services-mlkit-barcode-scanning:18\.3\.1/,
   "the supported ML Kit image barcode API must be included without replacing the camera scanner");
+
