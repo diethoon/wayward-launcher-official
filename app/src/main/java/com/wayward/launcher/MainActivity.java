@@ -124,6 +124,7 @@ public final class MainActivity extends Activity {
     private String webViewInstanceId = "";
     private int webViewGeneration = 0;
     private boolean gamePageLoaded = false;
+    private boolean gamePageLoadFailed = false;
     private WebFileChooser webFileChooser;
     private ImagePackDirectoryAccess imagePackDirectoryAccess;
     private String imagePackDiagnosticSessionId = "";
@@ -1038,6 +1039,17 @@ public final class MainActivity extends Activity {
                 gameLifecycleDetails(sessionId,requestId,reason));
     }
 
+    private void logGamePageLifecycle(String event,String url,String reason){
+        JSONObject details=gameLifecycleDetails(activeProfileId,activeGameLaunchRequestId,reason);
+        JSONObject page=ImagePackDiagnostics.pageDetails(url,true);
+        try{
+            details.put("pageOrigin",page.optString("origin"));
+            details.put("pagePath",page.optString("pagePath"));
+            details.put("mainFrame",page.optBoolean("mainFrame",true));
+        }catch(Exception ignored){}
+        DiagnosticsLogger.event(this,"INFO","game-session",event,details);
+    }
+
     private boolean isCurrentGamePage(String url){
         if(activeProfileId==null||activeProfileId.isEmpty()||url==null)return false;
         try{
@@ -1078,6 +1090,7 @@ public final class MainActivity extends Activity {
             if(web!=null)destroyWeb();
             activeProfileId=p.id;treeUri=Uri.parse(p.uri);tree=new SafTree(treeUri);
             gamePageLoaded=false;
+            gamePageLoadFailed=false;
             imagePackDiagnosticSessionId=ImagePackDiagnostics.newSessionId();
             ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "", "game_session_start",
                     "info", ImagePackDiagnostics.pageDetails(sessionOrigin(activeProfileId), true));
@@ -1253,8 +1266,8 @@ public final class MainActivity extends Activity {
                         "webview_page_started", "info", ImagePackDiagnostics.pageDetails(url, true));
                 if(view==web&&isCurrentGamePage(url)){
                     gamePageLoaded=false;
-                    logGameLifecycle("INFO","game_page_started",activeProfileId,activeGameLaunchRequestId,
-                            ImagePackDiagnostics.pageDetails(url,true).optString("pagePath"));
+                    gamePageLoadFailed=false;
+                    logGamePageLifecycle("game_page_started",url,"main_frame_start");
                 }
                 super.onPageStarted(view,url,favicon);
             }
@@ -1263,12 +1276,14 @@ public final class MainActivity extends Activity {
                 ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, "",
                         "webview_page_finished", "info", ImagePackDiagnostics.pageDetails(url, true));
                 if(view==web&&isCurrentGamePage(url)){
-                    gamePageLoaded=true;
-                    logGameLifecycle("INFO","game_page_finished",activeProfileId,activeGameLaunchRequestId,
-                            ImagePackDiagnostics.pageDetails(url,true).optString("pagePath"));
-                    if(web.getVisibility()==View.VISIBLE){
-                        logGameLifecycle("INFO","game_session_visible",activeProfileId,
-                                activeGameLaunchRequestId,"main_frame_page_finished");
+                    if(!gamePageLoadFailed){
+                        gamePageLoaded=true;
+                        logGamePageLifecycle("game_page_finished",url,"main_frame_finished");
+                        if(web.getVisibility()==View.VISIBLE){
+                            logGamePageLifecycle("game_session_visible",url,"main_frame_page_finished");
+                        }
+                    }else{
+                        gamePageLoaded=false;
                     }
                 }
                 if(imagePackFolderPickerScript!=null
@@ -1315,7 +1330,8 @@ public final class MainActivity extends Activity {
                             ImagePackDiagnostics.pageDetails(request.getUrl().toString(), true));
                     if(isCurrentGamePage(request.getUrl().toString())){
                         gamePageLoaded=false;
-                        logGameLifecycle("ERROR","game_page_error",activeProfileId,activeGameLaunchRequestId,
+                        gamePageLoadFailed=true;
+                        logGamePageLifecycle("game_page_error",request.getUrl().toString(),
                                 "main_frame_network_error_"+(error==null?0:error.getErrorCode()));
                     }
                 }
@@ -1356,7 +1372,8 @@ public final class MainActivity extends Activity {
                     }
                     if(request.isForMainFrame()&&isCurrentGamePage(request.getUrl().toString())){
                         gamePageLoaded=false;
-                        logGameLifecycle("ERROR","game_page_error",activeProfileId,activeGameLaunchRequestId,
+                        gamePageLoadFailed=true;
+                        logGamePageLifecycle("game_page_error",request.getUrl().toString(),
                                 "main_frame_http_"+response.getStatusCode());
                     }
                     if(imageResource&&!handledByLocalImageLogger&&imageDiagnostics.getAndIncrement()<16){
@@ -1382,6 +1399,7 @@ public final class MainActivity extends Activity {
                 DiagnosticsLogger.event(MainActivity.this,"ERROR","webview","renderer_process_gone",details);
                 if(view==web){
                     gamePageLoaded=false;
+                    gamePageLoadFailed=true;
                     logGameLifecycle("ERROR","game_page_error",activeProfileId,activeGameLaunchRequestId,
                             "webview_renderer_process_gone");
                 }
@@ -2316,7 +2334,7 @@ public final class MainActivity extends Activity {
         logGameLifecycle("INFO","game_webview_destroyed",activeProfileId,activeGameLaunchRequestId,
                 "destroyWeb");
         web.removeJavascriptInterface("WMLHost");root.removeView(web);web.stopLoading();web.loadUrl("about:blank");web.destroy();web=null;
-        webViewInstanceId="";gamePageLoaded=false;
+        webViewInstanceId="";gamePageLoaded=false;gamePageLoadFailed=false;
     }
     @Override public void onBackPressed(){
         if(web!=null&&web.getVisibility()==View.VISIBLE){
