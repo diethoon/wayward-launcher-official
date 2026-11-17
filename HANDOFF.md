@@ -262,3 +262,9 @@ Updated: 2026-11-15 (Asia/Seoul)
 ### Emulator diagnostics artifact retention and timeout — 2026-11-17
 - Added the new per-state DocumentsUI XML and launcher/Activity diagnostic files (`android15-folder-picker-*`) to the Android 15 diagnostics artifact upload.
 - Increased only the Android 15 emulator step timeout from 8 to 15 minutes to accommodate the newly expanded two-profile Activity/WebView lifecycle scenario. The build and deterministic test steps are unchanged.
+
+
+### Existing-session route-back diagnostics — 2026-11-17
+- The first full two-profile Android 15 run passed the image-pack directory bridge, pack.json multi-select, ZIP multi-select, same-profile Activity/WebView reuse, live fixture button interaction, and independent second-profile launch.
+- It then timed out waiting for the first profile's HTML heading after routing back to the existing Activity. The final UI hierarchy showed a focused WebView with no exposed text nodes; this alone does not distinguish a blank renderer from a WebView accessibility-tree refresh delay.
+- Added targeted capture on this route timeout: full Activity/Task/Recents state, screenshot/UI XML, launcher and image-pack journals, relevant logcat, and a parsed summary of Activity/WebView/session lifecycle events and identities. These files are included in the Android 15 diagnostics artifact. The next run will establish whether `onNewIntent` reaches the original Activity and whether its original WebView is visible and loaded before deciding on any further product change.

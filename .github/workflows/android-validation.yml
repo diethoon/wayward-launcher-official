@@ -301,6 +301,7 @@ jobs:
             artifacts/android15-main-activity-imagepack-picker.xml
             artifacts/android15-main-activity-game-handle-pass.xml
             artifacts/android15-folder-picker-*
+            artifacts/android15-game-route-*
             artifacts/android15-recents-after-game-back.txt
             artifacts/android15-zip-multiselect.xml
             artifacts/android15-diagnostics-share-chooser.txt

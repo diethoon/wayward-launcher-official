@@ -291,6 +291,81 @@ def session_events(events: list[dict], event_name: str, session_id: str) -> list
     ]
 
 
+def capture_game_route_diagnostics(label: str, local_path: pathlib.Path, device_path: str) -> dict:
+    safe_label = re.sub(r"[^A-Za-z0-9_-]", "_", label)
+    ui = dump_ui(local_path, device_path)
+    (ARTIFACTS / f"android15-game-route-{safe_label}-ui.xml").write_text(ui, encoding="utf-8")
+    screenshot(ARTIFACTS / f"android15-game-route-{safe_label}.png")
+    activity = adb("shell", "dumpsys", "activity", "activities", check=False, capture=True)
+    recents = adb("shell", "dumpsys", "activity", "recents", check=False, capture=True)
+    (ARTIFACTS / f"android15-game-route-{safe_label}-activities.txt").write_text(
+        activity.stdout or activity.stderr or "", encoding="utf-8"
+    )
+    (ARTIFACTS / f"android15-game-route-{safe_label}-recents.txt").write_text(
+        recents.stdout or recents.stderr or "", encoding="utf-8"
+    )
+    launcher = adb("shell", "run-as", PACKAGE, "cat", "files/diagnostics/launcher.ndjson",
+                   check=False, capture=True)
+    (ARTIFACTS / f"android15-game-route-{safe_label}-launcher.ndjson").write_text(
+        launcher.stdout or launcher.stderr or "", encoding="utf-8"
+    )
+    imagepack = adb("shell", "run-as", PACKAGE, "cat", "files/diagnostics/imagepack.ndjson",
+                    check=False, capture=True)
+    (ARTIFACTS / f"android15-game-route-{safe_label}-imagepack.ndjson").write_text(
+        imagepack.stdout or imagepack.stderr or "", encoding="utf-8"
+    )
+    logcat = adb("logcat", "-d", "-v", "time", check=False, capture=True)
+    relevant = [
+        line for line in (logcat.stdout or "").splitlines()
+        if any(token in line for token in (
+            "Wayward", "MainActivity", "AndroidRuntime", "chromium", "WebView",
+            "ActivityTaskManager", "ActivityManager"
+        )) and any(token in line.lower() for token in (
+            "error", "crash", "destroy", "new_intent", "resume", "pause", "fail",
+            "launch", "webview", "activity"
+        ))
+    ]
+    (ARTIFACTS / f"android15-game-route-{safe_label}-logcat.txt").write_text(
+        "\\n".join(relevant[-2000:]), encoding="utf-8"
+    )
+    events = read_launcher_events()
+    wanted = {
+        "activity_create", "activity_new_intent", "activity_resume", "activity_pause",
+        "activity_destroy", "game_launch_requested", "game_launch_reordered_existing_activity",
+        "game_launch_new_activity", "game_webview_created", "game_webview_destroyed",
+        "game_page_started", "game_page_finished", "game_page_error",
+        "game_session_brought_to_front", "game_session_visible", "game_session_destroyed"
+    }
+    summary = []
+    for event in events:
+        if event.get("event") not in wanted:
+            continue
+        details = event.get("parsedDetails", {})
+        summary.append({
+            "event": event.get("event"),
+            "level": event.get("level"),
+            "timestamp": event.get("timestamp"),
+            "activityInstanceId": details.get("activityInstanceId"),
+            "taskId": details.get("taskId"),
+            "sessionId": details.get("sessionId"),
+            "launchRequestId": details.get("launchRequestId"),
+            "webViewInstanceId": details.get("webViewInstanceId"),
+            "webViewVisible": details.get("webViewVisible"),
+            "homeVisible": details.get("homeVisible"),
+            "gamePageLoaded": details.get("gamePageLoaded"),
+            "reason": details.get("reason")
+        })
+    (ARTIFACTS / f"android15-game-route-{safe_label}-events.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return {
+        "uiBytes": len(ui),
+        "launcherLogAvailable": launcher.returncode == 0,
+        "activityDumpBytes": len(activity.stdout or ""),
+        "events": summary[-40:]
+    }
+
+
 def choose_download_as_game_folder(local_path: pathlib.Path, device_path: str,
                                    folder_name: str = "WaywardGameTest") -> str:
     """Drive the real MainActivity game-folder SAF picker and select a child of Download."""
@@ -801,9 +876,18 @@ window.pickImagePackFolder = async function() {
     profile_buttons = node_bounds_all_exact(home_xml, ("실행", "Launch"))
     count_before_route, _, _ = count_main_activity_instances()
     tap_bounds(profile_buttons[0])
-    first_game_xml = wait_for_ui_contains(
-        picker_local, picker_device, "WAYWARD MAIN ACTIVITY GAME SESSION", timeout_seconds=30
-    )
+    try:
+        first_game_xml = wait_for_ui_contains(
+            picker_local, picker_device, "WAYWARD MAIN ACTIVITY GAME SESSION", timeout_seconds=30
+        )
+    except RuntimeError as route_error:
+        route_debug = capture_game_route_diagnostics(
+            "existing-first-profile-return", picker_local, picker_device
+        )
+        raise RuntimeError(
+            str(route_error) + "; session route diagnostics=" +
+            json.dumps(route_debug, ensure_ascii=False)
+        ) from route_error
     count_after_route, routed_tasks, route_state = count_main_activity_instances()
     (ARTIFACTS / "android15-game-activity-stack-routed-existing.txt").write_text(
         route_state, encoding="utf-8"
