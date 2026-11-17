@@ -1,0 +1,2 @@
+3df80b2e5ed149ae6201307887d9db75ac569fd23f2f1f0c23d98baa8a82c833  ./Wayward-Launcher-1.0.0-Debug.apk
+9fe28aed77f01f501bd841839f7c7a313802d3c708a531549de52e02c4b5b54e  ./Wayward-Launcher-1.0.0-Release.apk
