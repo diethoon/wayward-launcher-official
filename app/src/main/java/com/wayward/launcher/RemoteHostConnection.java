@@ -54,8 +54,15 @@ final class RemoteHostConnection {
                 || externalPortMapping == null)) {
             throw new IllegalArgumentException("외부 테스트 QR의 서명된 baseUrl, externalBaseUrl 및 포트 매핑이 일치하지 않습니다.");
         }
-        this.externalPortMapping = externalTestEndpoint
-                ? new JSONObject(externalPortMapping.toString()) : null;
+        if (externalTestEndpoint) {
+            try {
+                this.externalPortMapping = new JSONObject(externalPortMapping.toString());
+            } catch (org.json.JSONException error) {
+                throw new IllegalArgumentException("외부 테스트 QR의 포트 매핑 정보가 올바르지 않습니다.", error);
+            }
+        } else {
+            this.externalPortMapping = null;
+        }
         this.hostId = UUID.fromString(hostId).toString();
         this.publicKeyBase64 = requireText(publicKeyBase64, "Host public key");
         this.publicKeyFingerprint = normalizeFingerprint(publicKeyFingerprint);

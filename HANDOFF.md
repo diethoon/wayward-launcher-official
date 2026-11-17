@@ -374,3 +374,7 @@ Updated: 2026-11-15 (Asia/Seoul)
 - endpoint 후보 생성 함수를 분리해 동일한 external-test `baseUrl`/`externalBaseUrl`에는 요청을 한 번만 하고, LAN + 별도 signed external endpoint에는 기존 순서대로 fallback한다. TLS/pin failure 및 POST body 전송 후 재시도 금지는 변경하지 않는다.
 - Android 15 instrumentation에 PC 형식의 P-256 서명 외부 QR 생성 및 파싱/저장 재검증, signature tamper, 매핑 상태/프로토콜/소유권/포트/주소 오류, RFC1918 local target, reserved/CGNAT 주소, URL 오염, endpoint dedupe 검증을 추가했다.
 - 실제 PC Host와 별도 모바일 데이터망 페어링은 실기기/외부망 접근 없이는 입증할 수 없으므로 별도 미검증 항목으로 유지한다.
+
+
+### External QR mapping defensive-copy compile fix — 2026-11-18
+- Latest external QR contract commit `e8f69f6` failed Java compilation because `new JSONObject(String)` throws checked `JSONException` inside the `RemoteHostConnection` constructor. Retained the defensive deep copy and converted malformed mapping JSON into a clear `IllegalArgumentException`; no contract or validation semantics changed.
