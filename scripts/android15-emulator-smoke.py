@@ -568,8 +568,8 @@ window.pickImagePackFolder = async function() {
         )
     with zipfile.ZipFile(exported_zip, "r") as archive:
         names = set(archive.namelist())
-        if "metadata.json" not in names or "imagepack.ndjson" not in names:
-            raise RuntimeError("The shared ZIP is missing metadata or request-correlated image-pack logs.")
+        if "metadata.json" not in names or "imagepack.ndjson" not in names or "launcher.ndjson" not in names:
+            raise RuntimeError("The shared ZIP is missing metadata, launcher logs, or request-correlated image-pack logs.")
         metadata = json.loads(archive.read("metadata.json").decode("utf-8"))
         if not metadata.get("appVersion") or not metadata.get("androidSdk"):
             raise RuntimeError("The shared ZIP metadata is missing the app or Android build information.")

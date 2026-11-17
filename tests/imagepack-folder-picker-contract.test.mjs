@@ -13,6 +13,8 @@ const smoke = readFileSync(new URL("../scripts/android15-emulator-smoke.py", imp
 const helper = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackFolderPickerScript.java", import.meta.url), "utf8");
 const imageDiagnostics = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackDiagnostics.java", import.meta.url), "utf8");
 const exporter = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/DiagnosticsBundleExporter.java", import.meta.url), "utf8");
+const launcherLogger = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/DiagnosticsLogger.java", import.meta.url), "utf8");
+const uploader = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/DiagnosticsUploader.java", import.meta.url), "utf8");
 const diagnosticPaths = readFileSync(new URL("../app/src/main/res/xml/diagnostics_file_paths.xml", import.meta.url), "utf8");
 const legacyBackup = readFileSync(new URL("../app/src/main/res/xml/backup_rules.xml", import.meta.url), "utf8");
 const extractionBackup = readFileSync(new URL("../app/src/main/res/xml/data_extraction_rules.xml", import.meta.url), "utf8");
@@ -89,6 +91,18 @@ assert.match(imageDiagnostics, /"acceptTypes"/, "file chooser MIME requests must
 assert.match(imageDiagnostics, /"selectedCount"/, "file chooser result counts must be safely retained in diagnostics");
 assert.match(exporter, /application\/zip/, "the collected diagnostic archive must be shared as a ZIP");
 assert.match(exporter, /Intent\.ACTION_SEND/, "the ZIP must be shared through Android's native share sheet");
+assert.match(exporter, /launcher\.ndjson/, "the manual diagnostic ZIP must include the general launcher event journal");
+assert.match(exporter, /imagepack\.ndjson/, "the manual diagnostic ZIP must include image-pack request traces");
+assert.match(launcherLogger, /DiagnosticsUploader\.uploadPending\(app\)/,
+  "urgent launcher events must trigger automatic upload");
+assert.match(launcherLogger, /"ERROR".equalsIgnoreCase\(level\) \|\| "WARN".equalsIgnoreCase\(level\)/,
+  "automatic upload must remain limited to errors and warnings");
+assert.match(uploader, /https:\/\/wayward-launcher-diagnostics-/,
+  "diagnostic events must be sent over HTTPS");
+assert.match(uploader, /DiagnosticsLogger\.acknowledge\(app, ids\)/,
+  "locally retained events must only be acknowledged after successful upload");
+assert.match(main, /DiagnosticsUploader\.uploadPending\(this\)/,
+  "unacknowledged diagnostic events must retry when the launcher resumes");
 assert.match(exporter, /lastFailureStage/, "the exported metadata must report the last failure stage");
 assert.match(filesystem, /Environment\.isExternalStorageManager\(\)/, "the filesystem backend must verify all-files access");
 assert.match(filesystem, /Settings\.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION/, "missing permission must open the app-specific all-files settings");
@@ -143,6 +157,7 @@ assert.match(smoke, /PASS_GAME_SESSION_DIRECTORY_HANDLE/, "the game session must
 assert.match(smoke, /picker-frame\.html/, "the integration test must invoke the folder picker from a same-origin iframe");
 assert.match(smoke, /ChooserActivity|ResolverActivity/, "Android 15 smoke must verify the diagnostic ZIP share sheet opens");
 assert.match(smoke, /wayward-diagnostics-/, "Android 15 smoke must verify a diagnostic ZIP was generated");
+assert.match(smoke, /"launcher\.ndjson"/, "Android 15 smoke must verify the ZIP contains general launcher diagnostics");
 assert.match(smoke, /PASS_PACK_JSON_MULTI_FILES/, "the game session must regression-test multiple real pack.json selection");
 assert.match(smoke, /PASS_ZIP_MULTI_FILES/, "the game session must regression-test ZIP multi-selection");
 assert.match(smoke, /dumpsys", "activity", "recents"/, "the Android 15 test must inspect the actual Recent Apps task list");

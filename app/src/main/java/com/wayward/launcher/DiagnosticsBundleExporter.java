@@ -39,14 +39,19 @@ final class DiagnosticsBundleExporter {
         File archive = new File(directory, "wayward-diagnostics-" + stamp + ".zip");
         JSONObject metadata = metadata(activity, now);
         File logs = ImagePackDiagnostics.directory(activity);
+        File launcherActive = new File(logs, "launcher.ndjson");
+        File launcherPrevious = new File(logs, "launcher.previous.ndjson");
         File active = new File(logs, "imagepack.ndjson");
         File previous = new File(logs, "imagepack.previous.ndjson");
         try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(archive))) {
             putText(zip, "metadata.json", metadata.toString(2));
             putText(zip, "README.txt",
-                    "Wayward Launcher image-pack picker diagnostics.\n"
-                    + "The archive contains event metadata only; it does not contain image contents, prompts, "
-                    + "authentication tokens, full file paths, or complete content URIs.\n");
+                    "Wayward Launcher diagnostic bundle.\n"
+                    + "Contains bounded launcher and image-pack event journals plus app/device metadata. "
+                    + "It does not attach source game files, image files, or selected folder contents. "
+                    + "Event details may contain diagnostic context; review before sharing.\n");
+            addFile(zip, "launcher.ndjson", launcherActive);
+            addFile(zip, "launcher.previous.ndjson", launcherPrevious);
             addFile(zip, "imagepack.ndjson", active);
             addFile(zip, "imagepack.previous.ndjson", previous);
             zip.finish();
@@ -95,6 +100,7 @@ final class DiagnosticsBundleExporter {
         meta.put("lastFailureStage", failure.optString("stage", "none"));
         meta.put("lastFailureAt", failure.optLong("timestamp", 0L));
         meta.put("journalPresent", new File(ImagePackDiagnostics.directory(activity), "imagepack.ndjson").isFile());
+        meta.put("launcherJournalPresent", new File(ImagePackDiagnostics.directory(activity), "launcher.ndjson").isFile());
         return meta;
     }
 

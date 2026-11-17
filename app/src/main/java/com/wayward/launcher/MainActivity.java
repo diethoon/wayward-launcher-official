@@ -139,6 +139,7 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onResume(){
         super.onResume();
+        DiagnosticsUploader.uploadPending(this);
         if(imagePackDirectoryAccess!=null)imagePackDirectoryAccess.onResume();
         DiagnosticsLogger.event(this,"INFO","launcher","activity_resume",null);
         loadProfiles();
