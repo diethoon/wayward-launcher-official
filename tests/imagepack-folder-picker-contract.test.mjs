@@ -211,6 +211,16 @@ assert.match(smoke, /select_download_tree_through_documents_ui/,
   "Android 15 acceptance must automate the actual system folder picker");
 assert.match(smoke, /PASS_SINGLE_IMAGE_FILE/,
   "the real game page must verify its independent single-file input contract");
+assert.match(smoke, /DirectoryHandle\.keys\(\)/,
+  "the actual same-origin iframe must exercise the directory keys() iterator");
+assert.match(smoke, /DirectoryHandle\.values\(\)/,
+  "the actual same-origin iframe must exercise the directory values() iterator");
+assert.match(smoke, /DirectoryHandle\.resolve\(\)/,
+  "the actual same-origin iframe must exercise relative handle resolution");
+assert.match(smoke, /createWritable\(\) write\/read failed/,
+  "the actual same-origin iframe must exercise FileHandle.createWritable and read the written bytes");
+assert.match(smoke, /NotFoundError/,
+  "a nonexistent file lookup must preserve the File System Access API error contract");
 assert.match(smoke, /PASS persisted-after-restart/,
   "the selected SAF tree must remain readable after process restart");
 assert.match(smoke, /"verify_revoked"/,

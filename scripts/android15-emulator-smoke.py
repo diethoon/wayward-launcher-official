@@ -840,14 +840,53 @@ window.pickImagePackFolder = async function() {
     }
     const names = [];
     for await (const [name, handle] of directory.entries()) names.push(name);
-    if (!names.includes('pixel.png')) throw new Error('pixel.png missing from directory handle listing');
+    if (!names.includes('pixel.png') || !names.includes('__wayward_nav_child')) {
+      throw new Error('DirectoryHandle.entries() omitted a root fixture entry');
+    }
+    const keys = [];
+    for await (const name of directory.keys()) keys.push(name);
+    if (!keys.includes('pixel.png') || keys.length !== names.length) {
+      throw new Error('DirectoryHandle.keys() differs from entries()');
+    }
+    const values = [];
+    for await (const handle of directory.values()) values.push(handle);
+    if (values.length !== names.length ||
+        !values.some(handle => handle.name === 'pixel.png' && handle.kind === 'file') ||
+        !values.some(handle => handle.name === '__wayward_nav_child' && handle.kind === 'directory')) {
+      throw new Error('DirectoryHandle.values() returned incompatible handles');
+    }
+    const child = await directory.getDirectoryHandle('__wayward_nav_child');
+    if (child.kind !== 'directory' || child.name !== '__wayward_nav_child') {
+      throw new Error('getDirectoryHandle() returned an incompatible directory handle');
+    }
+    const resolved = await directory.resolve(child);
+    if (!resolved || resolved.join('/') !== '__wayward_nav_child') {
+      throw new Error('DirectoryHandle.resolve() returned the wrong relative path');
+    }
+    let missingName = '';
+    try { await directory.getFileHandle('__wayward_missing_file'); }
+    catch (error) { missingName = error && error.name || ''; }
+    if (missingName !== 'NotFoundError') throw new Error('Missing file did not produce NotFoundError');
     const handle = await directory.getFileHandle('pixel.png');
+    if (handle.kind !== 'file' || handle.name !== 'pixel.png') {
+      throw new Error('getFileHandle() returned an incompatible file handle');
+    }
     const file = await handle.getFile();
     const bytes = new Uint8Array(await file.arrayBuffer());
     const signature = Array.from(bytes.slice(0, 8)).join(',');
     if (signature !== '137,80,78,71,13,10,26,10') throw new Error('PNG read failed');
-    report.textContent = 'PASS_GAME_SESSION_DIRECTORY_HANDLE listed=' +
-      names.length + ' bytes=' + bytes.length + ' frame=iframe';
+    const writeDirectory = await directory.getDirectoryHandle('__wayward_handle_api', {create: true});
+    const writeHandle = await writeDirectory.getFileHandle('created.txt', {create: true});
+    const writable = await writeHandle.createWritable();
+    await writable.write('wayward-saf-handle-contract');
+    await writable.close();
+    const written = await (await writeHandle.getFile()).text();
+    if (written !== 'wayward-saf-handle-contract') throw new Error('createWritable() write/read failed');
+    await writeDirectory.removeEntry('created.txt');
+    await directory.removeEntry('__wayward_handle_api');
+    report.textContent = 'PASS_GAME_SESSION_DIRECTORY_HANDLE listed=' + names.length +
+      ' bytes=' + bytes.length + ' keys=' + keys.length + ' values=' + values.length +
+      ' resolve=' + resolved.join('/') + ' writable=true frame=iframe';
   } catch (error) {
     report.textContent = 'FAIL_GAME_SESSION_DIRECTORY_HANDLE ' +
       String(error && error.name) + ': ' + String(error && error.message);
@@ -876,6 +915,7 @@ window.pickImagePackFolder = async function() {
         )
 
     adb("shell", "mkdir", "-p", FIXTURE_FOLDER)
+    adb("shell", "mkdir", "-p", FIXTURE_FOLDER + "/__wayward_nav_child")
     adb("push", str(pixel_fixture), FIXTURE_FOLDER + "/pixel.png")
     for filename in ("pack-one.json", "pack-two.json"):
         adb("push", str(fixture_dir / filename), FIXTURE_FOLDER + "/" + filename)
