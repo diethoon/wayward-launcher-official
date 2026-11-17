@@ -360,3 +360,8 @@ Updated: 2026-11-15 (Asia/Seoul)
 ### Android diagnostic fixture seeding — 2026-11-18
 - The #44129928356 Android 15 run passed the launcher singleTop/background resume check; the ActivityRecord count stayed at one and Android reported that the existing launcher task was brought to front. The final failure was only test fixture setup: shell redirection while seeding `launcher.previous.ndjson` failed with "No such file or directory" and toybox `printf` argument diagnostics.
 - Reworked `ensure_previous_diagnostic_journals()` to use the exact absolute `/data/user/0/{package}/files/diagnostics` path (matching Android `getFilesDir()`) and create the directory plus write the Base64 fixture in one shell command using `echo | base64 -d`. This affects only emulator test data preparation, not app files or diagnostics storage behavior.
+
+
+### Android 15 UI hierarchy dump resilience — 2026-11-18
+- The #44131983988 Android 15 run reached the late game/session phase and failed at `uiautomator dump` with process exit 137. Its output explicitly said the hierarchy had already been dumped to `/sdcard/wayward-main-activity-game.xml`; the failure was the dumper subprocess being killed after writing, not an app/Activity failure.
+- Updated `dump_ui` to remove the old remote XML before each attempt, run the dumper, pull the newly produced file even when the dumper exit code is non-zero, and validate the XML root and at least one node before accepting it. If the process is killed after producing a valid fresh hierarchy, the test records a warning and uses that verified current-screen hierarchy; otherwise it retries once and fails with both dump and pull diagnostics. This does not accept stale XML or weaken any screen, Task, or Activity assertion.

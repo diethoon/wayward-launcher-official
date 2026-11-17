@@ -128,15 +128,35 @@ def make_png() -> bytes:
 
 
 def dump_ui(local_path: pathlib.Path, device_path: str) -> str:
-    result = adb("shell", "uiautomator", "dump", "--compressed", device_path,
-                 check=False, capture=True)
-    if result.returncode != 0:
-        raise RuntimeError(
-            "Android UI hierarchy dump failed (" + str(result.returncode) + "): " +
-            (result.stderr or result.stdout or "no diagnostic output")[-1200:]
+    last_error = "uiautomator did not produce output"
+    for attempt in range(2):
+        # Never accept a stale hierarchy from a previous screen.
+        adb("shell", "rm", "-f", device_path, check=False, capture=True)
+        result = adb("shell", "uiautomator", "dump", "--compressed", device_path,
+                     check=False, capture=True)
+        pull = adb("pull", device_path, str(local_path), check=False, capture=True)
+        if pull.returncode == 0 and local_path.is_file():
+            payload = local_path.read_text(encoding="utf-8", errors="replace")
+            try:
+                root = ET.fromstring(payload)
+                if root.tag == "hierarchy" and next(root.iter("node"), None) is not None:
+                    if result.returncode != 0:
+                        print(
+                            "WARN: uiautomator exited " + str(result.returncode)
+                            + " after writing a valid fresh hierarchy; using the verified XML."
+                        )
+                    return payload
+            except ET.ParseError:
+                pass
+        last_error = (
+            "uiautomator exit=" + str(result.returncode)
+            + " pull exit=" + str(pull.returncode)
+            + " output=" + (result.stderr or result.stdout or "none")[-800:]
+            + " pullOutput=" + (pull.stderr or pull.stdout or "none")[-400:]
         )
-    adb("pull", device_path, str(local_path))
-    return local_path.read_text(encoding="utf-8", errors="replace")
+        if attempt == 0:
+            time.sleep(1)
+    raise RuntimeError("Android UI hierarchy dump failed after retry: " + last_error)
 
 
 def node_bounds(xml: str, labels: tuple[str, ...], *, require_clickable: bool = True,
