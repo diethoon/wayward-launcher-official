@@ -199,6 +199,8 @@ assert.match(smoke, /json\.loads\(line\)/,
 assert.match(smoke, /PASS_PACK_JSON_MULTI_FILES/, "the game session must regression-test multiple real pack.json selection");
 assert.match(smoke, /PASS_ZIP_MULTI_FILES/, "the game session must regression-test ZIP multi-selection");
 assert.match(smoke, /dumpsys", "activity", "recents"/, "the Android 15 test must inspect the actual Recent Apps task list");
+assert.equal((smoke.match(/"-f", "0x10200000"/g) || []).length, 2,
+  "foreground and process restart must use actual launcher NEW_TASK|RESET_TASK_IF_NEEDED semantics");
 assert.doesNotMatch(smoke, /run_documentsui_acceptance/i, "the Android 15 smoke test must also exercise an actual MainActivity game session");
 assert.match(readFileSync(new URL("../tests/ImagePackPathGuardTest.java", import.meta.url), "utf8"), /linked-documents/, "path tests must cover symbolic-link escape");
 assert.match(readFileSync(new URL("../tests/ImagePackAtomicFileWriterTest.java", import.meta.url), "utf8"), /simulated short write/, "writer tests must verify preservation after an incomplete write");

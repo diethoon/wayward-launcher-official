@@ -286,3 +286,8 @@ Updated: 2026-11-15 (Asia/Seoul)
 - The #44115683699 Android 15 run proved URI-keyed session routing: same-profile Activity/WebView reuse, independent second-profile Activity/WebView, and return to the original first-profile Activity/WebView all passed, including the matching `onNewIntent` identity assertion and original JavaScript interaction state.
 - The remaining failure happened only at the extra `SECOND_SESSION_PAGE` navigation used to verify WebView-history BACK. Its link was the last element after the file-picker controls, producing a fragile bottom-of-screen accessibility target. The final UI hierarchy was DocumentsUI, not the expected second page.
 - Moved this fixture-only navigation control next to the top session controls as a real button, wired to `window.location.assign("session-second.html")`, and made the test require exactly one exact-text clickable node. It now captures the pre-tap screen and, on timeout, records full UI/screenshot/Activity/Task/WebView lifecycle diagnostics. No production game or WebView routing code changed in this test-only adjustment.
+
+
+### Background/foreground intent verification — 2026-11-18
+- The previous Android 15 run passed URI-keyed per-profile tasks, same-profile Activity/WebView reuse, independent second-profile launch, and return to the first existing Activity/WebView.
+- Its last failure was the smoke test launching MAIN/LAUNCHER without the task flags supplied by an Android app-icon launch. Updated the two app-resume/restart invocations to use `FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_RESET_TASK_IF_NEEDED` (`0x10200000`). This models the actual launcher task-selection semantics and does not weaken Activity/Task assertions or change product launch mode.

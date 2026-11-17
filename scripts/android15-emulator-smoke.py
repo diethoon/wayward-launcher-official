@@ -1015,8 +1015,9 @@ window.pickImagePackFolder = async function() {
     # Exercise app background/foreground and process termination/restart.
     adb("shell", "input", "keyevent", "3")
     time.sleep(2)
-    adb("shell", "am", "start", "-W", "-a", "android.intent.action.MAIN",
-        "-c", "android.intent.category.LAUNCHER", "-n", ACTIVITY)
+    # Simulate the actual launcher icon intent flags (NEW_TASK | RESET_TASK_IF_NEEDED).
+    adb("shell", "am", "start", "-W", "-f", "0x10200000",
+        "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER", "-n", ACTIVITY)
     home_xml = wait_for_ui_contains(picker_local, picker_device, "내 게임", timeout_seconds=20)
     foreground_count, _, foreground_state = count_main_activity_instances()
     if foreground_count != 1:
@@ -1025,8 +1026,9 @@ window.pickImagePackFolder = async function() {
         foreground_state, encoding="utf-8"
     )
     adb("shell", "am", "force-stop", PACKAGE)
-    adb("shell", "am", "start", "-W", "-a", "android.intent.action.MAIN",
-        "-c", "android.intent.category.LAUNCHER", "-n", ACTIVITY)
+    # Simulate the actual launcher icon intent flags (NEW_TASK | RESET_TASK_IF_NEEDED).
+    adb("shell", "am", "start", "-W", "-f", "0x10200000",
+        "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER", "-n", ACTIVITY)
     home_xml = wait_for_ui_contains(picker_local, picker_device, "WaywardGameTestTwo", timeout_seconds=25)
     restart_count, _, restart_state = count_main_activity_instances()
     if restart_count != 1:
