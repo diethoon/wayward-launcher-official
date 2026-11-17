@@ -209,6 +209,12 @@ assert.doesNotMatch(smoke, /MANAGE_EXTERNAL_STORAGE|ImagePackFileSystemAccess|Ïù
   "Android 15 acceptance cannot depend on the retired browser or all-files permission");
 assert.match(smoke, /select_download_tree_through_documents_ui/,
   "Android 15 acceptance must automate the actual system folder picker");
+assert.match(smoke, /IMAGEPACK_FOLDER = "\/sdcard\/Download\/WaywardImagePackAcceptance"/,
+  "Android 15 acceptance must select a real child folder, not the ungrantable Download root");
+assert.match(smoke, /current_folder == target_name\.casefold\(\)/,
+  "DocumentsUI automation must enter the selectable image-pack folder before granting access");
+assert.doesNotMatch(smoke, /USE THIS FOLDER[\s\S]{0,500}current_folder in \("download", "downloads"\)/,
+  "the Download root must never be treated as the selectable SAF grant target");
 assert.match(smoke, /PASS_SINGLE_IMAGE_FILE/,
   "the real game page must verify its independent single-file input contract");
 assert.match(smoke, /DirectoryHandle\.keys\(\)/,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Android 15 launcher smoke test with the native image-pack folder browser."""
+"""Android 15 launcher smoke test with the system SAF image-pack folder picker."""
 
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ LOCAL_XML = pathlib.Path("/tmp/wayward-launcher-home.xml")
 LOCAL_PID = pathlib.Path("/tmp/wayward-launcher-app-pid.txt")
 LOCAL_CRASH = pathlib.Path("/tmp/wayward-launcher-crash.log")
 FIXTURE_FOLDER = "/sdcard/Download"
+IMAGEPACK_FOLDER = "/sdcard/Download/WaywardImagePackAcceptance"
 GAME_FOLDER = "/sdcard/Download/WaywardGameTest"
 GAME_FOLDER_TWO = "/sdcard/Download/WaywardGameTestTwo"
 
@@ -672,7 +673,7 @@ def select_download_tree_through_documents_ui(
     *,
     timeout_seconds: int = 60,
 ) -> str:
-    """Select Download in Android's real ACTION_OPEN_DOCUMENT_TREE picker."""
+    """Select a child folder because Android 11+ forbids granting the Download root."""
     deadline = time.monotonic() + timeout_seconds
     picker_seen = False
     use_folder_tapped = False
@@ -709,13 +710,8 @@ def select_download_tree_through_documents_ui(
         except ET.ParseError:
             breadcrumbs = []
         current_folder = breadcrumbs[-1].casefold() if breadcrumbs else ""
-        if current_folder not in ("download", "downloads"):
-            download_row = node_bounds(latest, ("Downloads", "Download"), require_clickable=False)
-            if download_row is not None:
-                tap_bounds(download_row)
-                time.sleep(1)
-                continue
-        if current_folder in ("download", "downloads"):
+        target_name = IMAGEPACK_FOLDER.rsplit("/", 1)[-1]
+        if current_folder == target_name.casefold():
             use_folder = node_bounds(
                 latest, ("USE THIS FOLDER", "Use this folder", "이 폴더 사용"),
                 require_enabled=True,
@@ -729,6 +725,18 @@ def select_download_tree_through_documents_ui(
                 use_folder_tapped = True
                 time.sleep(1)
                 continue
+        elif current_folder in ("download", "downloads"):
+            target_row = node_bounds(latest, (target_name,), require_clickable=False)
+            if target_row is not None:
+                tap_bounds(target_row)
+                time.sleep(1)
+                continue
+        else:
+            download_row = node_bounds(latest, ("Downloads", "Download"), require_clickable=False)
+            if download_row is not None:
+                tap_bounds(download_row)
+                time.sleep(1)
+                continue
         time.sleep(1)
     (ARTIFACTS / f"{artifact_prefix}-documentsui-timeout.xml").write_text(
         latest, encoding="utf-8"
@@ -737,7 +745,7 @@ def select_download_tree_through_documents_ui(
     logcat_text = (logcat.stdout or "") + (logcat.stderr or "")
     (ARTIFACTS / f"{artifact_prefix}-logcat.txt").write_text(logcat_text, encoding="utf-8")
     raise RuntimeError(
-        "Android ACTION_OPEN_DOCUMENT_TREE did not complete Download selection; "
+        "Android ACTION_OPEN_DOCUMENT_TREE did not complete child image-pack folder selection; "
         + "picker_seen=" + str(picker_seen)
         + " use_folder_tapped=" + str(use_folder_tapped)
         + " allow_tapped=" + str(allow_tapped)
@@ -915,12 +923,17 @@ window.pickImagePackFolder = async function() {
         )
 
     adb("shell", "mkdir", "-p", FIXTURE_FOLDER)
-    adb("shell", "mkdir", "-p", FIXTURE_FOLDER + "/__wayward_nav_child")
+    adb("shell", "mkdir", "-p", IMAGEPACK_FOLDER)
+    adb("shell", "mkdir", "-p", IMAGEPACK_FOLDER + "/__wayward_nav_child")
+    adb("shell", "touch", IMAGEPACK_FOLDER + "/__wayward_nav_child/child.txt")
     adb("push", str(pixel_fixture), FIXTURE_FOLDER + "/pixel.png")
+    adb("push", str(pixel_fixture), IMAGEPACK_FOLDER + "/pixel.png")
     for filename in ("pack-one.json", "pack-two.json"):
         adb("push", str(fixture_dir / filename), FIXTURE_FOLDER + "/" + filename)
+        adb("push", str(fixture_dir / filename), IMAGEPACK_FOLDER + "/" + filename)
     for archive_name in ("test-one.zip", "test-two.zip"):
         adb("push", str(fixture_dir / archive_name), FIXTURE_FOLDER + "/" + archive_name)
+        adb("push", str(fixture_dir / archive_name), IMAGEPACK_FOLDER + "/" + archive_name)
 
     for folder in (GAME_FOLDER, GAME_FOLDER_TWO):
         adb("shell", "mkdir", "-p", folder)
@@ -1362,17 +1375,18 @@ def run_native_folder_acceptance() -> None:
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     fixture = ARTIFACTS / "imagepack-acceptance-pixel.png"
     fixture.write_bytes(make_png())
-    adb("shell", "mkdir", "-p", FIXTURE_FOLDER)
+    adb("shell", "mkdir", "-p", IMAGEPACK_FOLDER)
     adb("shell", "mkdir", "-p", "/sdcard/Documents")
-    adb("shell", "mkdir", "-p", FIXTURE_FOLDER + "/__wayward_nav_child")
+    adb("shell", "mkdir", "-p", IMAGEPACK_FOLDER + "/__wayward_nav_child")
+    adb("shell", "touch", IMAGEPACK_FOLDER + "/__wayward_nav_child/child.txt")
     adb("shell", "touch", "/sdcard/Documents/outside.txt")
-    adb("shell", "rm", "-f", FIXTURE_FOLDER + "/__wayward_escape")
-    symlink_result = adb("shell", "ln", "-s", "/sdcard/Documents", FIXTURE_FOLDER + "/__wayward_escape", check=False, capture=True)
+    adb("shell", "rm", "-f", IMAGEPACK_FOLDER + "/__wayward_escape")
+    symlink_result = adb("shell", "ln", "-s", "/sdcard/Documents", IMAGEPACK_FOLDER + "/__wayward_escape", check=False, capture=True)
     symlink_fixture_created = symlink_result.returncode == 0
     if not symlink_fixture_created:
         print("SKIP: Android emulator shared storage does not permit creating a symbolic-link fixture.")
         print((symlink_result.stderr or symlink_result.stdout or "").strip())
-    adb("push", str(fixture), FIXTURE_FOLDER + "/pixel.png")
+    adb("push", str(fixture), IMAGEPACK_FOLDER + "/pixel.png")
     adb("logcat", "-c")
     adb("shell", "am", "start", "-W", "-n", PICKER_TEST_ACTIVITY,
         "--ez", "verify_symlink_fixture", str(symlink_fixture_created).lower())
@@ -1389,7 +1403,7 @@ def run_native_folder_acceptance() -> None:
         raise RuntimeError("Selected-root CRUD and boundary tests did not report success.")
     if "listed=" not in first_log or "bytes=" not in first_log:
         raise RuntimeError("The returned directory handle did not enumerate and read the selected image.")
-    print("PASS: adapter test returned a directory-handle-compatible JS object, listed files, and read Download/pixel.png.")
+    print("PASS: adapter test returned a directory-handle-compatible JS object, listed files, and read WaywardImagePackAcceptance/pixel.png.")
     print(first_log[-1800:])
 
     adb("shell", "am", "force-stop", PACKAGE)
