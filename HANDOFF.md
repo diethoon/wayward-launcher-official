@@ -322,3 +322,9 @@ Updated: 2026-11-15 (Asia/Seoul)
 - The top-right diagnostics button now creates one filtered ZIP, starts the user-triggered Cloudflare upload, and opens the existing Android sharesheet with that exact same ZIP. Upload success/failure is reported in a Toast and appended to the local image-pack diagnostic journal. A failed upload leaves the ZIP in app cache for manual sharing/retry.
 - Existing `DiagnosticsUploader.uploadPending` WARN/ERROR event queue to the prior Vercel endpoint is unchanged. The new uploader does not read raw journals, send the event queue, acknowledge events, or automatically transmit image-pack logs outside the user's explicit diagnostics-button action; only the generated privacy-filtered ZIP is sent.
 - Cloudflare Worker source inspected in the account: validates installId/SHA-256/byteLength, rate-limits per IP/install, issues one-time tickets, verifies exact content length and digest, and stores the ZIP privately in R2 with D1 metadata.
+
+
+### Developer-only QR image import — 2026-11-18
+- The existing camera flow remains first: tapping Pairing still opens Google Code Scanner immediately. Only after scanner cancellation or scanner failure does the temporary `QR 이미지에서 가져오기 · 개발자용` button appear on the pairing page.
+- The option uses `ACTION_OPEN_DOCUMENT` with `image/*` and ML Kit's QR-only image reader. Zero QR results and multiple QR results receive distinct messages and return to the main launcher. Exactly one QR is automatically handed to the existing `handleQr()` path, retaining the original signed-manifest, nonce, approval, and pairing checks.
+- Selected image URI and QR contents are never logged or persisted. Added Google Play services ML Kit image scanner API `play-services-mlkit-barcode-scanning:18.3.1`; existing Code Scanner camera dependency is unchanged. This temporary developer control is isolated from the regular camera scan path.

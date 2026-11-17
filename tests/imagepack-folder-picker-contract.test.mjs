@@ -253,3 +253,30 @@ assert.match(smoke, /symlink_fixture_created = symlink_result\.returncode == 0/,
 assert.match(readFileSync(new URL("../app/src/debug/java/com/wayward/launcher/ImagePackPickerAcceptanceActivity.java", import.meta.url), "utf8"), /verifySymlinkFixture/, "device symlink checks must only claim coverage when the fixture exists");
 
 console.log("Native image-pack filesystem/SAF versioned bridge contract tests passed.");
+
+const pairing = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/RemotePairingActivity.java", import.meta.url), "utf8");
+const build = readFileSync(new URL("../app/build.gradle", import.meta.url), "utf8");
+assert.match(pairing, /scanner\.startScan\(\)/,
+  "the existing camera QR scanner must remain the first pairing action");
+assert.match(pairing, /addOnCanceledListener\(\(\) -> \{[\s\S]*?imageImportButton\.setVisibility\(View\.VISIBLE\)/,
+  "the developer image import button must appear after the camera scanner is cancelled");
+assert.match(pairing, /REQUEST_QR_IMAGE/,
+  "the image import path must return its selected URI to the pairing activity");
+assert.match(pairing, /Intent\.ACTION_OPEN_DOCUMENT[\s\S]*?setType\("image\/\*"/,
+  "the temporary tool must use the system image picker without replacing camera scanning");
+assert.match(pairing, /InputImage\.fromFilePath\(this, imageUri\)/,
+  "the image QR reader must decode the selected image URI");
+assert.match(pairing, /Barcode\.FORMAT_QR_CODE/,
+  "the image recognizer must only detect QR codes");
+assert.match(pairing, /if \(count == 0\)/,
+  "an image with no QR must produce its own result");
+assert.match(pairing, /if \(count > 1\)/,
+  "an image with multiple QR codes must be rejected explicitly");
+assert.match(pairing, /handleQr\(barcode\)/,
+  "exactly one recognized QR must reuse the original secure pairing validation path");
+assert.match(pairing, /showImageImportFailure\([\s\S]*?finish\(\)/,
+  "empty or multiple image QR results must return to the launcher after a message");
+assert.doesNotMatch(pairing, /Log\.[idw]\(TAG,.*raw|Log\.[idw]\(TAG,.*imageUri/,
+  "image QR payloads and selected image URIs must never be logged");
+assert.match(build, /play-services-mlkit-barcode-scanning:18\.3\.1/,
+  "the supported ML Kit image barcode API must be included without replacing the camera scanner");

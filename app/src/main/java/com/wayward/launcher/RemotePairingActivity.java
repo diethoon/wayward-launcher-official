@@ -2,17 +2,24 @@ package com.wayward.launcher;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Intent;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.android.gms.common.moduleinstall.ModuleInstall;
 import com.google.android.gms.common.moduleinstall.ModuleInstallRequest;
+import com.google.mlkit.vision.barcode.BarcodeScanner;
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions;
+import com.google.mlkit.vision.barcode.BarcodeScanning;
 import com.google.mlkit.vision.barcode.common.Barcode;
+import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanner;
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions;
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning;
@@ -20,9 +27,14 @@ import com.google.mlkit.vision.codescanner.GmsBarcodeScanning;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.IOException;
+import java.util.List;
+
 public final class RemotePairingActivity extends Activity {
     private static final String TAG = "WaywardRemotePair";
+    private static final int REQUEST_QR_IMAGE = 5803;
     private TextView status;
+    private TextView imageImportButton;
     private boolean processing;
     private boolean scannerStarting;
 
@@ -49,6 +61,17 @@ public final class RemotePairingActivity extends Activity {
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(-1, -2);
         statusParams.topMargin = 18;
         page.addView(status, statusParams);
+
+        imageImportButton = new TextView(this);
+        imageImportButton.setText("QR 이미지에서 가져오기 · 개발자용");
+        imageImportButton.setTextSize(15);
+        imageImportButton.setTextColor(Color.rgb(38, 95, 150));
+        imageImportButton.setGravity(Gravity.CENTER);
+        imageImportButton.setVisibility(View.GONE);
+        LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(-1, 54);
+        imageParams.topMargin = 20;
+        page.addView(imageImportButton, imageParams);
+        imageImportButton.setOnClickListener(view -> chooseQrImage());
 
         TextView cancel = new TextView(this);
         cancel.setText("취소");
@@ -127,7 +150,8 @@ public final class RemotePairingActivity extends Activity {
                 .addOnCanceledListener(() -> {
                     scannerStarting = false;
                     Log.i(TAG, "stage=qr_scan result=cancelled");
-                    finish();
+                    status.setText("카메라 스캔이 취소되었습니다. 개발자용 이미지 가져오기를 사용할 수 있습니다.");
+                    if (imageImportButton != null) imageImportButton.setVisibility(View.VISIBLE);
                 })
                 .addOnFailureListener(error -> {
                     scannerStarting = false;
@@ -135,6 +159,144 @@ public final class RemotePairingActivity extends Activity {
                             error.getClass().getSimpleName());
                     showFailure("내부 QR 스캐너 실행에 실패했습니다. 잠시 후 다시 시도하세요.");
                 });
+    }
+
+    private void chooseQrImage() {
+        if (processing || isFinishing()) return;
+        Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        picker.addCategory(Intent.CATEGORY_OPENABLE);
+        picker.setType("image/*");
+        picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try {
+            status.setText("QR 코드가 포함된 이미지를 선택하세요.");
+            startActivityForResult(picker, REQUEST_QR_IMAGE);
+        } catch (Exception error) {
+            showImageImportFailure("이미지 선택기를 열지 못했습니다. 기기의 파일 앱을 확인하세요.",
+                    "picker_unavailable");
+        }
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQUEST_QR_IMAGE) return;
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+            Log.i(TAG, "stage=qr_image_picker result=cancelled");
+            finish();
+            return;
+        }
+        Uri selectedImage = data.getData();
+        processing = true;
+        if (imageImportButton != null) imageImportButton.setVisibility(View.GONE);
+        status.setText("선택한 이미지에서 QR 코드 분석 중…");
+        Log.i(TAG, "stage=qr_image_selected result=started");
+        ImagePackDiagnostics.event(this, "", "", "pairing_qr_image_selected", "info", null);
+        new Thread(() -> decodeQrImage(selectedImage), "Wayward-Pairing-QR-Image").start();
+    }
+
+    private void decodeQrImage(Uri imageUri) {
+        BarcodeScanner scanner = null;
+        try {
+            InputImage image = InputImage.fromFilePath(this, imageUri);
+            BarcodeScannerOptions options = new BarcodeScannerOptions.Builder()
+                    .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                    .build();
+            scanner = BarcodeScanning.getClient(options);
+            BarcodeScanner client = scanner;
+            ModuleInstall.getClient(this).areModulesAvailable(client)
+                    .addOnSuccessListener(availability -> {
+                        if (isFinishing()) {
+                            closeScanner(client);
+                            return;
+                        }
+                        if (availability.areModulesAvailable()) {
+                            processQrImage(client, image);
+                        } else {
+                            statusOnUi("이미지 QR 인식 모듈 준비 중…");
+                            ModuleInstallRequest request = ModuleInstallRequest.newBuilder()
+                                    .addApi(client)
+                                    .build();
+                            ModuleInstall.getClient(this).installModules(request)
+                                    .addOnSuccessListener(response -> processQrImage(client, image))
+                                    .addOnFailureListener(error -> {
+                                        closeScanner(client);
+                                        showImageImportFailure(
+                                                "이미지 QR 인식 모듈을 준비하지 못했습니다. Google Play services를 확인하세요.",
+                                                "scanner_module_install_failed");
+                                    });
+                        }
+                    })
+                    .addOnFailureListener(error -> {
+                        closeScanner(client);
+                        showImageImportFailure(
+                                "이미지 QR 인식기를 준비하지 못했습니다. 잠시 후 다시 시도하세요.",
+                                "scanner_module_check_failed");
+                    });
+        } catch (IOException error) {
+            if (scanner != null) closeScanner(scanner);
+            showImageImportFailure("선택한 이미지를 읽지 못했습니다. 다른 이미지 파일을 선택하세요.",
+                    "image_read_failed");
+        } catch (Exception error) {
+            if (scanner != null) closeScanner(scanner);
+            showImageImportFailure("이미지에서 QR 코드를 분석하지 못했습니다. 다른 이미지를 선택하세요.",
+                    "image_decode_failed");
+        }
+    }
+
+    private void processQrImage(BarcodeScanner scanner, InputImage image) {
+        scanner.process(image)
+                .addOnSuccessListener(barcodes -> {
+                    closeScanner(scanner);
+                    if (isFinishing() || isDestroyed()) return;
+                    int count = barcodes == null ? 0 : barcodes.size();
+                    if (count == 0) {
+                        showImageImportFailure(
+                                "선택한 이미지에서 QR 코드를 찾지 못했습니다. QR이 선명하게 보이는 이미지를 선택하세요.",
+                                "no_qr_found");
+                        return;
+                    }
+                    if (count > 1) {
+                        showImageImportFailure(
+                                "이미지에서 QR 코드가 " + count + "개 발견되었습니다. QR 코드가 하나만 있는 이미지를 선택하세요.",
+                                "multiple_qr_found_" + count);
+                        return;
+                    }
+                    Barcode barcode = barcodes.get(0);
+                    String raw = barcode == null ? null : barcode.getRawValue();
+                    if (barcode == null || barcode.getFormat() != Barcode.FORMAT_QR_CODE
+                            || raw == null || raw.trim().isEmpty()) {
+                        showImageImportFailure("이미지의 QR 데이터를 읽지 못했습니다. 다른 이미지를 선택하세요.",
+                                "qr_payload_empty");
+                        return;
+                    }
+                    // Never log or persist the QR payload or selected image URI.
+                    processing = false;
+                    Log.i(TAG, "stage=qr_image_recognition result=success count=1 chars=" + raw.length());
+                    ImagePackDiagnostics.event(this, "", "", "pairing_qr_image_recognized", "info", null);
+                    handleQr(barcode);
+                })
+                .addOnFailureListener(error -> {
+                    closeScanner(scanner);
+                    showImageImportFailure("선택한 이미지에서 QR 코드를 인식하지 못했습니다. 다른 이미지를 선택하세요.",
+                            "qr_recognition_failed");
+                });
+    }
+
+    private void showImageImportFailure(String message, String reason) {
+        runOnUiThread(() -> {
+            processing = false;
+            scannerStarting = false;
+            Log.w(TAG, "stage=qr_image_recognition result=failed reason=" + reason);
+            JSONObject details = new JSONObject();
+            try { details.put("reason", reason); } catch (Exception ignored) {}
+            ImagePackDiagnostics.event(this, "", "", "pairing_qr_image_failed", "warn", details);
+            if (isFinishing()) return;
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+            finish();
+        });
+    }
+
+    private static void closeScanner(BarcodeScanner scanner) {
+        try { scanner.close(); } catch (Exception ignored) {}
     }
 
     private void handleQr(Barcode barcode) {
@@ -265,6 +427,7 @@ public final class RemotePairingActivity extends Activity {
         processing = false;
         scannerStarting = false;
         if (isFinishing()) return;
+        if (imageImportButton != null) imageImportButton.setVisibility(View.VISIBLE);
         status.setText("페어링 실패\n" + (message == null ? "알 수 없는 오류" : message));
         new AlertDialog.Builder(this)
                 .setTitle("페어링 실패")
