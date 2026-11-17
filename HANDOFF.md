@@ -268,3 +268,8 @@ Updated: 2026-11-15 (Asia/Seoul)
 - The first full two-profile Android 15 run passed the image-pack directory bridge, pack.json multi-select, ZIP multi-select, same-profile Activity/WebView reuse, live fixture button interaction, and independent second-profile launch.
 - It then timed out waiting for the first profile's HTML heading after routing back to the existing Activity. The final UI hierarchy showed a focused WebView with no exposed text nodes; this alone does not distinguish a blank renderer from a WebView accessibility-tree refresh delay.
 - Added targeted capture on this route timeout: full Activity/Task/Recents state, screenshot/UI XML, launcher and image-pack journals, relevant logcat, and a parsed summary of Activity/WebView/session lifecycle events and identities. These files are included in the Android 15 diagnostics artifact. The next run will establish whether `onNewIntent` reaches the original Activity and whether its original WebView is visible and loaded before deciding on any further product change.
+
+
+### SAF picker race in UI smoke test — 2026-11-17
+- The #44104931480 run captured the first UI hierarchy immediately after tapping `+ 현재 기기 폴더`. It was still the launcher home because `startActivityForResult(ACTION_OPEN_DOCUMENT_TREE)` is asynchronous. The added diagnostic guard incorrectly treated that first pre-transition frame as a completed picker cancellation.
+- Corrected the test to require observing a non-home DocumentsUI state before it can interpret a later return to home as cancellation. If the picker never appears, it now waits a bounded number of home frames and reports that distinct failure. Product code is unchanged.

@@ -379,6 +379,8 @@ def choose_download_as_game_folder(local_path: pathlib.Path, device_path: str,
     game_folder_opened = False
     latest = ""
     last_saved_state = None
+    picker_seen = False
+    home_streak = 0
     safe_folder_name = re.sub(r"[^A-Za-z0-9_-]", "_", folder_name)
     for iteration in range(50):
         latest = dump_ui(local_path, device_path)
@@ -386,8 +388,16 @@ def choose_download_as_game_folder(local_path: pathlib.Path, device_path: str,
             state_path = ARTIFACTS / f"android15-folder-picker-{safe_folder_name}-{iteration:02d}.xml"
             state_path.write_text(latest, encoding="utf-8")
             last_saved_state = latest
-        if "내 게임" in latest or "My games" in latest:
-            if folder_name not in latest:
+
+        is_launcher_home = "내 게임" in latest or "My games" in latest
+        if not is_launcher_home:
+            picker_seen = True
+            home_streak = 0
+        elif not picker_seen:
+            # startActivityForResult is asynchronous: the first hierarchy dump
+            # can still be MainActivity home even though the click was accepted.
+            home_streak += 1
+            if home_streak >= 8:
                 events = read_launcher_events()
                 launcher_log = adb(
                     "shell", "run-as", PACKAGE, "cat", "files/diagnostics/launcher.ndjson",
@@ -402,81 +412,42 @@ def choose_download_as_game_folder(local_path: pathlib.Path, device_path: str,
                 (ARTIFACTS / f"android15-folder-picker-{safe_folder_name}-activities.txt").write_text(
                     activity_dump.stdout or activity_dump.stderr or "", encoding="utf-8"
                 )
-                failures = [
+                opened = [
                     event.get("event") for event in events
-                    if event.get("event") in ("folder_picker_cancelled", "folder_permission_failed",
-                                              "game_folder_registered", "folder_permission_persisted")
+                    if event.get("event") in ("folder_picker_opened", "folder_picker_cancelled",
+                                              "folder_permission_failed", "game_folder_registered")
                 ]
                 raise RuntimeError(
-                    "The folder picker returned to launcher without registering "
-                    + folder_name + "; latest registration events=" + repr(failures)
+                    "DocumentsUI did not appear after tapping the game-folder button for "
+                    + folder_name + "; observed launcher events=" + repr(opened)
                 )
+        elif is_launcher_home and folder_name not in latest:
+            events = read_launcher_events()
+            launcher_log = adb(
+                "shell", "run-as", PACKAGE, "cat", "files/diagnostics/launcher.ndjson",
+                check=False, capture=True
+            )
+            (ARTIFACTS / f"android15-folder-picker-{safe_folder_name}-launcher.ndjson").write_text(
+                launcher_log.stdout or launcher_log.stderr or "", encoding="utf-8"
+            )
+            activity_dump = adb(
+                "shell", "dumpsys", "activity", "activities", check=False, capture=True
+            )
+            (ARTIFACTS / f"android15-folder-picker-{safe_folder_name}-activities.txt").write_text(
+                activity_dump.stdout or activity_dump.stderr or "", encoding="utf-8"
+            )
+            registration_events = [
+                event.get("event") for event in events
+                if event.get("event") in ("folder_picker_opened", "folder_picker_cancelled",
+                                          "folder_permission_persisted", "folder_permission_failed",
+                                          "game_folder_registered")
+            ]
+            raise RuntimeError(
+                "The folder picker returned to launcher without registering "
+                + folder_name + "; latest registration events=" + repr(registration_events)
+            )
 
         if download_selected and not game_folder_opened:
-            child_folder = node_bounds(latest, (folder_name,), require_clickable=False)
-            if child_folder is not None:
-                tap_bounds(child_folder)
-                game_folder_opened = True
-                time.sleep(2)
-                continue
-
-        if game_folder_opened:
-            use_folder = node_bounds(
-                latest, ("이 폴더 사용", "Use this folder", "Use folder"), require_enabled=True
-            )
-            if use_folder is not None:
-                tap_bounds(use_folder)
-                break
-
-        download_row = node_bounds(latest, ("Downloads", "Download"), require_clickable=False)
-        if download_row is not None and not download_selected:
-            tap_bounds(download_row)
-            download_selected = True
-            time.sleep(2)
-            continue
-
-        roots_button = node_bounds(
-            latest, ("Show roots", "Show navigation drawer", "Browse")
-        )
-        if roots_button is not None and not download_selected:
-            tap_bounds(roots_button)
-            time.sleep(1)
-            continue
-
-        time.sleep(1)
-    else:
-        (ARTIFACTS / "android15-game-tree-picker.xml").write_text(latest, encoding="utf-8")
-        raise RuntimeError("DocumentsUI did not allow the real launcher to select Download/" + folder_name + ".")
-
-    # Android may ask for a second explicit grant after the tree button is pressed.
-    time.sleep(1)
-    latest = dump_ui(local_path, device_path)
-    (ARTIFACTS / "android15-game-tree-picker-after-use.xml").write_text(latest, encoding="utf-8")
-    screenshot(ARTIFACTS / "android15-game-tree-picker-after-use.png")
-    for _ in range(25):
-        latest = dump_ui(local_path, device_path)
-        if "내 게임" in latest or "My games" in latest:
-            (ARTIFACTS / "android15-game-tree-picker-returned.xml").write_text(latest, encoding="utf-8")
-            if folder_name not in latest:
-                raise RuntimeError(
-                    "The SAF picker returned to MainActivity without showing registered profile "
-                    + folder_name + ". " + latest[-2500:]
-                )
-            return latest
-
-        # Match a positive button exactly; substring matching "Allow" could hit "Don't allow".
-        allow_button = node_bounds_exact(latest, ("허용", "Allow", "Allow access"))
-        if allow_button is not None:
-            tap_bounds(allow_button)
-            time.sleep(1)
-            continue
-
-        use_button = node_bounds(latest, ("이 폴더 사용", "Use this folder", "Use folder"))
-        if use_button is not None:
-            tap_bounds(use_button)
-            time.sleep(1)
-            continue
-        time.sleep(1)
 
     (ARTIFACTS / "android15-game-tree-picker.xml").write_text(latest, encoding="utf-8")
     raise RuntimeError("The launcher did not return to its home screen after the SAF grant; last DocumentsUI state: "
