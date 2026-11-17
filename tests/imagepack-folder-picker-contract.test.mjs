@@ -215,8 +215,12 @@ assert.match(smoke, /current_folder == target_name\.casefold\(\)/,
   "DocumentsUI automation must enter the selectable image-pack folder before granting access");
 assert.doesNotMatch(smoke, /USE THIS FOLDER[\s\S]{0,500}current_folder in \("download", "downloads"\)/,
   "the Download root must never be treated as the selectable SAF grant target");
-assert.match(smoke, /PASS_SINGLE_IMAGE_FILE/,
+assert.match(smoke, /PASS_SINGLE_FILE/,
   "the real game page must verify its independent single-file input contract");
+assert.match(smoke, /accept="application\/octet-stream"/,
+  "the actual single-file input must preserve its exact MIME filter through ACTION_OPEN_DOCUMENT");
+assert.match(smoke, /single-file.bin/,
+  "the Android 15 single-file chooser must return exactly one selected document");
 assert.match(smoke, /DirectoryHandle\.keys\(\)/,
   "the actual same-origin iframe must exercise the directory keys() iterator");
 assert.match(smoke, /DirectoryHandle\.values\(\)/,

@@ -301,6 +301,7 @@ jobs:
             artifacts/android15-game-route-*
             artifacts/android15-recents-after-game-back.txt
             artifacts/android15-zip-multiselect.xml
+            artifacts/android15-single-file-*
             artifacts/android15-diagnostics-share-chooser.txt
             artifacts/android15-diagnostics-export.zip
             artifacts/imagepack-acceptance-pixel.png

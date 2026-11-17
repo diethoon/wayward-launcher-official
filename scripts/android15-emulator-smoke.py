@@ -774,8 +774,8 @@ def run_main_activity_game_session_acceptance() -> None:
 <input id="single-input" type="file" accept=".json,application/json" multiple hidden>
 <button id="zip-button">Pick multiple ZIP files</button>
 <input id="zip-input" type="file" accept=".zip,application/zip" multiple hidden>
-<button id="single-file-button">Pick one PNG file</button>
-<input id="single-file-input" type="file" accept="image/png" hidden>
+<button id="single-file-button">Pick one binary file</button>
+<input id="single-file-input" type="file" accept="application/octet-stream" hidden>
 
 <div id="result">READY</div><div id="file-result">FILE_READY</div>
 <script>
@@ -828,9 +828,9 @@ document.getElementById('single-file-button').addEventListener('click', () =>
 document.getElementById('single-file-input').addEventListener('change', event => {
   const files = Array.from(event.target.files || []).map(file => file.name);
   document.getElementById('file-result').textContent =
-    files.length === 1 && files[0] === 'pixel.png'
-      ? 'PASS_SINGLE_IMAGE_FILE name=' + files[0]
-      : 'FAIL_SINGLE_IMAGE_FILE names=' + files.join(',');
+    files.length === 1 && files[0] === 'single-file.bin'
+      ? 'PASS_SINGLE_FILE name=' + files[0]
+      : 'FAIL_SINGLE_FILE names=' + files.join(',');
 });
 </script>
 </body></html>"""
@@ -914,6 +914,8 @@ window.pickImagePackFolder = async function() {
             archive.writestr("fixture.txt", archive_name)
     pixel_fixture = fixture_dir / "pixel.png"
     pixel_fixture.write_bytes(make_png())
+    single_file_fixture = fixture_dir / "single-file.bin"
+    single_file_fixture.write_bytes(b"wayward single file chooser fixture")
     for index, filename in enumerate(("pack-one.json", "pack-two.json"), start=1):
         pack_fixture = fixture_dir / filename
         pack_fixture.write_text(
@@ -927,6 +929,7 @@ window.pickImagePackFolder = async function() {
     adb("shell", "mkdir", "-p", IMAGEPACK_FOLDER + "/__wayward_nav_child")
     adb("shell", "touch", IMAGEPACK_FOLDER + "/__wayward_nav_child/child.txt")
     adb("push", str(pixel_fixture), FIXTURE_FOLDER + "/pixel.png")
+    adb("push", str(single_file_fixture), FIXTURE_FOLDER + "/single-file.bin")
     adb("push", str(pixel_fixture), IMAGEPACK_FOLDER + "/pixel.png")
     for filename in ("pack-one.json", "pack-two.json"):
         adb("push", str(fixture_dir / filename), FIXTURE_FOLDER + "/" + filename)
@@ -1005,17 +1008,24 @@ window.pickImagePackFolder = async function() {
         raise RuntimeError("The WebView ZIP multi-select callback did not return both selected URIs.")
     print("PASS: the real game WebView ZIP multi-select callback returned both selected files.")
 
-    single_file_button = node_bounds(zip_xml, ("Pick one PNG file",))
+    single_file_button = node_bounds(zip_xml, ("Pick one binary file",))
     if single_file_button is None:
         raise RuntimeError("The game page did not expose its single-file input trigger.")
     tap_bounds(single_file_button)
-    pick_single_document(picker_local, picker_device, "pixel.png")
-    one_file_xml = wait_for_ui_contains(
-        picker_local, picker_device, "PASS_SINGLE_IMAGE_FILE", timeout_seconds=25
+    pick_single_document(picker_local, picker_device, "single-file.bin")
+    single_picker_xml = dump_ui(picker_local, picker_device)
+    (ARTIFACTS / "android15-single-file-picker-after-tap.xml").write_text(
+        single_picker_xml, encoding="utf-8"
     )
-    if "FAIL_SINGLE_IMAGE_FILE" in one_file_xml or "pixel.png" not in one_file_xml:
-        raise RuntimeError("The existing single-file input did not return exactly pixel.png.")
-    print("PASS: the real game WebView single-file input returned exactly one PNG.")
+    one_file_xml = wait_for_ui_contains(
+        picker_local, picker_device, "PASS_SINGLE_FILE", timeout_seconds=25
+    )
+    (ARTIFACTS / "android15-single-file-callback.xml").write_text(
+        one_file_xml, encoding="utf-8"
+    )
+    if "FAIL_SINGLE_FILE" in one_file_xml or "single-file.bin" not in one_file_xml:
+        raise RuntimeError("The existing single-file input did not return exactly single-file.bin.")
+    print("PASS: the real game WebView single-file input returned exactly one binary file.")
 
     first_count, first_tasks, first_state = count_main_activity_instances()
     if first_count != 2 or len(first_tasks) != 2:
