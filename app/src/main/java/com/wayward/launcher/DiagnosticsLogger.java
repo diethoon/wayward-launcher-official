@@ -139,7 +139,11 @@ final class DiagnosticsLogger {
                 new FileInputStream(file), StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null && result.length() < max) {
-                try { result.put(new JSONObject(line)); } catch (Exception ignored) {}
+                try {
+                    JSONObject event = new JSONObject(line);
+                    if (!DiagnosticsUploadPolicy.isUploadableLevel(event.optString("level"))) continue;
+                    result.put(event);
+                } catch (Exception ignored) {}
             }
         }
     }

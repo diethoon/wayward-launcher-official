@@ -14,6 +14,7 @@ const helper = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/I
 const imageDiagnostics = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackDiagnostics.java", import.meta.url), "utf8");
 const exporter = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/DiagnosticsBundleExporter.java", import.meta.url), "utf8");
 const launcherLogger = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/DiagnosticsLogger.java", import.meta.url), "utf8");
+const uploadPolicy = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/DiagnosticsUploadPolicy.java", import.meta.url), "utf8");
 const uploader = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/DiagnosticsUploader.java", import.meta.url), "utf8");
 const diagnosticPaths = readFileSync(new URL("../app/src/main/res/xml/diagnostics_file_paths.xml", import.meta.url), "utf8");
 const legacyBackup = readFileSync(new URL("../app/src/main/res/xml/backup_rules.xml", import.meta.url), "utf8");
@@ -95,6 +96,10 @@ assert.match(exporter, /launcher\.ndjson/, "the manual diagnostic ZIP must inclu
 assert.match(exporter, /imagepack\.ndjson/, "the manual diagnostic ZIP must include image-pack request traces");
 assert.match(launcherLogger, /DiagnosticsUploader\.uploadPending\(app\)/,
   "urgent launcher events must trigger automatic upload");
+assert.match(launcherLogger, /DiagnosticsUploadPolicy\.isUploadableLevel\(event\.optString\("level"\)\)/,
+  "the automatic upload queue must filter events before adding them to the payload");
+assert.match(uploadPolicy, /"WARN"\.equalsIgnoreCase\(level\) \|\| "ERROR"\.equalsIgnoreCase\(level\)/,
+  "only WARN and ERROR levels may be automatically uploaded");
 assert.match(launcherLogger, /CONTENT_URI\.matcher\(out\)/,
   "launcher log must redact full content URIs");
 assert.match(launcherLogger, /ABSOLUTE_PATH\.matcher\(out\)/,

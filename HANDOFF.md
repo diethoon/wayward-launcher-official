@@ -213,3 +213,11 @@ Updated: 2026-11-15 (Asia/Seoul)
 - backup_rules.xml과 data_extraction_rules.xml의 cloud-backup/device-transfer 모두 sharedpref/wayward_launcher.xml, root/app_webview/, file/diagnostics/ 제외가 이미 적용되어 있다. android:allowBackup="true"는 유지한다. 앱 전체 백업을 비활성화하지 않는다.
 - Android 15 CI 게임 페이지는 workflow가 생성하는 HTML fixture다. 실제 MainActivity와 production native bridge를 통과하지만 Faith/실제 게임에 배포된 Image Studio 자산 자체를 실행한 검증은 아니다. 물리 Android 기기도 사용하지 않았다.
 - 이전 실패 실행은 Recents assertion에서 중단되어 뒤의 진단 ZIP/share-sheet 검증은 실행되지 않았다. 다음 Actions 결과와 artifact에서 ZIP/share/privacy 검증을 별도 확인한다.
+
+
+### Automatic upload scope correction — 2026-11-17
+- Final source audit found that a WARN/ERROR event triggered upload but the pending reader could also enqueue INFO/DEBUG records. The image-pack journal and user-shared ZIP were not included, but the launcher-event severity boundary was broader than the stated policy.
+- Added a dedicated severity policy and made the pending reader discard non-WARN/ERROR records before building the HTTPS payload. Successfully uploaded urgent IDs are acknowledged as before; non-urgent events remain local.
+- Added dependency-free severity tests for WARN/ERROR and rejection of INFO/DEBUG/TRACE/empty/null, plus a source contract ensuring the logger's reader invokes the policy.
+- The Android 15 smoke fixture now ensures both previous journal files exist and verifies their contents, as well as the active journals and metadata, in the manual ZIP. It continues scanning every included NDJSON file for credentials, full content URIs, and absolute paths.
+- Previous full CI run on the pre-correction commit: [Run #44007028392](https://github.com/diethoon/wayward-launcher-official/actions/runs/44007028392) succeeded, including Android 15 emulator UI and existing native instrumentation. This follow-up requires its own final CI run.
