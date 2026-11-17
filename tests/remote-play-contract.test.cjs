@@ -283,7 +283,10 @@ const hostStore = client.indexOf("RemoteHostStore.saveConnection(context, host)"
 assert.ok(signatureCheck >= 0 && identityCheck > signatureCheck && hostStore > identityCheck,
   'Host signature and identity checks must complete before storing Host data');
 
-assert.ok(instrumented.includes("publicIpv4ExternalTestQrRequiresActiveWaywardOwnedTcpMappingAndSignedEndpoint") &&
+assert.ok(instrumented.includes("publicIpv4ExternalBootstrapQrFetchesAndValidatesTheHostSignedManifest") &&
+  connection.includes("isPrivateLanIpv4(uri.getHost())") &&
+  connection.includes("normalizeExternalBaseUrl(trimmed)") &&
+  instrumented.includes("publicIpv4ExternalTestQrRequiresActiveWaywardOwnedTcpMappingAndSignedEndpoint") &&
   instrumented.includes("100.64.0.1") && instrumented.includes("198.18.0.1") &&
   instrumented.includes("missingMapping") && instrumented.includes("endpointCandidates(parsed)"),
   'Android instrumentation must exercise the external QR contract, reserved/CGNAT filtering and endpoint deduplication');

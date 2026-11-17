@@ -357,7 +357,9 @@ final class RemoteHostConnection {
                 throw new IllegalArgumentException(
                         "부트스트랩 PC 주소는 명시적 포트가 있는 HTTPS 사설 IPv4 루트 주소만 허용합니다.");
             }
-            return normalizeBaseUrl(trimmed);
+            return isPrivateLanIpv4(uri.getHost())
+                    ? normalizeBaseUrl(trimmed)
+                    : normalizeExternalBaseUrl(trimmed);
         } catch (java.net.URISyntaxException error) {
             throw new IllegalArgumentException("부트스트랩 PC 주소 형식이 올바르지 않습니다.", error);
         }

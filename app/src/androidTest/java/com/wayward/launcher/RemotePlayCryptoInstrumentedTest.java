@@ -306,6 +306,42 @@ public final class RemotePlayCryptoInstrumentedTest {
     }
 
     @Test
+    public void publicIpv4ExternalBootstrapQrFetchesAndValidatesTheHostSignedManifest() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        KeyPair keyPair = RemoteHostStore.getDeviceKeyPair(context);
+        String url = "https://8.8.8.8:43210/";
+        JSONObject fullManifest = createExternalTestQr(keyPair, url, url, "192.168.1.77", 8765,
+                "8.8.8.8", 43210, "active", "TCP", "wayward-auto-upnp-ledger");
+        JSONObject compactQr = new JSONObject()
+                .put("protocolVersion", 1)
+                .put("baseUrl", url)
+                .put("certificateSha256", fullManifest.getString("certificateSha256"))
+                .put("qrNonce", fullManifest.getString("qrNonce"));
+
+        RemoteHostConnection.BootstrapInfo bootstrap =
+                RemoteHostConnection.fromBootstrapQrJson(compactQr.toString());
+        assertEquals(url, bootstrap.baseUrl);
+        RemoteHostConnection validated =
+                RemoteHostConnection.fromManifestJson(bootstrap, fullManifest.toString());
+        validated.verifySignedManifest();
+        assertEquals(url, validated.baseUrl);
+        assertEquals(url, validated.externalBaseUrl);
+        assertArrayEquals(new String[] {url}, RemoteHostClient.endpointCandidates(validated));
+
+        JSONObject wrongAddress = new JSONObject(compactQr.toString())
+                .put("baseUrl", "https://1.1.1.1:43210/");
+        RemoteHostConnection.BootstrapInfo wrongBootstrap =
+                RemoteHostConnection.fromBootstrapQrJson(wrongAddress.toString());
+        assertThrows(SecurityException.class,
+                () -> RemoteHostConnection.fromManifestJson(wrongBootstrap, fullManifest.toString()));
+
+        JSONObject reservedAddress = new JSONObject(compactQr.toString())
+                .put("baseUrl", "https://192.88.99.1:43210/");
+        assertThrows(IllegalArgumentException.class,
+                () -> RemoteHostConnection.fromBootstrapQrJson(reservedAddress.toString()));
+    }
+
+    @Test
     public void publicIpv4ExternalTestQrRequiresActiveWaywardOwnedTcpMappingAndSignedEndpoint() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         KeyPair keyPair = RemoteHostStore.getDeviceKeyPair(context);
