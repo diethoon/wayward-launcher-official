@@ -173,15 +173,15 @@ assert.doesNotMatch(imageGenRoute, /FLAG_ACTIVITY_REORDER_TO_FRONT/,
   "Image Studio must not reorder to an arbitrary MainActivity instance");
 assert.doesNotMatch(manifest, /documentLaunchMode/,
   "document-task behavior must be opt-in on session intents, not global manifest behavior");
-const gameSessionAlias = manifest.split("<activity-alias")[1]?.split("/>")[0] || "";
-assert.match(gameSessionAlias, /android:name="\.GameSessionActivity"/,
-  "the game-session alias must have its own manifest component name");
-assert.match(gameSessionAlias, /android:targetActivity="\.MainActivity"/,
-  "the game-session alias must reuse the existing MainActivity implementation");
-assert.ok(gameSessionAlias.includes('android:taskAffinity="${applicationId}.games"'),
-  "game document tasks must use a dedicated affinity separate from the app-icon launcher task");
-assert.match(main, /setClassName\(this,GAME_SESSION_ACTIVITY_ALIAS\)/,
-  "game sessions must launch through the dedicated alias component");
+const gameSessionActivity = manifest.split('<activity\\n            android:name=".GameSessionActivity"')[1]?.split("/>")[0] || "";
+assert.ok(gameSessionActivity.length > 0,
+  "the dedicated game-session activity must be declared");
+assert.ok(gameSessionActivity.includes('android:taskAffinity="${applicationId}.games"'),
+  "the real game-session activity must use a task affinity separate from the app-icon launcher task");
+assert.match(main, /new Intent\(this,GameSessionActivity\.class\)/,
+  "game and Image Studio routes must target the dedicated session Activity class");
+assert.match(main, /public class MainActivity extends Activity/,
+  "the shared MainActivity implementation must remain subclassable by GameSessionActivity");
 
 assert.match(main, /else if\(sessionProfileId\(getIntent\(\)\)!=null\)\{[\s\S]*?finish\(\);/, "root BACK in a game session must finish only the session Activity");
 assert.match(main, /if\(web\.canGoBack\(\)\)\{\s*web\.goBack\(\);/, "BACK inside WebView history must stay inside the game");

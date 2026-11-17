@@ -302,3 +302,10 @@ Updated: 2026-11-15 (Asia/Seoul)
 
 ### Game session alias contract test correction — 2026-11-18
 - The first run after adding the dedicated affinity alias failed only because the source-level test over-escaped the JavaScript regular expression for whitespace. The manifest value itself was present exactly as intended. Replaced the over-escaped multi-line regex with isolated alias-block attribute checks; product files were not changed.
+
+
+### Corrected game-session affinity component — 2026-11-18
+- The #44121982747 run still failed only at app-icon background/foreground with duplicate launcher Activity records. The preceding session route checks continued to pass.
+- Confirmed the alias implementation was invalid for this purpose: Android's `<activity-alias>` attributes are only a subset of `<activity>`; `taskAffinity` is not one of the alias-supported attributes, so the alias inherited MainActivity's default affinity. The static test and build did not reveal that runtime manifest behavior.
+- Replaced the alias with a real, minimal `GameSessionActivity extends MainActivity` implementation. MainActivity's existing execution, WebView, file chooser, image-pack bridge, diagnostics, OAuth and lifecycle code remains the single shared implementation; MainActivity is now non-final solely to permit this subclass. The new Activity alone has `${applicationId}.games` taskAffinity, while the exported launcher MainActivity and its MAIN/LAUNCHER filter remain unchanged.
+- All profile launch and Image Studio owner-session intents now target GameSessionActivity with their per-profile `wayward://session/{id}` URI and existing `FLAG_ACTIVITY_NEW_DOCUMENT`. No alias is used.

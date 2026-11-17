@@ -27,13 +27,12 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-        <!-- Keep per-game document tasks out of the app-icon launcher task affinity. -->
-        <activity-alias
+        <!-- Same launcher/session implementation with a separate, real task affinity. -->
+        <activity
             android:name=".GameSessionActivity"
-            android:targetActivity=".MainActivity"
-            android:enabled="true"
             android:exported="false"
-            android:taskAffinity="${applicationId}.games"/>
+            android:taskAffinity="${applicationId}.games"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|smallestScreenSize"/>
         <service android:name=".ImageGenService" android:process=":imagegen" android:exported="false"
             android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
