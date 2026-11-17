@@ -49,6 +49,22 @@ assert.match(connection, /certificateSha256/,
   'the signed Host manifest must bind the TLS certificate fingerprint');
 assert.match(connection, /normalizeExternalBaseUrl/,
   'the optional Internet endpoint must be restricted to a numeric globally routable HTTPS IPv4 address and port');
+assert.ok(connection.includes("baseUrl.equals(externalBaseUrl)") &&
+  connection.includes('mapping.getString("state")') &&
+  connection.includes('"active".equals(state)') &&
+  connection.includes('"TCP".equalsIgnoreCase(protocol)') &&
+  connection.includes('ownershipState.startsWith("wayward-auto-")') &&
+  connection.includes("internalPort != 8765") &&
+  connection.includes("externalPort != uri.getPort()") &&
+  connection.includes("uri.getHost().equalsIgnoreCase(externalAddress)") &&
+  connection.includes("isPrivateLanIpv4(localAddress)"),
+  'public baseUrl must only be accepted for the strict PC-issued external test QR mapping contract');
+assert.ok(connection.includes("externalTestEndpoint") && connection.includes('value.put("portMapping"'),
+  'validated external mapping metadata must be retained for stored Host revalidation');
+assert.ok(client.includes("endpointCandidates(host)") &&
+  client.includes("host.externalBaseUrl.equalsIgnoreCase(host.baseUrl)"),
+  'identical baseUrl and externalBaseUrl must be deduplicated to one endpoint');
+
 assert.match(connection, /uri\.getPort\(\) < 1[^\n]*uri\.getPort\(\) > 65535/,
   'the signed external endpoint must validate its supplied port instead of assuming 8765');
 for (const port of [8765, 43210, 50000]) {
@@ -109,6 +125,7 @@ assert.match(main, /이 기기에 설치된 이미지팩만 탐색/,
 assert.match(main, /RemotePairingActivity\.class/,
   'the pairing action must open the in-launcher scanner');
 const pairingActivity = read('app/src/main/java/com/wayward/launcher/RemotePairingActivity.java');
+const instrumented = read('app/src/androidTest/java/com/wayward/launcher/RemotePlayCryptoInstrumentedTest.java');
 const fileManagerActivity = read('app/src/main/java/com/wayward/launcher/RemotePcFileManagerActivity.java');
 assert.match(pairingActivity, /GmsBarcodeScanning\.getClient\(this, options\)/,
   'QR scanning must run in the launcher through Google Code Scanner');
@@ -266,4 +283,8 @@ const hostStore = client.indexOf("RemoteHostStore.saveConnection(context, host)"
 assert.ok(signatureCheck >= 0 && identityCheck > signatureCheck && hostStore > identityCheck,
   'Host signature and identity checks must complete before storing Host data');
 
+assert.ok(instrumented.includes("publicIpv4ExternalTestQrRequiresActiveWaywardOwnedTcpMappingAndSignedEndpoint") &&
+  instrumented.includes("100.64.0.1") && instrumented.includes("198.18.0.1") &&
+  instrumented.includes("missingMapping") && instrumented.includes("endpointCandidates(parsed)"),
+  'Android instrumentation must exercise the external QR contract, reserved/CGNAT filtering and endpoint deduplication');
 console.log('Remote Play native bridge, cache, ComfyUI and security contract checks passed');

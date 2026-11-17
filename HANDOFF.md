@@ -365,3 +365,12 @@ Updated: 2026-11-15 (Asia/Seoul)
 ### Android 15 UI hierarchy dump resilience — 2026-11-18
 - The #44131983988 Android 15 run reached the late game/session phase and failed at `uiautomator dump` with process exit 137. Its output explicitly said the hierarchy had already been dumped to `/sdcard/wayward-main-activity-game.xml`; the failure was the dumper subprocess being killed after writing, not an app/Activity failure.
 - Updated `dump_ui` to remove the old remote XML before each attempt, run the dumper, pull the newly produced file even when the dumper exit code is non-zero, and validate the XML root and at least one node before accepting it. If the process is killed after producing a valid fresh hierarchy, the test records a warning and uses that verified current-screen hierarchy; otherwise it retries once and fails with both dump and pull diagnostics. This does not accept stale XML or weaken any screen, Task, or Activity assertion.
+
+
+## ④ PC 외부 테스트 QR 공인 IPv4 호환성 — 2026-11-18
+- PC 읽기 전용 계약 확인: `diethoon/wayward-remote-host` branch `work/remote-play-ux-v1-20261115`, HEAD `b8c1047a42fec078c399f519a85557cb38b16696`. 발급 스크립트는 `/v1/host/qr?external=true` 전체 서명 매니페스트를 사용하며, exact same `baseUrl`/`externalBaseUrl`, root HTTPS URL, 명시적 IPv4 port, active TCP mapping, internalPort 8765, exact externalAddress/port, `wayward-auto-*` ownership, RFC1918 localAddress를 요구한다.
+- Android의 일반 `normalizeBaseUrl()`은 계속 RFC1918 private IPv4만 받는다. public base URL은 두 서명 URL 필드가 완전히 같고 위 PC mapping tuple이 검증된 외부 테스트 QR에서만 허용한다. existing globally-routable IPv4 validator는 RFC1918, CGNAT, loopback, link-local, documentation, benchmarking, multicast/reserved 범위를 계속 거부한다.
+- 검증된 외부 매핑 튜플을 Host 저장 JSON에도 유지해 재시작 후 `fromStoredJson()`가 다시 확인한다. 기존 Host P-256 signature, Host ID, 공개키 fingerprint, certificate SHA-256 pin, nonce/expiry 검증은 유지한다. 정상 LAN QR은 private baseUrl과 선택적 distinct external fallback을 그대로 사용한다.
+- endpoint 후보 생성 함수를 분리해 동일한 external-test `baseUrl`/`externalBaseUrl`에는 요청을 한 번만 하고, LAN + 별도 signed external endpoint에는 기존 순서대로 fallback한다. TLS/pin failure 및 POST body 전송 후 재시도 금지는 변경하지 않는다.
+- Android 15 instrumentation에 PC 형식의 P-256 서명 외부 QR 생성 및 파싱/저장 재검증, signature tamper, 매핑 상태/프로토콜/소유권/포트/주소 오류, RFC1918 local target, reserved/CGNAT 주소, URL 오염, endpoint dedupe 검증을 추가했다.
+- 실제 PC Host와 별도 모바일 데이터망 페어링은 실기기/외부망 접근 없이는 입증할 수 없으므로 별도 미검증 항목으로 유지한다.

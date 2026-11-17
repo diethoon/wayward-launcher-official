@@ -19,6 +19,8 @@ final class RemoteHostConnection {
     final String baseUrl;
     final String externalBaseUrl;
     final String hostId;
+    private final boolean externalTestEndpoint;
+    private final JSONObject externalPortMapping;
     final String publicKeyBase64;
     final String publicKeyFingerprint;
     final String certificateSha256;
@@ -36,8 +38,24 @@ final class RemoteHostConnection {
     RemoteHostConnection(String baseUrl, String externalBaseUrl, String hostId,
             String publicKeyBase64, String publicKeyFingerprint, String certificateSha256,
             String qrNonce, String signedPayloadBase64, String signatureBase64) {
-        this.baseUrl = normalizeBaseUrl(baseUrl);
+        this(baseUrl, externalBaseUrl, hostId, publicKeyBase64, publicKeyFingerprint,
+                certificateSha256, qrNonce, signedPayloadBase64, signatureBase64, false, null);
+    }
+
+    private RemoteHostConnection(String baseUrl, String externalBaseUrl, String hostId,
+            String publicKeyBase64, String publicKeyFingerprint, String certificateSha256,
+            String qrNonce, String signedPayloadBase64, String signatureBase64,
+            boolean externalTestEndpoint, JSONObject externalPortMapping) {
+        this.baseUrl = externalTestEndpoint
+                ? normalizeExternalBaseUrl(baseUrl) : normalizeBaseUrl(baseUrl);
         this.externalBaseUrl = normalizeExternalBaseUrl(externalBaseUrl);
+        this.externalTestEndpoint = externalTestEndpoint;
+        if (externalTestEndpoint && (!this.baseUrl.equals(this.externalBaseUrl)
+                || externalPortMapping == null)) {
+            throw new IllegalArgumentException("외부 테스트 QR의 서명된 baseUrl, externalBaseUrl 및 포트 매핑이 일치하지 않습니다.");
+        }
+        this.externalPortMapping = externalTestEndpoint
+                ? new JSONObject(externalPortMapping.toString()) : null;
         this.hostId = UUID.fromString(hostId).toString();
         this.publicKeyBase64 = requireText(publicKeyBase64, "Host public key");
         this.publicKeyFingerprint = normalizeFingerprint(publicKeyFingerprint);
@@ -132,16 +150,26 @@ final class RemoteHostConnection {
         if (value.optInt("protocolVersion", 0) != 1) {
             throw new IllegalArgumentException("지원하지 않는 Remote Host protocol입니다.");
         }
+        String baseUrl = value.getString("baseUrl");
+        String externalBaseUrl = value.optString("externalBaseUrl", "");
+        boolean externalTestEndpoint = !externalBaseUrl.isEmpty() && baseUrl.equals(externalBaseUrl);
+        JSONObject mapping = null;
+        if (externalTestEndpoint) {
+            mapping = value.optJSONObject("portMapping");
+            validateExternalTestQr(baseUrl, externalBaseUrl, mapping);
+        }
         return new RemoteHostConnection(
-                value.getString("baseUrl"),
-                value.optString("externalBaseUrl", ""),
+                baseUrl,
+                externalBaseUrl,
                 value.getString("hostId"),
                 value.getString("publicKeyBase64"),
                 value.getString("publicKeyFingerprint"),
                 value.getString("certificateSha256"),
                 value.getString("qrNonce"),
                 value.getString("signedPayloadBase64"),
-                value.getString("signatureBase64"));
+                value.getString("signatureBase64"),
+                externalTestEndpoint,
+                mapping);
     }
 
     void verifySignedManifest() throws Exception {
@@ -251,6 +279,9 @@ final class RemoteHostConnection {
         value.put("protocolVersion", 1);
         value.put("baseUrl", baseUrl);
         if (!externalBaseUrl.isEmpty()) value.put("externalBaseUrl", externalBaseUrl);
+        if (externalTestEndpoint && externalPortMapping != null) {
+            value.put("portMapping", new JSONObject(externalPortMapping.toString()));
+        }
         value.put("hostId", hostId);
         value.put("publicKeyBase64", publicKeyBase64);
         value.put("publicKeyFingerprint", publicKeyFingerprint);
@@ -341,6 +372,45 @@ final class RemoteHostConnection {
         } catch (java.net.URISyntaxException error) {
             throw new IllegalArgumentException("Remote Host URL 형식이 올바르지 않습니다.", error);
         }
+    }
+
+    private static void validateExternalTestQr(String baseUrl, String externalBaseUrl,
+            JSONObject mapping) throws Exception {
+        if (baseUrl == null || !baseUrl.equals(externalBaseUrl) || mapping == null) {
+            throw new IllegalArgumentException("외부 테스트 QR은 baseUrl과 externalBaseUrl이 같고 portMapping 정보가 있어야 합니다.");
+        }
+        URI uri = new URI(normalizeExternalBaseUrl(baseUrl));
+        String state = mapping.getString("state");
+        String protocol = mapping.getString("protocol");
+        String ownershipState = mapping.getString("ownershipState");
+        String localAddress = mapping.getString("localAddress");
+        String externalAddress = mapping.getString("externalAddress");
+        int internalPort = requireJsonInteger(mapping, "internalPort");
+        int externalPort = requireJsonInteger(mapping, "externalPort");
+
+        if (!"active".equals(state)
+                || !"TCP".equalsIgnoreCase(protocol)
+                || !ownershipState.startsWith("wayward-auto-")
+                || internalPort != 8765
+                || externalPort != uri.getPort()
+                || !uri.getHost().equalsIgnoreCase(externalAddress)
+                || !isPrivateLanIpv4(localAddress)) {
+            throw new IllegalArgumentException(
+                    "외부 테스트 QR은 활성 Wayward 자동 TCP 매핑(내부 8765)과 정확히 일치하는 공인 IPv4 주소·포트만 허용합니다.");
+        }
+    }
+
+    private static int requireJsonInteger(JSONObject value, String name) throws Exception {
+        Object raw = value.get(name);
+        if (!(raw instanceof Number)) {
+            throw new IllegalArgumentException("외부 테스트 QR의 portMapping." + name + " 값이 정수가 아닙니다.");
+        }
+        Number number = (Number) raw;
+        int result = number.intValue();
+        if (number.doubleValue() != (double) result || result < 1 || result > 65535) {
+            throw new IllegalArgumentException("외부 테스트 QR의 portMapping." + name + " 범위가 올바르지 않습니다.");
+        }
+        return result;
     }
 
     static String normalizeExternalBaseUrl(String value) {

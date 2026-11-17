@@ -468,11 +468,18 @@ final class RemoteHostClient {
         return RemoteHostConnection.fromManifestJson(bootstrap, manifest.toString());
     }
 
+    static String[] endpointCandidates(RemoteHostConnection host) {
+        if (host == null) throw new IllegalArgumentException("Remote Host is missing.");
+        if (host.externalBaseUrl.isEmpty()
+                || host.externalBaseUrl.equalsIgnoreCase(host.baseUrl)) {
+            return new String[] {host.baseUrl};
+        }
+        return new String[] {host.baseUrl, host.externalBaseUrl};
+    }
+
     private static HttpsURLConnection openPinned(RemoteHostConnection host, String path,
             String method, JSONObject body, String authorization, Map<String, String> forwardedHeaders) throws Exception {
-        String[] endpoints = host.externalBaseUrl.isEmpty()
-                ? new String[] {host.baseUrl}
-                : new String[] {host.baseUrl, host.externalBaseUrl};
+        String[] endpoints = endpointCandidates(host);
         IOException lastNetworkError = null;
         for (int index = 0; index < endpoints.length; index++) {
             HttpsURLConnection connection = createPinnedConnection(
