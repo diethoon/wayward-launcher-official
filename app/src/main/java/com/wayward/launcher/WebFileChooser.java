@@ -317,6 +317,31 @@ final class WebFileChooser extends WebChromeClient {
             return;
         }
 
+        ClipData resultClip = data == null ? null : data.getClipData();
+        Uri resultUri = data == null ? null : data.getData();
+        JSONObject activityResultDetails = ImagePackDiagnostics.details(
+                "requestType", WebFileChooserRequestPolicy.label(request.kind),
+                "mode", request.mode,
+                "pickerAction", request.pickerAction,
+                "requestCode", request.requestCode,
+                "resultCode", resultCode,
+                "result", resultCode == Activity.RESULT_OK && data != null ? "selected" : "cancelled",
+                "dataPresent", data != null,
+                "clipItemCount", resultClip == null ? 0 : resultClip.getItemCount(),
+                "resultFlags", data == null ? 0 : data.getFlags());
+        if (resultUri != null) {
+            try {
+                activityResultDetails.put("uriScheme",
+                        resultUri.getScheme() == null ? "none" : resultUri.getScheme());
+                activityResultDetails.put("uriAuthority",
+                        resultUri.getAuthority() == null ? "" : resultUri.getAuthority());
+            } catch (Exception ignored) {}
+        }
+        ImagePackDiagnostics.event(activity, diagnosticSessionId, request.requestId,
+                "web_file_chooser_activity_result",
+                resultCode == Activity.RESULT_OK && data != null ? "info" : "warn",
+                activityResultDetails);
+
         if (resultCode != Activity.RESULT_OK) {
             ImagePackDiagnostics.event(activity, diagnosticSessionId, request.requestId,
                     "web_file_chooser_result_cancelled", "warn",
