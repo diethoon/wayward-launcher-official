@@ -580,22 +580,72 @@ def open_download_directory_in_documents_ui(local_path: pathlib.Path, device_pat
 def pick_single_document(local_path: pathlib.Path, device_path: str, filename: str) -> None:
     open_download_directory_in_documents_ui(local_path, device_path)
     latest = ""
-    item = None
-    for _ in range(12):
+    for _ in range(15):
         latest = dump_ui(local_path, device_path)
-        item = node_bounds(latest, (filename,))
-        if item is None:
-            item = node_bounds(latest, (filename,), require_clickable=False)
-        if item is not None:
-            tap_bounds(item)
-            return
-        # Downloads can contain many entries; scroll the SAF list rather than
-        # treating a filename below the first viewport as a missing file.
-        adb("shell", "input", "swipe", "540", "1850", "540", "650", "350")
-        time.sleep(1)
-    (ARTIFACTS / "android15-single-file-picker-missing.xml").write_text(latest, encoding="utf-8")
-    raise RuntimeError("The file picker did not expose " + filename + " after scrolling Downloads.");
+        try:
+            root = ET.fromstring(latest)
+            parent_by_child = {child: parent for parent in root.iter() for child in parent}
+            title = next((
+                node for node in root.iter("node")
+                if node.attrib.get("resource-id") == "android:id/title"
+                and node.attrib.get("text", "").strip() == filename
+            ), None)
+            card = title
+            while card is not None and card.attrib.get("resource-id") != "com.android.documentsui:id/item_root":
+                card = parent_by_child.get(card)
+        except ET.ParseError:
+            card = None
 
+        if card is not None and card.attrib.get("clickable") == "true" and card.attrib.get("enabled") == "true":
+            match = re.search(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", card.attrib.get("bounds", ""))
+            if match:
+                card_bounds = tuple(int(value) for value in match.groups())
+                (ARTIFACTS / "android15-single-file-row-before-tap.xml").write_text(
+                    latest, encoding="utf-8"
+                )
+                screenshot(ARTIFACTS / "android15-single-file-row-before-tap.png")
+                tap_bounds(card_bounds)
+                break
+        time.sleep(1)
+    else:
+        (ARTIFACTS / "android15-single-file-picker-missing.xml").write_text(
+            latest, encoding="utf-8"
+        )
+        raise RuntimeError("DocumentsUI did not expose an enabled clickable card for " + filename)
+
+    # ACTION_OPEN_DOCUMENT normally returns immediately for a single selection.
+    # Some DocumentsUI/provider combinations keep the picker open and expose an
+    # explicit positive action, so handle both contracts without guessing a URI.
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        latest = dump_ui(local_path, device_path)
+        if "com.android.documentsui" not in latest.casefold():
+            (ARTIFACTS / "android15-single-file-picker-returned.xml").write_text(
+                latest, encoding="utf-8"
+            )
+            return
+        positive_action = node_bounds_exact(
+            latest, ("Open", "열기", "Select", "선택", "Done", "완료")
+        )
+        if positive_action is not None:
+            tap_bounds(positive_action)
+            time.sleep(1)
+            continue
+        time.sleep(1)
+
+    # Preserve the actual provider UI state and attempt the normal focused-row
+    # activation once before declaring the picker stuck.
+    adb("shell", "input", "keyevent", "66")
+    time.sleep(2)
+    latest = dump_ui(local_path, device_path)
+    (ARTIFACTS / "android15-single-file-picker-stuck.xml").write_text(
+        latest, encoding="utf-8"
+    )
+    screenshot(ARTIFACTS / "android15-single-file-picker-stuck.png")
+    raise RuntimeError(
+        "Android DocumentsUI did not return from the single-document selection for "
+        + filename + "; last UI=" + latest[-3500:]
+    )
 
 def pick_multiple_documents(
     local_path: pathlib.Path, device_path: str, filenames: tuple[str, str], artifact_name: str

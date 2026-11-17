@@ -221,6 +221,12 @@ assert.match(smoke, /accept="application\/octet-stream"/,
   "the actual single-file input must preserve its exact MIME filter through ACTION_OPEN_DOCUMENT");
 assert.match(smoke, /single-file.bin/,
   "the Android 15 single-file chooser must return exactly one selected document");
+assert.match(smoke, /com\.android\.documentsui:id:item_root/,
+  "single-file acceptance must tap the provider's enabled clickable document card, not the non-clickable title text");
+assert.match(smoke, /node_bounds_exact\([\s\S]*?"Open"/,
+  "single-file acceptance must handle a provider's explicit positive confirmation action");
+assert.match(smoke, /android15-single-file-picker-stuck\.xml/,
+  "failed single-file acceptance must preserve the exact DocumentsUI state for forensic analysis");
 assert.match(smoke, /DirectoryHandle\.keys\(\)/,
   "the actual same-origin iframe must exercise the directory keys() iterator");
 assert.match(smoke, /DirectoryHandle\.values\(\)/,
