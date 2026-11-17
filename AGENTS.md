@@ -70,3 +70,11 @@ Never describe a build, mock test, or source inspection as proof of real-device,
 - Do not overwrite user data, existing configuration, model files, or unrelated in-progress changes.
 - Do not reset, force-push, merge, release, deploy, or change external infrastructure unless explicitly authorized.
 - Update the repository handoff/documentation with the actual changes, verification performed, commit, and remaining unverified items.
+
+
+## Mandatory global policy documents — read before any task
+- `docs/WORKFLOW_GATEWAY.md`
+- `docs/WORKFLOW_EXECUTION_POLICY.md`
+- `docs/FORENSIC_AND_VERIFICATION_POLICY.md`
+
+Read all three documents before inspecting code, branches, services, CI, or starting implementation. If any is unavailable, restore it when authorized or stop product work and report the exact blocker. This requirement supplements all repository-specific instructions below; preserve their CI, build, ownership, and platform-specific rules. The global forensic, evidence-integrity, safety, and data-preservation rules cannot be weakened.
