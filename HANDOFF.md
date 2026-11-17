@@ -244,3 +244,10 @@ Updated: 2026-11-15 (Asia/Seoul)
 ### Activity/Task count assertions — 2026-11-17
 - Android 15 smoke deduplicates ActivityRecord instances by their stable record token and checks both Activity count and Task IDs. The two live profile sessions and the route back to a previous session must remain in one Wayward task.
 - Background/foreground and post-force-stop relaunch use the explicit MAIN/LAUNCHER intent, matching an actual app-icon launch rather than a generic explicit Activity start.
+
+
+### Multiple-game folder registration correction — 2026-11-17
+- Android 15 repeated-session testing failed before the second profile was registered. The final UI hierarchy showed the launcher home with only the first game profile; the second `chooseFolder()` invocation did not present a usable sibling-folder location.
+- Root cause in `MainActivity.chooseFolder()`: every subsequent `ACTION_OPEN_DOCUMENT_TREE` request supplied the previously selected game `treeUri` as `EXTRA_INITIAL_URI`. That points the document navigator back into the current game's selected subtree rather than a neutral location from which to choose another independent game root.
+- Removed the prior-profile initial-URI hint for game registration. Each registration now opens the provider's normal location and allows selection of a different root; the existing persisted permission handling and profile de-duplication remain unchanged. Added a source contract that prevents reintroducing the trapping initial-URI behavior.
+- The next Android 15 run must prove two profiles can be registered through the production UI before the game session reuse/switch scenario can proceed.

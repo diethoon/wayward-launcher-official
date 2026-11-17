@@ -20,6 +20,10 @@ const diagnosticPaths = readFileSync(new URL("../app/src/main/res/xml/diagnostic
 const legacyBackup = readFileSync(new URL("../app/src/main/res/xml/backup_rules.xml", import.meta.url), "utf8");
 const extractionBackup = readFileSync(new URL("../app/src/main/res/xml/data_extraction_rules.xml", import.meta.url), "utf8");
 
+const registrationPicker = main.split("private void chooseFolder()")[1].split("private void chooseModZip()")[0];
+assert.doesNotMatch(registrationPicker, /EXTRA_INITIAL_URI/,
+  "registering another game must not trap the document picker inside the previously selected game folder");
+
 assert.match(picker, /onShowFileChooser\s*\(/, "WebView file chooser callback must be implemented");
 assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT/, "ordinary files and ZIPs must keep ACTION_OPEN_DOCUMENT");
 assert.match(picker, /web_file_chooser_called/, "HTML file-input calls must be correlated in the durable diagnostic journal");

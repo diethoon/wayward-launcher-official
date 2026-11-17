@@ -784,9 +784,17 @@ public final class MainActivity extends Activity {
     private void chooseFolder(){
         Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION|Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
-        if(treeUri!=null)i.putExtra(DocumentsContract.EXTRA_INITIAL_URI,treeUri);
-        else if(!profiles.isEmpty())try{i.putExtra(DocumentsContract.EXTRA_INITIAL_URI,Uri.parse(profiles.get(profiles.size()-1).uri));}catch(Exception ignored){}
-        DiagnosticsLogger.event(this,"INFO","launcher","folder_picker_opened",null);
+        // A previously selected game folder is a subtree boundary, not the
+        // starting point for registering a sibling game folder. Let the
+        // document provider open its normal location so users can choose
+        // another independent root instead of being trapped inside the
+        // currently registered game's directory.
+        JSONObject pickerDetails=new JSONObject();
+        try{
+            pickerDetails.put("registeredProfileCount",profiles.size());
+            pickerDetails.put("initialUriProvided",false);
+        }catch(Exception ignored){}
+        DiagnosticsLogger.event(this,"INFO","launcher","folder_picker_opened",pickerDetails);
         startActivityForResult(i,PICK_TREE);
     }
 
