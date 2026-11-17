@@ -394,3 +394,7 @@ Updated: 2026-11-15 (Asia/Seoul)
 
 ### Public bootstrap IP precondition correction — 2026-11-18
 - Follow-up source review found the public-IP acceptance branch had been added to the bootstrap URL normalizer's return path but the earlier guard still required RFC1918 only. Updated that guard to accept exactly one of the two validators: RFC1918 private IPv4 or globally routable public IPv4. Special-purpose/reserved, private, CGNAT, link-local and non-numeric hosts remain rejected.
+
+
+### Journal fixture contract aligned with safe adb shell quoting — 2026-11-18
+- Updated the static SAF/diagnostics contract after the Android 15 run confirmed that `adb shell run-as ... sh -c` requires a quoted complete shell payload. It now asserts the direct app-scoped `run-as mkdir -p` and quoted writer separately instead of requiring the old single shell compound command.

@@ -252,8 +252,10 @@ assert.match(smoke, /shlex\.quote\(write_command\)/,
   "Android 15 diagnostic journal fixtures must preserve shell pipes/redirection through adb run-as sh -c");
 assert.match(smoke, /diagnostics_dir = "\/data\/user\/0\/" \+ PACKAGE \+ "\/files\/diagnostics"/,
   "diagnostic fixtures must target the exact Android getFilesDir diagnostics folder");
-assert.match(smoke, /mkdir -p " \+ diagnostics_dir \+ " && echo "/,
-  "the fixture writer must create its target folder and seed NDJSON in one shell operation");
+assert.match(smoke, /"run-as", PACKAGE, "mkdir", "-p", diagnostics_dir/,
+  "the fixture writer must create the app-scoped diagnostics directory with run-as");
+assert.match(smoke, /"sh", "-c", shlex\.quote\(write_command\)/,
+  "the fixture writer must quote the complete NDJSON seed shell command");
 assert.match(smoke, /json\.loads\(line\)/,
   "Android 15 smoke must validate previous journal entries as NDJSON");
 assert.match(smoke, /PASS_PACK_JSON_MULTI_FILES/, "the game session must regression-test multiple real pack.json selection");
