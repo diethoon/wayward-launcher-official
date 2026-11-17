@@ -2423,6 +2423,9 @@ public class MainActivity extends Activity {
                         "wmlhost_choose_folder_rejected", "error",
                         ImagePackDiagnostics.details("requestSource", "showDirectoryPicker",
                                 "originValidated", trustedOrigin, "capabilityValidated", trustedCapability));
+                if(imagePackDirectoryAccess!=null)imagePackDirectoryAccess.rejectRequest(requestId,
+                        trustedOrigin ? "NotAllowedError" : "SecurityError",
+                        "The image-pack folder request was rejected by the native security boundary.");
                 return;
             }
             ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, requestId,
@@ -2430,8 +2433,13 @@ public class MainActivity extends Activity {
                     ImagePackDiagnostics.details("requestSource", "showDirectoryPicker",
                             "originValidated", true, "capabilityValidated", true));
             if(imagePackDirectoryAccess!=null)imagePackDirectoryAccess.openFolderPicker(requestId);
-            else ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, requestId,
-                    "wmlhost_directory_access_missing", "error", null);
+            else {
+                ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, requestId,
+                        "wmlhost_directory_access_missing", "error", null);
+                if(web!=null)web.evaluateJavascript("(function(){if(typeof window.__waywardNativeImagePackPickerDispatch==='function')"
+                        + "window.__waywardNativeImagePackPickerDispatch(" + JSONObject.quote(requestId)
+                        + ",{ok:false,name:'NotReadableError',message:'Native folder access is unavailable.',state:'FAILED'});})()", null);
+            }
         }
         @JavascriptInterface public String listImagePackDirectoryForRequest(String path, String requestId){
             return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.listDirectoryJson(path,requestId);

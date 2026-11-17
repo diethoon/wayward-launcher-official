@@ -665,6 +665,83 @@ def wait_for_cloudflare_diagnostic_upload(timeout_seconds: int = 75) -> dict:
     raise RuntimeError("Timed out waiting for Cloudflare diagnostics ZIP upload success event.")
 
 
+def select_download_tree_through_documents_ui(
+    local_path: pathlib.Path,
+    device_path: str,
+    artifact_prefix: str,
+    *,
+    timeout_seconds: int = 60,
+) -> str:
+    """Select Download in Android's real ACTION_OPEN_DOCUMENT_TREE picker."""
+    deadline = time.monotonic() + timeout_seconds
+    picker_seen = False
+    use_folder_tapped = False
+    allow_tapped = False
+    latest = ""
+    while time.monotonic() < deadline:
+        latest = dump_ui(local_path, device_path)
+        is_documents_ui = "documentsui" in latest.casefold()
+        if not is_documents_ui:
+            if picker_seen and use_folder_tapped:
+                (ARTIFACTS / f"{artifact_prefix}-documentsui-returned.xml").write_text(
+                    latest, encoding="utf-8"
+                )
+                return latest
+            time.sleep(1)
+            continue
+        picker_seen = True
+        if use_folder_tapped:
+            allow_button = node_bounds(latest, ("Allow", "ALLOW", "허용"))
+            if allow_button is not None:
+                tap_bounds(allow_button)
+                allow_tapped = True
+                time.sleep(1)
+                continue
+            time.sleep(1)
+            continue
+        try:
+            root = ET.fromstring(latest)
+            breadcrumbs = [
+                node.attrib.get("text", "").strip()
+                for node in root.iter("node")
+                if node.attrib.get("resource-id", "").endswith("breadcrumb_text")
+            ]
+        except ET.ParseError:
+            breadcrumbs = []
+        current_folder = breadcrumbs[-1].casefold() if breadcrumbs else ""
+        if current_folder not in ("download", "downloads"):
+            download_row = node_bounds(latest, ("Downloads", "Download"), require_clickable=False)
+            if download_row is not None:
+                tap_bounds(download_row)
+                time.sleep(1)
+                continue
+        if current_folder in ("download", "downloads"):
+            use_folder = node_bounds(
+                latest, ("USE THIS FOLDER", "Use this folder", "이 폴더 사용"),
+                require_enabled=True,
+            )
+            if use_folder is not None:
+                (ARTIFACTS / f"{artifact_prefix}-documentsui-picker.xml").write_text(
+                    latest, encoding="utf-8"
+                )
+                screenshot(ARTIFACTS / f"{artifact_prefix}-documentsui-picker.png")
+                tap_bounds(use_folder)
+                use_folder_tapped = True
+                time.sleep(1)
+                continue
+        time.sleep(1)
+    (ARTIFACTS / f"{artifact_prefix}-documentsui-timeout.xml").write_text(
+        latest, encoding="utf-8"
+    )
+    raise RuntimeError(
+        "Android ACTION_OPEN_DOCUMENT_TREE did not complete Download selection; "
+        + "picker_seen=" + str(picker_seen)
+        + " use_folder_tapped=" + str(use_folder_tapped)
+        + " allow_tapped=" + str(allow_tapped)
+        + " last_ui=" + latest[-3500:]
+    )
+
+
 def run_main_activity_game_session_acceptance() -> None:
     """Exercise the real game WebView, folder bridge, back stack, and Recents."""
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
@@ -685,6 +762,8 @@ def run_main_activity_game_session_acceptance() -> None:
 <input id="single-input" type="file" accept=".json,application/json" multiple hidden>
 <button id="zip-button">Pick multiple ZIP files</button>
 <input id="zip-input" type="file" accept=".zip,application/zip" multiple hidden>
+<button id="single-file-button">Pick one PNG file</button>
+<input id="single-file-input" type="file" accept="image/png" hidden>
 
 <div id="result">READY</div><div id="file-result">FILE_READY</div>
 <script>
@@ -731,6 +810,15 @@ document.getElementById('zip-input').addEventListener('change', event => {
     files.length >= 2 && files.includes('test-one.zip') && files.includes('test-two.zip')
       ? 'PASS_ZIP_MULTI_FILES count=' + files.length + ' names=' + files.join(',')
       : 'FAIL_ZIP_MULTI_FILES count=' + files.length + ' names=' + files.join(',');
+});
+document.getElementById('single-file-button').addEventListener('click', () =>
+  document.getElementById('single-file-input').click());
+document.getElementById('single-file-input').addEventListener('change', event => {
+  const files = Array.from(event.target.files || []).map(file => file.name);
+  document.getElementById('file-result').textContent =
+    files.length === 1 && files[0] === 'pixel.png'
+      ? 'PASS_SINGLE_IMAGE_FILE name=' + files[0]
+      : 'FAIL_SINGLE_IMAGE_FILE names=' + files.join(',');
 });
 </script>
 </body></html>"""
@@ -796,7 +884,6 @@ window.pickImagePackFolder = async function() {
         adb("push", str(fixture_dir / game_asset), folder + "/Wayward_WML_ko.html")
         adb("push", str(fixture_dir / "session-second.html"), folder + "/session-second.html")
         adb("push", str(fixture_dir / "picker-frame.html"), folder + "/picker-frame.html")
-    adb("shell", "appops", "set", "--uid", PACKAGE, "MANAGE_EXTERNAL_STORAGE", "allow")
     adb("logcat", "-c")
 
     picker_local = pathlib.Path("/tmp/wayward-main-activity-game.xml")
@@ -819,26 +906,10 @@ window.pickImagePackFolder = async function() {
         raise RuntimeError("The real game WebView did not expose its image-pack folder action.")
     tap_bounds(pick_button)
 
-    # This must be ImagePackFileSystemAccess' own picker, not DocumentsUI or <input type=file>.
-    folder_xml = ""
-    select_folder = None
-    for _ in range(18):
-        try:
-            folder_xml = dump_ui(picker_local, picker_device)
-            select_folder = node_bounds(folder_xml, ("이 폴더 선택", "Select this folder"))
-            if select_folder is not None:
-                break
-        except Exception:
-            pass
-        time.sleep(2)
-    (ARTIFACTS / "android15-main-activity-imagepack-picker.xml").write_text(
-        folder_xml, encoding="utf-8"
+    # The game request must open Android DocumentsUI, never a Wayward-owned browser.
+    select_download_tree_through_documents_ui(
+        picker_local, picker_device, "android15-main-activity-imagepack"
     )
-    if select_folder is None:
-        raise RuntimeError("The real game session did not open the launcher's own image-pack browser.")
-    if "/Download" not in folder_xml:
-        raise RuntimeError("The production image-pack browser did not start from Download.")
-    tap_bounds(select_folder)
 
     game_xml = wait_for_ui_contains(
         picker_local, picker_device, "PASS_GAME_SESSION_DIRECTORY_HANDLE", timeout_seconds=35
@@ -876,6 +947,18 @@ window.pickImagePackFolder = async function() {
     if "PASS_ZIP_MULTI_FILES" not in zip_xml or "test-one.zip" not in zip_xml or "test-two.zip" not in zip_xml:
         raise RuntimeError("The WebView ZIP multi-select callback did not return both selected URIs.")
     print("PASS: the real game WebView ZIP multi-select callback returned both selected files.")
+
+    single_file_button = node_bounds(zip_xml, ("Pick one PNG file",))
+    if single_file_button is None:
+        raise RuntimeError("The game page did not expose its single-file input trigger.")
+    tap_bounds(single_file_button)
+    pick_single_document(picker_local, picker_device, "pixel.png")
+    one_file_xml = wait_for_ui_contains(
+        picker_local, picker_device, "PASS_SINGLE_IMAGE_FILE", timeout_seconds=25
+    )
+    if "FAIL_SINGLE_IMAGE_FILE" in one_file_xml or "pixel.png" not in one_file_xml:
+        raise RuntimeError("The existing single-file input did not return exactly pixel.png.")
+    print("PASS: the real game WebView single-file input returned exactly one PNG.")
 
     first_count, first_tasks, first_state = count_main_activity_instances()
     if first_count != 2 or len(first_tasks) != 2:
@@ -1246,72 +1329,15 @@ def run_native_folder_acceptance() -> None:
         print("SKIP: Android emulator shared storage does not permit creating a symbolic-link fixture.")
         print((symlink_result.stderr or symlink_result.stdout or "").strip())
     adb("push", str(fixture), FIXTURE_FOLDER + "/pixel.png")
-    adb("shell", "appops", "set", "--uid", PACKAGE, "MANAGE_EXTERNAL_STORAGE", "allow")
     adb("logcat", "-c")
     adb("shell", "am", "start", "-W", "-n", PICKER_TEST_ACTIVITY,
         "--ez", "verify_symlink_fixture", str(symlink_fixture_created).lower())
 
     picker_local = pathlib.Path("/tmp/wayward-imagepack-folder-picker.xml")
     picker_device = "/sdcard/wayward-imagepack-folder-picker.xml"
-    picker_xml = ""
-    select_folder = None
-    for _ in range(40):
-        try:
-            picker_xml = dump_ui(picker_local, picker_device)
-            select_folder = node_bounds(picker_xml, ("이 폴더 선택", "Select this folder"))
-            if select_folder is not None:
-                break
-        except Exception:
-            pass
-        time.sleep(1)
-
-    (ARTIFACTS / "android15-imagepack-folder-picker.xml").write_text(
-        picker_xml, encoding="utf-8"
+    select_download_tree_through_documents_ui(
+        picker_local, picker_device, "android15-native-imagepack"
     )
-    screenshot(ARTIFACTS / "android15-imagepack-folder-picker.png")
-    if select_folder is None:
-        raise RuntimeError("The native image-pack browser did not expose the '이 폴더 선택' button.")
-
-    # Confirm Download and exercise creation, child navigation, and parent navigation.
-    if "/Download" not in picker_xml:
-        raise RuntimeError("The native image-pack browser did not start in Download.")
-    create_folder_button = node_bounds(picker_xml, ("새 폴더",))
-    if create_folder_button is None:
-        raise RuntimeError("The custom folder browser did not expose its new-folder action.")
-    tap_bounds(create_folder_button)
-    time.sleep(1)
-    adb("shell", "input", "text", "__wayward_ui_created")
-    create_button = node_bounds(dump_ui(picker_local, picker_device), ("만들기",))
-    if create_button is None:
-        raise RuntimeError("The custom folder creation dialog did not expose its create action.")
-    tap_bounds(create_button)
-    time.sleep(1)
-    picker_xml = dump_ui(picker_local, picker_device)
-    if "__wayward_ui_created" not in picker_xml:
-        raise RuntimeError("The custom browser did not refresh after creating a folder.")
-
-    child_row = node_bounds(picker_xml, ("__wayward_nav_child",), require_clickable=False)
-    if child_row is None:
-        raise RuntimeError("The custom folder browser did not list its child directory.")
-    tap_bounds(child_row)
-    time.sleep(1)
-    child_xml = dump_ui(picker_local, picker_device)
-    if "/Download/__wayward_nav_child" not in child_xml:
-        raise RuntimeError("The custom folder browser did not navigate into its child directory.")
-
-    parent_row = node_bounds(child_xml, ("상위 폴더",), require_clickable=False)
-    if parent_row is None:
-        raise RuntimeError("The custom folder browser did not expose parent navigation.")
-    tap_bounds(parent_row)
-    time.sleep(1)
-    picker_xml = dump_ui(picker_local, picker_device)
-    if "/Download/__wayward_nav_child" in picker_xml or "/Download" not in picker_xml:
-        raise RuntimeError("The custom folder browser did not return to Download.")
-    select_folder = node_bounds(picker_xml, ("이 폴더 선택", "Select this folder"))
-    if select_folder is None:
-        raise RuntimeError("The folder selection action disappeared after parent navigation.")
-
-    tap_bounds(select_folder)
     first_log = wait_for_log("PASS fs-directory-handle")
     if "FAIL " in first_log:
         raise RuntimeError("Selected-root CRUD or symbolic-link boundary acceptance failed: " + first_log[-4000:])
@@ -1331,17 +1357,14 @@ def run_native_folder_acceptance() -> None:
     print("PASS: the selected filesystem folder and PNG survived a process restart.")
     print(second_log[-1400:])
 
-    adb("shell", "appops", "set", "--uid", PACKAGE, "MANAGE_EXTERNAL_STORAGE", "deny")
     adb("shell", "am", "force-stop", PACKAGE)
     time.sleep(2)
     adb("logcat", "-c")
     adb("shell", "am", "start", "-W", "-n", PICKER_TEST_ACTIVITY,
         "--ez", "verify_revoked", "true")
     revoked_log = wait_for_log("PASS permission-revoked", timeout_seconds=30)
-    print("PASS: revoking MANAGE_EXTERNAL_STORAGE denied listing and image reads.")
+    print("PASS: revoking the persisted SAF tree grant denied listing and image reads.")
     print(revoked_log[-1200:])
-
-    adb("shell", "appops", "set", "--uid", PACKAGE, "MANAGE_EXTERNAL_STORAGE", "allow")
     if symlink_fixture_created:
         adb("shell", "rm", "-f", FIXTURE_FOLDER + "/__wayward_escape")
 

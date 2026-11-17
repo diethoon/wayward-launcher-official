@@ -37,7 +37,6 @@ final class ImagePackDirectoryAccess {
     private final WebView webView;
     private final String preferenceKey;
     private final String diagnosticSessionId;
-    private final ImagePackFileSystemAccess fileSystemAccess;
     private Uri treeUri;
     private boolean writable;
     private String pendingRequestId;
@@ -54,11 +53,9 @@ final class ImagePackDirectoryAccess {
         String safeProfile = profileId == null || !profileId.matches("[A-Za-z0-9_-]{1,80}")
                 ? "default" : profileId;
         preferenceKey = "image_pack_tree_uri_" + safeProfile;
-        fileSystemAccess = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
-                ? new ImagePackFileSystemAccess(activity, webView, safeProfile, diagnosticSessionId) : null;
-        if (fileSystemAccess == null) restorePersistedTree();
-        diagnostic("directory_access_backend_ready", "", "info", details("apiLevel", Build.VERSION.SDK_INT, "provider",
-                        fileSystemAccess == null ? "saf_tree" : "filesystem"));
+        restorePersistedTree();
+        diagnostic("directory_access_backend_ready", "", "info",
+                details("apiLevel", Build.VERSION.SDK_INT, "provider", "saf_tree"));
     }
 
     void setInitialUriForTesting(Uri uri) {
@@ -71,11 +68,8 @@ final class ImagePackDirectoryAccess {
             return;
         }
         diagnostic("native_folder_picker_entered", requestId, "info",
-                details("apiLevel", Build.VERSION.SDK_INT, "provider", fileSystemAccess == null ? "saf_tree" : "filesystem"));
-        if (fileSystemAccess != null) {
-            fileSystemAccess.openFolderPicker(requestId);
-            return;
-        }
+                details("apiLevel", Build.VERSION.SDK_INT, "provider", "saf_tree",
+                        "requestSource", "showDirectoryPicker"));
         activity.runOnUiThread(() -> {
             if (pendingRequestId != null) {
                 if (pendingRequestId.equals(requestId)) {
@@ -92,7 +86,7 @@ final class ImagePackDirectoryAccess {
             pendingRequestId = requestId;
             diagnostic("native_folder_picker_ui_start", requestId, "info",
                     details("permissionBefore", "saf_tree_grant_pending",
-                            "requestSource", "showDirectoryPicker"));
+                            "requestSource", "showDirectoryPicker", "requestState", "PENDING"));
             Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
             picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
                     | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
@@ -112,7 +106,9 @@ final class ImagePackDirectoryAccess {
                 Log.e(TAG, "picker_open result=failed error=" + error.getClass().getSimpleName());
                 ImagePackDiagnostics.error(activity, diagnosticSessionId, requestId,
                         "native_saf_activity_launch_failed", error);
-                finishPending(failure("NotAllowedError", "Android folder picker could not be opened."));
+                finishPending(failure(error instanceof android.content.ActivityNotFoundException
+                        ? "NotSupportedError" : "NotAllowedError",
+                        "Android system folder picker could not be opened."));
             }
         });
     }
@@ -141,11 +137,21 @@ final class ImagePackDirectoryAccess {
     }
 
     void onResume() {
-        if (fileSystemAccess != null) fileSystemAccess.onResume();
+        if (treeUri == null) {
+            restorePersistedTree();
+            return;
+        }
+        try {
+            requireTree();
+        } catch (SecurityException error) {
+            treeUri = null;
+            writable = false;
+            diagnostic("native_saf_persisted_permission_revoked", "", "error",
+                    details("result", "denied", "recoverable", true));
+        }
     }
 
     void handleActivityResult(int resultCode, Intent data) {
-        if (fileSystemAccess != null) return;
         if (pendingRequestId == null) {
             diagnostic("native_saf_activity_result_without_pending_request", "", "warn", details("resultCode", resultCode));
             return;
@@ -153,12 +159,17 @@ final class ImagePackDirectoryAccess {
         diagnostic("native_saf_activity_result_received", pendingRequestId, "info",
                 details("resultCode", resultCode, "result", resultCode == Activity.RESULT_OK ? "ok" : "cancelled",
                         "pendingRequest", true));
-        if (resultCode != Activity.RESULT_OK || data == null || data.getData() == null) {
-            Log.i(TAG, "picker_result result=cancelled resultCode=" + resultCode
-                    + " dataPresent=" + (data != null));
+        if (resultCode != Activity.RESULT_OK) {
+            Log.i(TAG, "picker_result result=cancelled resultCode=" + resultCode);
             diagnostic("native_saf_picker_cancelled", pendingRequestId, "warn",
                     details("resultCode", resultCode, "cancelled", true));
             finishPending(failure("AbortError", "Folder selection was cancelled."));
+            return;
+        }
+        if (data == null || data.getData() == null) {
+            diagnostic("native_saf_picker_uri_missing", pendingRequestId, "error",
+                    details("resultCode", resultCode, "result", "missing_uri"));
+            finishPending(failure("NotReadableError", "Android returned no selected folder URI."));
             return;
         }
 
@@ -185,13 +196,20 @@ final class ImagePackDirectoryAccess {
                 + " write=" + ((grants & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0)
                 + " persistable=" + ((resultFlags & Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION) != 0));
 
-        if (!treeUriResult || (grants & Intent.FLAG_GRANT_READ_URI_PERMISSION) == 0) {
-            Log.w(TAG, "picker_result result=rejected reason=not_readable_tree");
-            diagnostic("native_saf_uri_rejected", pendingRequestId, "error", details("result", "missing_readable_tree_grant"));
-            finishPending(failure("SecurityError", "DocumentsUI did not return a readable SAF tree."));
+        boolean persistableFlag = (resultFlags & Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION) != 0;
+        if (!treeUriResult || (grants & Intent.FLAG_GRANT_READ_URI_PERMISSION) == 0 || !persistableFlag) {
+            Log.w(TAG, "picker_result result=rejected reason=invalid_or_non_persistable_tree");
+            diagnostic("native_saf_uri_rejected", pendingRequestId, "error",
+                    details("result", "missing_readable_persistable_tree_grant",
+                            "treeUri", treeUriResult, "readGranted",
+                            (grants & Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0,
+                            "persistableGranted", persistableFlag));
+            finishPending(failure("SecurityError", "DocumentsUI did not return a readable, persistable SAF tree."));
             return;
         }
 
+        Uri previousTreeUri = treeUri;
+        boolean previousWritable = writable;
         boolean persistableTaken = false;
         try {
             activity.getContentResolver().takePersistableUriPermission(selected, grants);
@@ -222,14 +240,20 @@ final class ImagePackDirectoryAccess {
             result.put("ok", true);
             result.put("name", displayName);
             result.put("writable", writable);
+            result.put("state", "SUCCESS");
             Log.i(TAG, "picker_result result=success persistedRead=true persistedWrite=" + writable);
             diagnostic("native_saf_permission_saved", pendingRequestId, "info",
-                    details("persistedRead", true, "persistedWrite", writable, "writable", writable));
+                    details("persistedRead", true, "persistedWrite", writable, "writable", writable,
+                            "requestState", "SUCCESS"));
+            if (previousTreeUri != null && !previousTreeUri.equals(selected)) {
+                releasePersistedTree(previousTreeUri);
+            }
+            result.put("state", "SUCCESS");
             finishPending(result);
         } catch (Exception error) {
-            treeUri = null;
-            writable = false;
-            if (persistableTaken) {
+            treeUri = previousTreeUri;
+            writable = previousWritable;
+            if (persistableTaken && !selected.equals(previousTreeUri)) {
                 try {
                     activity.getContentResolver().releasePersistableUriPermission(selected, grants);
                 } catch (Exception ignored) {}
@@ -242,23 +266,19 @@ final class ImagePackDirectoryAccess {
     }
 
     void cancelPending() {
-        if (fileSystemAccess != null) {
-            fileSystemAccess.cancelPending();
-            return;
-        }
         if (pendingRequestId != null) {
             finishPending(failure("AbortError", "The page was closed."));
         }
     }
 
     String getFolderInfoJson() {
-        if (fileSystemAccess != null) return fileSystemAccess.getFolderInfoJson();
         try {
             requireTree();
             JSONObject result = new JSONObject();
             result.put("ok", true);
             result.put("name", rootName());
             result.put("writable", writable);
+            result.put("state", "SUCCESS");
             return result.toString();
         } catch (Exception error) {
             return failure("NotFoundError", "No saved image-pack folder is available.").toString();
@@ -270,7 +290,6 @@ final class ImagePackDirectoryAccess {
     }
 
     String listDirectoryJson(String path, String requestId) {
-        if (fileSystemAccess != null) return fileSystemAccess.listDirectoryJson(path, requestId);
         diagnostic("native_directory_list_started", requestId, "info", details("method", "listImagePackDirectory"));
         try {
             String documentId = resolveDirectory(path);
@@ -302,7 +321,6 @@ final class ImagePackDirectoryAccess {
     }
 
     String readFileJson(String path, String requestId) {
-        if (fileSystemAccess != null) return fileSystemAccess.readFileJson(path, requestId);
         diagnostic("native_file_read_started", requestId, "info", details("method", "readImagePackFile"));
         try {
             Node node = resolveFile(path);
@@ -340,7 +358,6 @@ final class ImagePackDirectoryAccess {
     }
 
     String writeFileJson(String path, String mimeType, String encodedBytes) {
-        if (fileSystemAccess != null) return fileSystemAccess.writeFileJson(path, mimeType, encodedBytes);
         try {
             requireWritePermission();
             String[] parts = splitPath(path);
@@ -378,7 +395,6 @@ final class ImagePackDirectoryAccess {
     }
 
     String createDirectoryJson(String path) {
-        if (fileSystemAccess != null) return fileSystemAccess.createDirectoryJson(path);
         try {
             requireWritePermission();
             String[] parts = splitPath(path);
@@ -404,7 +420,6 @@ final class ImagePackDirectoryAccess {
     }
 
     String deleteEntryJson(String path) {
-        if (fileSystemAccess != null) return fileSystemAccess.deleteEntryJson(path);
         try {
             requireWritePermission();
             String[] parts = splitPath(path);
@@ -425,6 +440,29 @@ final class ImagePackDirectoryAccess {
         }
     }
 
+    private void releasePersistedTree(Uri uri) {
+        if (uri == null) return;
+        for (android.content.UriPermission permission :
+                activity.getContentResolver().getPersistedUriPermissions()) {
+            if (!uri.equals(permission.getUri())) continue;
+            int flags = 0;
+            if (permission.isReadPermission()) flags |= Intent.FLAG_GRANT_READ_URI_PERMISSION;
+            if (permission.isWritePermission()) flags |= Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
+            if (flags != 0) {
+                try {
+                    activity.getContentResolver().releasePersistableUriPermission(uri, flags);
+                    diagnostic("native_saf_previous_tree_permission_released", "",
+                            "info", details("readReleased", permission.isReadPermission(),
+                                    "writeReleased", permission.isWritePermission()));
+                } catch (Exception error) {
+                    ImagePackDiagnostics.error(activity, diagnosticSessionId, "",
+                            "native_saf_previous_tree_permission_release_failed", error);
+                }
+            }
+            return;
+        }
+    }
+
     private void restorePersistedTree() {
         SharedPreferences preferences = activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE);
         String saved = preferences.getString(preferenceKey, "");
@@ -434,6 +472,9 @@ final class ImagePackDirectoryAccess {
         }
         try {
             Uri candidate = Uri.parse(saved);
+            if (!"content".equalsIgnoreCase(candidate.getScheme()) || !DocumentsContract.isTreeUri(candidate)) {
+                throw new SecurityException("Saved image-pack URI is not a valid content document tree.");
+            }
             for (android.content.UriPermission permission : activity.getContentResolver().getPersistedUriPermissions()) {
                 if (candidate.equals(permission.getUri()) && permission.isReadPermission()) {
                     treeUri = candidate;
@@ -450,7 +491,10 @@ final class ImagePackDirectoryAccess {
     }
 
     private void requireTree() {
-        if (treeUri == null) throw new SecurityException("No selected image-pack tree.");
+        if (treeUri == null || !"content".equalsIgnoreCase(treeUri.getScheme())
+                || !DocumentsContract.isTreeUri(treeUri)) {
+            throw new SecurityException("No valid selected image-pack tree.");
+        }
         boolean granted = false;
         writable = false;
         for (android.content.UriPermission permission : activity.getContentResolver().getPersistedUriPermissions()) {
@@ -618,10 +662,15 @@ final class ImagePackDirectoryAccess {
 
     private static JSONObject failure(String name, String message) {
         JSONObject result = new JSONObject();
+        String state = "FAILED";
+        if ("AbortError".equals(name)) state = "CANCELLED";
+        else if ("NotAllowedError".equals(name) || "SecurityError".equals(name)) state = "DENIED";
+        else if ("NotSupportedError".equals(name)) state = "UNSUPPORTED";
         try {
             result.put("ok", false);
             result.put("name", name);
             result.put("message", message);
+            result.put("state", state);
         } catch (Exception ignored) {}
         return result;
     }

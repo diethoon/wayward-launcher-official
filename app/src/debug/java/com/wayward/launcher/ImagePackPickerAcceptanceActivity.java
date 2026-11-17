@@ -37,6 +37,7 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
         if (initialUri != null && !initialUri.isEmpty()) {
             access.setInitialUriForTesting(Uri.parse(initialUri));
         }
+        if (verifyRevoked) revokePersistedTreeGrantForTesting();
         webView.addJavascriptInterface(new TestWmlHost(), "WMLHost");
         webView.addJavascriptInterface(new AcceptanceBridge(), "AcceptanceBridge");
         webView.setWebViewClient(new WebViewClient() {
@@ -86,6 +87,28 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
     }
 
 
+    private void revokePersistedTreeGrantForTesting() {
+        String key = "image_pack_tree_uri_" + PROFILE;
+        String saved = getSharedPreferences("wayward_launcher", MODE_PRIVATE).getString(key, "");
+        if (saved == null || saved.isEmpty()) {
+            Log.e(TAG, "FAIL revoke persisted SAF grant: no saved tree URI");
+            return;
+        }
+        Uri selected = Uri.parse(saved);
+        for (android.content.UriPermission permission : getContentResolver().getPersistedUriPermissions()) {
+            if (!selected.equals(permission.getUri())) continue;
+            int flags = 0;
+            if (permission.isReadPermission()) flags |= android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION;
+            if (permission.isWritePermission()) flags |= android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
+            if (flags != 0) getContentResolver().releasePersistableUriPermission(selected, flags);
+            getSharedPreferences("wayward_launcher", MODE_PRIVATE).edit().remove(key).commit();
+            Log.i(TAG, "PASS test fixture released the persisted SAF tree grant");
+            return;
+        }
+        getSharedPreferences("wayward_launcher", MODE_PRIVATE).edit().remove(key).commit();
+        Log.i(TAG, "PASS test fixture confirmed no persisted SAF grant remained");
+    }
+
     @Override protected void onResume() {
         super.onResume();
         if (access != null) access.onResume();
@@ -121,6 +144,9 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
             if (!trustedOrigin || !trustedCapability) {
                 Log.w(TAG, "REJECT folder request origin=" + trustedOrigin
                         + " capability=" + trustedCapability);
+                access.rejectRequest(requestId,
+                        trustedOrigin ? "NotAllowedError" : "SecurityError",
+                        "The folder request was rejected by the native test bridge.");
                 return;
             }
             access.openFolderPicker(requestId);
