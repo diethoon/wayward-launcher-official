@@ -303,8 +303,39 @@ def choose_download_as_game_folder(local_path: pathlib.Path, device_path: str,
     download_selected = False
     game_folder_opened = False
     latest = ""
-    for _ in range(50):
+    last_saved_state = None
+    safe_folder_name = re.sub(r"[^A-Za-z0-9_-]", "_", folder_name)
+    for iteration in range(50):
         latest = dump_ui(local_path, device_path)
+        if latest != last_saved_state:
+            state_path = ARTIFACTS / f"android15-folder-picker-{safe_folder_name}-{iteration:02d}.xml"
+            state_path.write_text(latest, encoding="utf-8")
+            last_saved_state = latest
+        if "내 게임" in latest or "My games" in latest:
+            if folder_name not in latest:
+                events = read_launcher_events()
+                launcher_log = adb(
+                    "shell", "run-as", PACKAGE, "cat", "files/diagnostics/launcher.ndjson",
+                    check=False, capture=True
+                )
+                (ARTIFACTS / f"android15-folder-picker-{safe_folder_name}-launcher.ndjson").write_text(
+                    launcher_log.stdout or launcher_log.stderr or "", encoding="utf-8"
+                )
+                activity_dump = adb(
+                    "shell", "dumpsys", "activity", "activities", check=False, capture=True
+                )
+                (ARTIFACTS / f"android15-folder-picker-{safe_folder_name}-activities.txt").write_text(
+                    activity_dump.stdout or activity_dump.stderr or "", encoding="utf-8"
+                )
+                failures = [
+                    event.get("event") for event in events
+                    if event.get("event") in ("folder_picker_cancelled", "folder_permission_failed",
+                                              "game_folder_registered", "folder_permission_persisted")
+                ]
+                raise RuntimeError(
+                    "The folder picker returned to launcher without registering "
+                    + folder_name + "; latest registration events=" + repr(failures)
+                )
 
         if download_selected and not game_folder_opened:
             child_folder = node_bounds(latest, (folder_name,), require_clickable=False)
@@ -351,6 +382,11 @@ def choose_download_as_game_folder(local_path: pathlib.Path, device_path: str,
         latest = dump_ui(local_path, device_path)
         if "내 게임" in latest or "My games" in latest:
             (ARTIFACTS / "android15-game-tree-picker-returned.xml").write_text(latest, encoding="utf-8")
+            if folder_name not in latest:
+                raise RuntimeError(
+                    "The SAF picker returned to MainActivity without showing registered profile "
+                    + folder_name + ". " + latest[-2500:]
+                )
             return latest
 
         # Match a positive button exactly; substring matching "Allow" could hit "Don't allow".

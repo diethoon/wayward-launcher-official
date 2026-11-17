@@ -251,3 +251,9 @@ Updated: 2026-11-15 (Asia/Seoul)
 - Root cause in `MainActivity.chooseFolder()`: every subsequent `ACTION_OPEN_DOCUMENT_TREE` request supplied the previously selected game `treeUri` as `EXTRA_INITIAL_URI`. That points the document navigator back into the current game's selected subtree rather than a neutral location from which to choose another independent game root.
 - Removed the prior-profile initial-URI hint for game registration. Each registration now opens the provider's normal location and allows selection of a different root; the existing persisted permission handling and profile de-duplication remain unchanged. Added a source contract that prevents reintroducing the trapping initial-URI behavior.
 - The next Android 15 run must prove two profiles can be registered through the production UI before the game session reuse/switch scenario can proceed.
+
+
+### SAF registration acceptance diagnostics — 2026-11-17
+- The #44011729007 Android 15 smoke returned to the MainActivity home with zero registered profiles after the first DocumentsUI attempt. The job log did not distinguish a cancelled picker from a permission callback failure or a folder row navigation error.
+- Instrumented the smoke helper to snapshot each distinct DocumentsUI state, and to persist launcher.ndjson plus Activity state if MainActivity returns without the requested profile name being visible. The helper now refuses to treat the permanent home label "내 게임" as proof of successful registration; it requires the selected folder's actual registered profile name.
+- This is test-only diagnostic hardening; it does not alter the product picker or weaken the acceptance assertion.
