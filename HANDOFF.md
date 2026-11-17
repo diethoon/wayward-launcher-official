@@ -398,3 +398,9 @@ Updated: 2026-11-15 (Asia/Seoul)
 
 ### Journal fixture contract aligned with safe adb shell quoting — 2026-11-18
 - Updated the static SAF/diagnostics contract after the Android 15 run confirmed that `adb shell run-as ... sh -c` requires a quoted complete shell payload. It now asserts the direct app-scoped `run-as mkdir -p` and quoted writer separately instead of requiring the old single shell compound command.
+
+
+### ② 진단 ZIP 실패 재시도 — 2026-11-18
+- 진단 버튼은 기존 `*.zip.upload-pending` 마커가 있으면 새 ZIP을 생성하지 않고 해당 ZIP을 재사용해 Cloudflare에 재전송한다. 업로드가 이미 실행 중인 중복 터치는 새 요청이나 새 공유 ZIP을 만들지 않고 안내한다.
+- 업로더는 서버가 `ok=true`와 유효한 `submissionId`를 반환한 경우에만 재시도 마커를 삭제한다. 네트워크, 타임아웃, HTTP/서버 실패는 ZIP을 cache에 남기고 fsync한 retry 마커를 유지한다.
+- cache pruning으로 ZIP이 사라지고 마커만 남으면 stale marker를 지우고 새 ZIP을 생성한다. 기존 Android 공유 시트는 업로드와 동일한 ZIP을 계속 사용한다.

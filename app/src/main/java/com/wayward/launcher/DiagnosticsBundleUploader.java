@@ -10,6 +10,7 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -26,6 +27,7 @@ final class DiagnosticsBundleUploader {
     private static final String BASE_URL =
             "https://wayward-diagnostics-ingest.trpgengine.workers.dev";
     private static final long MAX_BUNDLE_BYTES = 5L * 1024L * 1024L;
+    private static final String PENDING_SUFFIX = ".upload-pending";
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int TICKET_READ_TIMEOUT_MS = 15000;
     private static final int UPLOAD_READ_TIMEOUT_MS = 60000;
@@ -39,6 +41,45 @@ final class DiagnosticsBundleUploader {
     }
 
     private DiagnosticsBundleUploader() {}
+
+    static boolean isUploading() {
+        return BUSY.get();
+    }
+
+    static File findPendingArchive(Context context) {
+        File directory = new File(context.getCacheDir(), "diagnostics");
+        File[] markers = directory.listFiles((dir, name) -> name.endsWith(PENDING_SUFFIX));
+        if (markers == null || markers.length == 0) return null;
+        java.util.Arrays.sort(markers, (left, right) ->
+                Long.compare(right.lastModified(), left.lastModified()));
+        for (File marker : markers) {
+            String archiveName = marker.getName().substring(
+                    0, marker.getName().length() - PENDING_SUFFIX.length());
+            File archive = new File(directory, archiveName);
+            if (archive.isFile() && archive.length() > 0L
+                    && archive.length() <= MAX_BUNDLE_BYTES) return archive;
+            marker.delete();
+        }
+        return null;
+    }
+
+    static void rememberPendingArchive(File archive) {
+        if (archive == null || !archive.isFile()) return;
+        File marker = new File(archive.getParentFile(), archive.getName() + PENDING_SUFFIX);
+        try (FileOutputStream output = new FileOutputStream(marker, false)) {
+            output.write("retry".getBytes(StandardCharsets.US_ASCII));
+            output.flush();
+            output.getFD().sync();
+        } catch (Exception ignored) {
+            // The ZIP itself remains available for manual sharing even if marker I/O fails.
+        }
+    }
+
+    static void clearPendingArchive(File archive) {
+        if (archive == null) return;
+        File marker = new File(archive.getParentFile(), archive.getName() + PENDING_SUFFIX);
+        if (marker.isFile()) marker.delete();
+    }
 
     static void upload(Context context, File archive, Callback callback) {
         Context app = context.getApplicationContext();
@@ -57,6 +98,8 @@ final class DiagnosticsBundleUploader {
             } catch (Exception error) {
                 result = "network_or_io_error";
             } finally {
+                if (success) clearPendingArchive(archive);
+                else rememberPendingArchive(archive);
                 BUSY.set(false);
                 deliver(callback, success, result);
             }

@@ -142,6 +142,18 @@ assert.match(bundleUploader, /DiagnosticsLogger\.deviceId/,
   "the worker's per-install rate limit must use the stable local install identifier");
 assert.match(bundleUploader, /MAX_BUNDLE_BYTES/,
   "the uploader must honor the Worker 5 MiB size ceiling");
+
+assert.match(main, /findPendingArchive\(this\)/,
+  "the next diagnostics tap must reuse the previously failed ZIP instead of generating a new one");
+assert.match(main, /DiagnosticsBundleUploader\.isUploading\(\)/,
+  "duplicate diagnostics taps must not enqueue concurrent uploads or create extra ZIPs");
+assert.match(uploader, /PENDING_SUFFIX = "\.upload-pending"/,
+  "failed uploads must persist a retry marker beside the exact ZIP");
+assert.match(uploader, /rememberPendingArchive\(archive\)/,
+  "network, timeout, and server failures must keep the ZIP available for retry");
+assert.match(uploader, /clearPendingArchive\(archive\)/,
+  "the retry marker must only clear following a valid server success response");
+
 assert.match(bundleUploader, /setConnectTimeout|setReadTimeout/,
   "network operations must have bounded timeouts");
 assert.doesNotMatch(bundleUploader, /readPending|DiagnosticsLogger\.acknowledge/,

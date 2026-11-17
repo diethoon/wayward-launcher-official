@@ -246,28 +246,38 @@ public class MainActivity extends Activity {
     private void shareDiagnosticsZip(){
         ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "", "diagnostics_share_button_tapped",
                 "info", null);
+        if (DiagnosticsBundleUploader.isUploading()) {
+            Toast.makeText(this, "진단 로그를 전송 중입니다. 잠시 후 다시 시도하세요.", Toast.LENGTH_LONG).show();
+            return;
+        }
         try {
-            File archive = DiagnosticsBundleExporter.create(this);
+            File archive = DiagnosticsBundleUploader.findPendingArchive(this);
+            boolean retrying = archive != null;
+            if (!retrying) archive = DiagnosticsBundleExporter.create(this);
+            final File selectedArchive = archive;
             ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "",
                     "diagnostics_cloud_upload_requested", "info",
-                    new JSONObject().put("fileSize", archive.length()));
-            DiagnosticsBundleUploader.upload(this, archive, (success, result) -> {
+                    new JSONObject().put("fileSize", selectedArchive.length())
+                            .put("retryingPreviousZip", retrying));
+            DiagnosticsBundleUploader.upload(this, selectedArchive, (success, result) -> {
                 if (isFinishing() || isDestroyed()) return;
                 JSONObject details = new JSONObject();
                 try {
                     details.put("success", success);
                     details.put("result", result == null ? "" : result);
-                    details.put("fileSize", archive.length());
+                    details.put("fileSize", selectedArchive.length());
+                    details.put("retryingPreviousZip", retrying);
                 } catch (Exception ignored) {}
                 ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "",
                         success ? "diagnostics_cloud_upload_succeeded" : "diagnostics_cloud_upload_failed",
                         success ? "info" : "error", details);
-                Toast.makeText(this,
-                        success ? "진단 로그 자동 전송 완료" : "진단 로그 자동 전송 실패 · ZIP은 기기에 보존됨",
-                        Toast.LENGTH_LONG).show();
+                String message = success
+                        ? (retrying ? "이전 진단 ZIP 재전송 완료" : "진단 로그 자동 전송 완료")
+                        : "진단 로그 자동 전송 실패 · 다음 진단 버튼 터치 시 같은 ZIP 재전송";
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show();
             });
             // Preserve the existing Android share sheet using the exact same ZIP.
-            DiagnosticsBundleExporter.share(this, archive);
+            DiagnosticsBundleExporter.share(this, selectedArchive);
             ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "", "diagnostics_share_chooser_opened",
                     "info", null);
         } catch (Exception error) {
