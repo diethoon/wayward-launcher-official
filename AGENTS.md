@@ -95,3 +95,11 @@ Do not repeat the same facts under multiple headings. Separate verified facts fr
 - Preserve existing uncommitted work and the user's current branch.
 - Never force-push, merge to the default branch, publish, or deploy without explicit authorization.
 - Keep changes minimal and limited to the requested scope.
+
+
+## Mandatory global policy documents — read before any task
+- `docs/WORKFLOW_GATEWAY.md`
+- `docs/WORKFLOW_EXECUTION_POLICY.md`
+- `docs/FORENSIC_AND_VERIFICATION_POLICY.md`
+
+Read all three documents before inspecting code, branches, services, CI, or starting implementation. If any is unavailable, restore it when authorized or stop product work and report the exact blocker. This requirement supplements all repository-specific instructions below; preserve their CI, build, ownership, and platform-specific rules. The global forensic, evidence-integrity, safety, and data-preservation rules cannot be weakened.
