@@ -618,6 +618,7 @@ def run_main_activity_game_session_acceptance() -> None:
 <button id="interact">Interact with game</button>
 <div id="interaction-result">WAITING_FOR_GAME_INTERACTION</div>
 <button id="return-home">Return to launcher</button>
+<button id="open-second">Open second internal page</button>
 <button id="pick">Open image-pack folder</button>
 <iframe id="picker-frame" src="picker-frame.html" title="Image-pack folder picker frame"
         style="width:1px;height:1px;border:0"></iframe>
@@ -625,7 +626,7 @@ def run_main_activity_game_session_acceptance() -> None:
 <input id="single-input" type="file" accept=".json,application/json" multiple hidden>
 <button id="zip-button">Pick multiple ZIP files</button>
 <input id="zip-input" type="file" accept=".zip,application/zip" multiple hidden>
-<a id="second" href="session-second.html">Open second internal page</a>
+
 <div id="result">READY</div><div id="file-result">FILE_READY</div>
 <script>
 let interactionCount = 0;
@@ -636,6 +637,9 @@ document.getElementById('interact').addEventListener('click', () => {
 });
 document.getElementById('return-home').addEventListener('click', () => {
   if (window.WMLHost && typeof window.WMLHost.menu === 'function') window.WMLHost.menu();
+});
+document.getElementById('open-second').addEventListener('click', () => {
+  window.location.assign('session-second.html');
 });
 document.getElementById('pick').addEventListener('click', async () => {
   try {
@@ -954,13 +958,25 @@ window.pickImagePackFolder = async function() {
     if "GAME_INTERACTION_OK count=2" not in first_interaction:
         raise RuntimeError("The routed-back game's original JavaScript state did not survive the profile switch.")
 
-    second_link = node_bounds(first_interaction, ("Open second internal page",))
-    if second_link is None:
-        raise RuntimeError("The game fixture did not expose its second internal page link.")
-    tap_bounds(second_link)
-    second_xml = wait_for_ui_contains(
-        picker_local, picker_device, "SECOND_SESSION_PAGE", timeout_seconds=25
-    )
+    first_interaction_path = ARTIFACTS / "android15-game-before-second-page.xml"
+    first_interaction_path.write_text(first_interaction, encoding="utf-8")
+    screenshot(ARTIFACTS / "android15-game-before-second-page.png")
+    second_links = node_bounds_all_exact(first_interaction, ("Open second internal page",))
+    if len(second_links) != 1:
+        raise RuntimeError("The game fixture did not expose exactly one visible internal-page button.")
+    tap_bounds(second_links[0])
+    try:
+        second_xml = wait_for_ui_contains(
+            picker_local, picker_device, "SECOND_SESSION_PAGE", timeout_seconds=25
+        )
+    except RuntimeError as navigation_error:
+        route_debug = capture_game_route_diagnostics(
+            "internal-second-page-navigation", picker_local, picker_device
+        )
+        raise RuntimeError(
+            str(navigation_error) + "; internal page diagnostics=" +
+            json.dumps(route_debug, ensure_ascii=False)
+        ) from navigation_error
     adb("shell", "input", "keyevent", "4")
     first_xml = wait_for_ui_contains(
         picker_local, picker_device, "WAYWARD MAIN ACTIVITY GAME SESSION", timeout_seconds=25
