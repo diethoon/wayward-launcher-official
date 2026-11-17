@@ -8,6 +8,7 @@ import pathlib
 import json
 import re
 import shutil
+import shlex
 import struct
 import subprocess
 import sys
@@ -105,11 +106,12 @@ def ensure_previous_diagnostic_journals() -> set[str]:
         encoded = base64.b64encode(
             (json.dumps(event, separators=(",", ":")) + "\n").encode("utf-8")
         ).decode("ascii")
-        adb(
-            "shell", "run-as", PACKAGE, "sh", "-c",
-            "mkdir -p " + diagnostics_dir + " && echo " + encoded
-            + " | base64 -d > " + diagnostics_dir + "/" + name,
-        )
+        adb("shell", "run-as", PACKAGE, "mkdir", "-p", diagnostics_dir)
+        remote_path = diagnostics_dir + "/" + name
+        write_command = "echo " + shlex.quote(encoded) + " | base64 -d > " + shlex.quote(remote_path)
+        # adb shell joins remote arguments into one shell command; quote the entire
+        # sh -c payload so the pipe/redirection reach the app-scoped shell intact.
+        adb("shell", "run-as", PACKAGE, "sh", "-c", shlex.quote(write_command))
         seeded.add(name)
     return seeded
 

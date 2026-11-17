@@ -453,7 +453,9 @@ final class RemoteHostConnection {
         if (b[0] == 100 && b[1] >= 64 && b[1] <= 127) return false;
         if (b[0] == 169 && b[1] == 254) return false;
         if (b[0] == 172 && b[1] >= 16 && b[1] <= 31) return false;
-        if (b[0] == 192 && (b[1] == 168 || b[1] == 0 && b[2] <= 2)) return false;
+        if (b[0] == 192 && (b[1] == 168 ||
+                b[1] == 0 && b[2] <= 2 ||
+                b[1] == 88 && b[2] == 99)) return false;
         if (b[0] == 198 && (b[1] == 18 || b[1] == 19 || b[1] == 51 && b[2] == 100)) return false;
         if (b[0] == 203 && b[1] == 0 && b[2] == 113) return false;
         return true;

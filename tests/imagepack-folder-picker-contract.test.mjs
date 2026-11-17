@@ -248,6 +248,8 @@ assert.match(smoke, /wayward-diagnostics-/, "Android 15 smoke must verify a diag
 assert.match(smoke, /"launcher\.ndjson"/, "Android 15 smoke must verify the ZIP contains general launcher diagnostics");
 assert.match(smoke, /ensure_previous_diagnostic_journals\(\)/,
   "Android 15 smoke must create or retain previous journals for ZIP inclusion checks");
+assert.match(smoke, /shlex\.quote\(write_command\)/,
+  "Android 15 diagnostic journal fixtures must preserve shell pipes/redirection through adb run-as sh -c");
 assert.match(smoke, /diagnostics_dir = "\/data\/user\/0\/" \+ PACKAGE \+ "\/files\/diagnostics"/,
   "diagnostic fixtures must target the exact Android getFilesDir diagnostics folder");
 assert.match(smoke, /mkdir -p " \+ diagnostics_dir \+ " && echo "/,

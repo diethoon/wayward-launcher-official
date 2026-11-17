@@ -378,3 +378,9 @@ Updated: 2026-11-15 (Asia/Seoul)
 
 ### External QR mapping defensive-copy compile fix — 2026-11-18
 - Latest external QR contract commit `e8f69f6` failed Java compilation because `new JSONObject(String)` throws checked `JSONException` inside the `RemoteHostConnection` constructor. Retained the defensive deep copy and converted malformed mapping JSON into a clear `IllegalArgumentException`; no contract or validation semantics changed.
+
+
+### Android 15 diagnostics fixture quoting + external IPv4 reserved-range filter — 2026-11-18
+- The #44139876260 run passed the complete game-session sequence (same-profile reuse, two independent URI-keyed game tasks, original WebView return, BACK navigation, launcher home restoration, and exactly one canonical Wayward Recents task). It then failed while seeding deterministic previous diagnostic journals: `adb shell run-as ... sh -c` received the pipe/redirection as extra command arguments, so the inner `mkdir` received no path.
+- Fixed the fixture writer by creating the diagnostics directory with a direct `run-as mkdir -p` call and shell-quoting the complete `sh -c` payload (including its separately quoted Base64 and output path). This preserves app-scoped access and correctly pipes the seeded NDJSON into the exact previous-journal file.
+- Hardened the external QR public IPv4 filter to reject the deprecated `192.88.99.0/24` 6to4 relay anycast block and added test addresses `192.88.99.1` and `.2`. The IANA IPv4 Special-Purpose Registry marks this deprecated block as non-globally reachable; the rest of the existing RFC1918/CGNAT/link-local/documentation/reserved filters are unchanged.
