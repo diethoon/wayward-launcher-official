@@ -298,3 +298,7 @@ Updated: 2026-11-15 (Asia/Seoul)
 - Root cause: game document Tasks inherited the same default `taskAffinity` as the real app-icon MainActivity. Android's launcher MAIN/LAUNCHER task selection could choose a game document Task as the matching app task, then stack a second launcher MainActivity into it.
 - Added a non-exported `GameSessionActivity` alias targeting the existing `MainActivity`, with affinity `${applicationId}.games`. Game-session and Image Studio return intents target this alias with their per-profile `wayward://session/{id}` URI and `FLAG_ACTIVITY_NEW_DOCUMENT`. The real app icon continues targeting the original exported MainActivity under the default application affinity.
 - The alias instantiates the same MainActivity Java class; no duplicate Activity implementation or WebView is created. Pairing, QR, Remote Play, and other launcher entry points remain on the original MainActivity. Updated the ActivityRecord counter to include both alias records and the shared Java target.
+
+
+### Game session alias contract test correction — 2026-11-18
+- The first run after adding the dedicated affinity alias failed only because the source-level test over-escaped the JavaScript regular expression for whitespace. The manifest value itself was present exactly as intended. Replaced the over-escaped multi-line regex with isolated alias-block attribute checks; product files were not changed.

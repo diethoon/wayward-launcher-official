@@ -173,7 +173,12 @@ assert.doesNotMatch(imageGenRoute, /FLAG_ACTIVITY_REORDER_TO_FRONT/,
   "Image Studio must not reorder to an arbitrary MainActivity instance");
 assert.doesNotMatch(manifest, /documentLaunchMode/,
   "document-task behavior must be opt-in on session intents, not global manifest behavior");
-assert.match(manifest, /activity-alias[\\s\\S]*?android:name="\.GameSessionActivity"[\\s\\S]*?android:targetActivity="\.MainActivity"[\\s\\S]*?android:taskAffinity="\\$\\{applicationId\\}\.games"/,
+const gameSessionAlias = manifest.split("<activity-alias")[1]?.split("/>")[0] || "";
+assert.match(gameSessionAlias, /android:name="\.GameSessionActivity"/,
+  "the game-session alias must have its own manifest component name");
+assert.match(gameSessionAlias, /android:targetActivity="\.MainActivity"/,
+  "the game-session alias must reuse the existing MainActivity implementation");
+assert.ok(gameSessionAlias.includes('android:taskAffinity="${applicationId}.games"'),
   "game document tasks must use a dedicated affinity separate from the app-icon launcher task");
 assert.match(main, /setClassName\(this,GAME_SESSION_ACTIVITY_ALIAS\)/,
   "game sessions must launch through the dedicated alias component");
