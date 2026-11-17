@@ -22,6 +22,7 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
     private boolean verifyRevoked;
     private boolean verifySymlinkFixture;
     private String pickerScript;
+    private String folderPickerCapability = "";
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -57,7 +58,8 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
         setContentView(webView);
 
         try {
-            pickerScript = ImagePackFolderPickerScript.read(this);
+            folderPickerCapability = ImagePackFolderPickerScript.createCapability();
+            pickerScript = ImagePackFolderPickerScript.read(this, folderPickerCapability);
             String page = "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'></head>"
                     + "<body><button id='pick'>Choose image-pack folder</button><div id='result'>READY</div>"
                     + "<script>document.getElementById('pick').addEventListener('click',async()=>{"
@@ -98,6 +100,7 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
 
     @Override protected void onDestroy() {
         if (access != null) access.cancelPending();
+        folderPickerCapability = "";
         if (webView != null) {
             webView.stopLoading();
             webView.removeJavascriptInterface("WMLHost");
@@ -110,7 +113,16 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
     }
 
     private final class TestWmlHost {
-        @JavascriptInterface public void chooseImagePackFolder(String requestId) {
+        @JavascriptInterface public void chooseImagePackFolder(String requestId, String capability) {
+            boolean trustedOrigin = webView != null
+                    && ImagePackFolderPickerScript.isSameOrigin(webView.getUrl(), TEST_ORIGIN);
+            boolean trustedCapability = ImagePackFolderPickerScript.matchesCapability(
+                    folderPickerCapability, capability);
+            if (!trustedOrigin || !trustedCapability) {
+                Log.w(TAG, "REJECT folder request origin=" + trustedOrigin
+                        + " capability=" + trustedCapability);
+                return;
+            }
             access.openFolderPicker(requestId);
         }
         @JavascriptInterface public String listImagePackDirectory(String path) {
