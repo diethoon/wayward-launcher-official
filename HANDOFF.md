@@ -328,3 +328,7 @@ Updated: 2026-11-15 (Asia/Seoul)
 - The existing camera flow remains first: tapping Pairing still opens Google Code Scanner immediately. Only after scanner cancellation or scanner failure does the temporary `QR 이미지에서 가져오기 · 개발자용` button appear on the pairing page.
 - The option uses `ACTION_OPEN_DOCUMENT` with `image/*` and ML Kit's QR-only image reader. Zero QR results and multiple QR results receive distinct messages and return to the main launcher. Exactly one QR is automatically handed to the existing `handleQr()` path, retaining the original signed-manifest, nonce, approval, and pairing checks.
 - Selected image URI and QR contents are never logged or persisted. Added Google Play services ML Kit image scanner API `play-services-mlkit-barcode-scanning:18.3.1`; existing Code Scanner camera dependency is unchanged. This temporary developer control is isolated from the regular camera scan path.
+
+
+### Test parser correction for the game Activity declaration — 2026-11-18
+- The combined feature run exposed an invalid JavaScript regular expression in the new manifest contract assertion. Replaced the expression with a literal XML element boundary search; product code and task behavior are unchanged.

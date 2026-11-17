@@ -198,7 +198,11 @@ assert.doesNotMatch(imageGenRoute, /FLAG_ACTIVITY_REORDER_TO_FRONT/,
   "Image Studio must not reorder to an arbitrary MainActivity instance");
 assert.doesNotMatch(manifest, /documentLaunchMode/,
   "document-task behavior must be opt-in on session intents, not global manifest behavior");
-const gameSessionActivity = manifest.match(/<activity\\s+android:name="\\.GameSessionActivity"[\\s\\S]*?\\/>/)?.[0] || "";
+const gameSessionNameIndex = manifest.indexOf('android:name=".GameSessionActivity"');
+const gameSessionStartIndex = manifest.lastIndexOf("<activity", gameSessionNameIndex);
+const gameSessionEndIndex = manifest.indexOf("/>", gameSessionStartIndex);
+const gameSessionActivity = gameSessionNameIndex >= 0 && gameSessionStartIndex >= 0 && gameSessionEndIndex > gameSessionStartIndex
+  ? manifest.slice(gameSessionStartIndex, gameSessionEndIndex + 2) : "";
 assert.ok(gameSessionActivity.length > 0,
   "the dedicated game-session activity must be declared");
 assert.ok(gameSessionActivity.includes('android:taskAffinity="${applicationId}.games"'),
