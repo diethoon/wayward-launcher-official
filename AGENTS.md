@@ -1,0 +1,80 @@
+# GLOBAL WORK-CONTINUITY RULE — READ FIRST, APPLY ALWAYS
+
+**MANDATORY PRE-FLIGHT:** Before any task, repository/branch inspection, service lookup, tool call, build, test, or deployment investigation, read and apply this section first. It supplements, and does not replace, project-specific instructions below.
+
+## End-to-end ownership
+- The user is the requester, not the operator of the workflow. Never make the user monitor routine progress, inspect results, poll jobs, download logs, check artifacts, or tell you when to continue.
+- Never stop after launching an asynchronous action, CI run, build, test, upload, or download. Retain its identifiers, track it yourself, inspect the actual result, and continue.
+- Never send a progress-only message and then wait for the user's next prompt. A progress update does not substitute for doing the work.
+- Never ask the user to perform checks that available tools and permissions allow you to perform.
+
+## No avoidable waiting
+- While jobs run, perform independent safe work. Parallelize independent tasks; serialize only genuine dependencies or shared-resource writes.
+- Poll/query asynchronous work yourself. On completion, inspect the result immediately.
+- For failures, retrieve and inspect logs, test reports, and failure artifacts yourself; diagnose, fix within scope, and rerun only necessary checks.
+- For artifacts, list, download, inspect, verify existence/size/integrity, and test the download URL yourself. An upload message alone is not proof an artifact is downloadable.
+- If one path is blocked, continue all independent work and pursue alternatives. Never freeze the whole task because one subtask is waiting.
+
+## Blockers and user involvement
+- Routine status checks, CI/build completion, artifact inspection, log retrieval, and ordinary resource lookups are agent responsibilities, not reasons to pause or ask the user.
+- A blocker is valid only when a specific external dependency, permission, credential, physical device, or explicit approval is demonstrably required. Identify the exact blocker and its evidence; continue every independent part.
+- Never wait for physical-device verification before completing code, automated tests, packaging, and delivery when those can proceed independently.
+- Ask the user only for an indispensable action that genuinely requires their authority. Ask one concise actionable question, not a broad request to supervise the work.
+
+## Evidence and safety
+- Never claim a command, test, CI run, deployment, upload, download, artifact, or runtime check succeeded unless its actual result was inspected.
+- Distinguish code review, automated tests, CI, emulator, and physical-device evidence. A mock/emulator result is not proof of physical-device behavior.
+- Reuse verified findings; do not repeat investigations or broad suites without a concrete reason.
+- Work autonomously within scope and permissions. Do not force-push, reset, merge, release, deploy, alter production infrastructure, delete user data, expose secrets, or make high-impact irreversible changes unless explicitly authorized.
+- Preserve unrelated work, branch boundaries, project isolation, and all existing project-specific instructions.
+
+## Mandatory finalization
+Before reporting completion, verify the final repository state, commit/result identifiers, actual test outcomes, and deliverable paths/links. State exactly what remains blocked and why.
+
+**NON-NEGOTIABLE:** Do not abandon, park, or hand routine workflow management to the user. Track every asynchronous step, inspect evidence, resolve what can be resolved, continue independent work, and deliver the most complete verified result possible.
+
+---
+
+# Wayward Engineering Instructions
+
+These instructions apply to all engineering work in this repository and take precedence over task-specific preferences unless a task explicitly requires otherwise.
+
+## Execution and verification first
+
+The goal is to deliver a working product, not to maximize investigation.
+
+- Prefer checking the current build, actual launch/runtime behavior, and the latest GitHub Actions results over repeating source investigations or forensic analysis.
+- Before investigating, inspect the latest handoff/task notes and reuse already-established findings. Do not repeat an investigation whose conclusion is already documented unless new evidence, a changed commit, or a reproducible failure makes it necessary.
+- Follow this order: confirm the latest branch/HEAD and working changes; read the relevant handoff; inspect the latest CI results; build and run the affected application; investigate only concrete failures; make the smallest targeted fix; run relevant tests and CI again; update the handoff.
+- Do not spend extended time re-proving known facts when a build, smoke test, runtime check, or CI run can answer the question directly.
+- Do not continue forensic analysis as a substitute for execution. Once the available evidence is sufficient to identify the next action, act on it.
+- Preserve working code and user configuration. Do not rewrite or refactor functioning components without a demonstrated need.
+- Avoid speculative improvements, unrelated feature work, and broad refactors during a verification/fix task.
+- Parallelize independent checks where safe. Do not create unnecessary pauses or repetitive progress reports.
+
+## Evidence and reporting
+
+Always distinguish:
+1. **Runtime verified** — actually launched and exercised in the stated environment.
+2. **Automated tests passed** — the named tests completed successfully.
+3. **GitHub Actions passed** — cite the exact workflow run.
+4. **Code inspected only** — implementation was reviewed but not executed.
+5. **Not verified** — required hardware, device, network, credentials, or external environment was unavailable.
+
+Never describe a build, mock test, or source inspection as proof of real-device, real-GPU, router, or external-network behavior. Report limitations plainly.
+
+## Safe change policy
+
+- Fix only demonstrated defects, using the smallest practical change.
+- Do not delete or weaken tests merely to obtain a green CI result.
+- Do not overwrite user data, existing configuration, model files, or unrelated in-progress changes.
+- Do not reset, force-push, merge, release, deploy, or change external infrastructure unless explicitly authorized.
+- Update the repository handoff/documentation with the actual changes, verification performed, commit, and remaining unverified items.
+
+
+## Mandatory global policy documents — read before any task
+- `docs/WORKFLOW_GATEWAY.md`
+- `docs/WORKFLOW_EXECUTION_POLICY.md`
+- `docs/FORENSIC_AND_VERIFICATION_POLICY.md`
+
+Read all three documents before inspecting code, branches, services, CI, or starting implementation. If any is unavailable, restore it when authorized or stop product work and report the exact blocker. This requirement supplements all repository-specific instructions below; preserve their CI, build, ownership, and platform-specific rules. The global forensic, evidence-integrity, safety, and data-preservation rules cannot be weakened.
