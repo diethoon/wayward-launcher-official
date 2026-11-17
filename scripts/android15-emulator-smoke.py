@@ -518,10 +518,10 @@ window.pickImagePackFolder = async function() {
     )
     adb("shell", "input", "keyevent", "4")
     first_xml = wait_for_ui_contains(
-        picker_local, picker_device, "PASS_GAME_SESSION_DIRECTORY_HANDLE", timeout_seconds=25
+        picker_local, picker_device, "WAYWARD MAIN ACTIVITY GAME SESSION", timeout_seconds=25
     )
-    if "WAYWARD MAIN ACTIVITY GAME SESSION" not in first_xml:
-        raise RuntimeError("The first BACK did not navigate within the game WebView history.")
+    if "SECOND_SESSION_PAGE" in first_xml:
+        raise RuntimeError("The first BACK did not return from the second page to the first game page.")
 
     adb("shell", "input", "keyevent", "4")
     home_xml = wait_for_ui_contains(picker_local, picker_device, "내 게임", timeout_seconds=25)
