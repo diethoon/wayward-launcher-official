@@ -226,3 +226,8 @@ Updated: 2026-11-15 (Asia/Seoul)
 ### Previous-journal ZIP verification detail — 2026-11-17
 - The Android 15 export test retains pre-existing rotated files; when either is absent/empty in the clean emulator, it writes a small valid NDJSON fixture without replacing existing content.
 - ZIP acceptance parses every previous-journal line as JSON and confirms newly seeded fixture records are preserved. This verifies actual rotated-log inclusion rather than only checking exporter source.
+
+
+### Clean-install diagnostics directory fixture correction — 2026-11-17
+- The latest Android 15 run reached and passed the MainActivity directory-handle, pack.json multi-select, ZIP multi-select, BACK, and one-Task Recents checks. It then failed only while seeding the previous-journal ZIP test because the clean install had not yet created `files/diagnostics/`.
+- Updated the smoke fixture to create that app-private diagnostics directory with `run-as mkdir -p` before writing its test journal records. This is test preparation only; it does not create or reset user game data. The new CI run must re-verify the diagnostic ZIP, previous journals and privacy scans.

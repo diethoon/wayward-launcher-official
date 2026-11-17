@@ -75,6 +75,7 @@ def parse_wayward_recent_task_records(dumpsys_output: str) -> list[tuple[int, st
 def ensure_previous_diagnostic_journals() -> set[str]:
     """Ensure both rotated journals exist so the manual ZIP path verifies their inclusion."""
     seeded: set[str] = set()
+    adb("shell", "run-as", PACKAGE, "mkdir", "-p", "files/diagnostics")
     fixtures = {
         "launcher.previous.ndjson": {
             "id": "ci-previous-launcher",
