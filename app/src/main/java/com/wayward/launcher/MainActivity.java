@@ -86,6 +86,8 @@ public final class MainActivity extends Activity {
             "com.wayward.launcher.OPEN_IMAGE_STUDIO_SETTINGS";
     private static final String EXTRA_GAME_LAUNCH_REQUEST_ID =
             "com.wayward.launcher.GAME_LAUNCH_REQUEST_ID";
+    private static final String GAME_SESSION_ACTIVITY_ALIAS =
+            "com.wayward.launcher.GameSessionActivity";
     private static final Pattern MOD_ID=Pattern.compile("(?:\\bid\\s*:\\s*|[\\\"']id[\\\"']\\s*:\\s*)[\\\"']([a-z0-9][a-z0-9._-]*)[\\\"']");
     private Uri treeUri;
     private SafTree tree;
@@ -995,7 +997,8 @@ public final class MainActivity extends Activity {
         }
 
         MainActivity existing=findSessionActivity(id);
-        Intent intent=new Intent(this,MainActivity.class);
+        Intent intent=new Intent();
+        intent.setClassName(this,GAME_SESSION_ACTIVITY_ALIAS);
         intent.setData(Uri.parse("wayward://session/"+Uri.encode(id)));
         intent.putExtra(EXTRA_GAME_LAUNCH_REQUEST_ID,requestId);
         // Each profile has a distinct wayward://session/{id} base-intent URI.
@@ -2035,7 +2038,8 @@ public final class MainActivity extends Activity {
                 // reordering can select a different MainActivity instance.
                 try {
                     session.openImageGenPanel();
-                    Intent route = new Intent(this, MainActivity.class);
+                    Intent route = new Intent();
+                    route.setClassName(this, GAME_SESSION_ACTIVITY_ALIAS);
                     route.setData(Uri.parse("wayward://session/" + Uri.encode(sessionId)));
                     route.addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT);
                     startActivity(route);

@@ -173,6 +173,11 @@ assert.doesNotMatch(imageGenRoute, /FLAG_ACTIVITY_REORDER_TO_FRONT/,
   "Image Studio must not reorder to an arbitrary MainActivity instance");
 assert.doesNotMatch(manifest, /documentLaunchMode/,
   "document-task behavior must be opt-in on session intents, not global manifest behavior");
+assert.match(manifest, /activity-alias[\\s\\S]*?android:name="\.GameSessionActivity"[\\s\\S]*?android:targetActivity="\.MainActivity"[\\s\\S]*?android:taskAffinity="\\$\\{applicationId\\}\.games"/,
+  "game document tasks must use a dedicated affinity separate from the app-icon launcher task");
+assert.match(main, /setClassName\(this,GAME_SESSION_ACTIVITY_ALIAS\)/,
+  "game sessions must launch through the dedicated alias component");
+
 assert.match(main, /else if\(sessionProfileId\(getIntent\(\)\)!=null\)\{[\s\S]*?finish\(\);/, "root BACK in a game session must finish only the session Activity");
 assert.match(main, /if\(web\.canGoBack\(\)\)\{\s*web\.goBack\(\);/, "BACK inside WebView history must stay inside the game");
 assert.match(main, /ImagePackFolderPickerScript\.installDocumentStart\(\s*web,\s*imagePackFolderPickerScript,\s*origin\)/, "the directory adapter must register at document start when supported");

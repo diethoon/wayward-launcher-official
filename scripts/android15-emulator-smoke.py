@@ -249,7 +249,9 @@ def count_main_activity_instances() -> tuple[int, set[int], str]:
     task_ids = set()
     for match in re.finditer(r"ActivityRecord\{([^}]*)\}", state):
         body = match.group(1)
-        if PACKAGE not in body or "MainActivity" not in body:
+        if PACKAGE not in body or not any(
+                component in body for component in ("MainActivity", "GameSessionActivity")
+        ):
             continue
         fields = body.split()
         if fields:

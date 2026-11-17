@@ -291,3 +291,10 @@ Updated: 2026-11-15 (Asia/Seoul)
 ### Background/foreground intent verification — 2026-11-18
 - The previous Android 15 run passed URI-keyed per-profile tasks, same-profile Activity/WebView reuse, independent second-profile launch, and return to the first existing Activity/WebView.
 - Its last failure was the smoke test launching MAIN/LAUNCHER without the task flags supplied by an Android app-icon launch. Updated the two app-resume/restart invocations to use `FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_RESET_TASK_IF_NEEDED` (`0x10200000`). This models the actual launcher task-selection semantics and does not weaken Activity/Task assertions or change product launch mode.
+
+
+### Dedicated game-task affinity — 2026-11-18
+- The #44119453386 Android 15 run still reported duplicate launcher Activity records when the smoke test returned from HOME using real MAIN/LAUNCHER task flags. Per-profile document routing itself passed: directory bridge, pack.json and ZIP multi-select, same-profile Activity/WebView reuse, independent second-profile launch, and return to the original Activity/WebView.
+- Root cause: game document Tasks inherited the same default `taskAffinity` as the real app-icon MainActivity. Android's launcher MAIN/LAUNCHER task selection could choose a game document Task as the matching app task, then stack a second launcher MainActivity into it.
+- Added a non-exported `GameSessionActivity` alias targeting the existing `MainActivity`, with affinity `${applicationId}.games`. Game-session and Image Studio return intents target this alias with their per-profile `wayward://session/{id}` URI and `FLAG_ACTIVITY_NEW_DOCUMENT`. The real app icon continues targeting the original exported MainActivity under the default application affinity.
+- The alias instantiates the same MainActivity Java class; no duplicate Activity implementation or WebView is created. Pairing, QR, Remote Play, and other launcher entry points remain on the original MainActivity. Updated the ActivityRecord counter to include both alias records and the shared Java target.
