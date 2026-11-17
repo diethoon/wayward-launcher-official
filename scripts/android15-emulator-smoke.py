@@ -72,8 +72,9 @@ def parse_wayward_recent_task_records(dumpsys_output: str) -> list[tuple[int, st
     return records
 
 
-def ensure_previous_diagnostic_journals() -> None:
+def ensure_previous_diagnostic_journals() -> set[str]:
     """Ensure both rotated journals exist so the manual ZIP path verifies their inclusion."""
+    seeded: set[str] = set()
     fixtures = {
         "launcher.previous.ndjson": {
             "id": "ci-previous-launcher",
@@ -98,12 +99,14 @@ def ensure_previous_diagnostic_journals() -> None:
         if current.returncode == 0 and (current.stdout or "").strip():
             continue
         encoded = base64.b64encode(
-            (json.dumps(event, separators=(",", ":")) + "\\n").encode("utf-8")
+            (json.dumps(event, separators=(",", ":")) + "\n").encode("utf-8")
         ).decode("ascii")
         adb(
             "shell", "run-as", PACKAGE, "sh", "-c",
             "printf '%s' " + encoded + " | base64 -d > files/diagnostics/" + name,
         )
+        seeded.add(name)
+    return seeded
 
 
 def make_png() -> bytes:
@@ -609,7 +612,7 @@ window.pickImagePackFolder = async function() {
     diagnostics_button = node_bounds(home_xml, ("진단",))
     if diagnostics_button is None:
         raise RuntimeError("The launcher home screen did not expose the diagnostics share button.")
-    ensure_previous_diagnostic_journals()
+    seeded_previous = ensure_previous_diagnostic_journals()
     tap_bounds(diagnostics_button)
     time.sleep(2)
     chooser_state = adb("shell", "dumpsys", "activity", "activities", check=False, capture=True).stdout or ""
@@ -648,10 +651,24 @@ window.pickImagePackFolder = async function() {
         metadata = json.loads(archive.read("metadata.json").decode("utf-8"))
         if not metadata.get("appVersion") or not metadata.get("androidSdk"):
             raise RuntimeError("The shared ZIP metadata is missing the app or Android build information.")
-        if "previous_launcher_journal_fixture" not in archive.read("launcher.previous.ndjson").decode("utf-8"):
-            raise RuntimeError("The ZIP did not preserve the previous launcher journal contents.")
-        if "previous_imagepack_journal_fixture" not in archive.read("imagepack.previous.ndjson").decode("utf-8"):
-            raise RuntimeError("The ZIP did not preserve the previous image-pack journal contents.")
+        previous_payloads = {}
+        for name in expected_previous:
+            payload = archive.read(name).decode("utf-8")
+            lines = [line for line in payload.splitlines() if line.strip()]
+            if not lines:
+                raise RuntimeError("The ZIP contains an empty previous journal: " + name)
+            try:
+                for line in lines:
+                    json.loads(line)
+            except json.JSONDecodeError as error:
+                raise RuntimeError("The previous journal is not valid NDJSON: " + name) from error
+            previous_payloads[name] = payload
+        if ("launcher.previous.ndjson" in seeded_previous
+                and "previous_launcher_journal_fixture" not in previous_payloads["launcher.previous.ndjson"]):
+            raise RuntimeError("The ZIP did not preserve the seeded previous launcher journal record.")
+        if ("imagepack.previous.ndjson" in seeded_previous
+                and "previous_imagepack_journal_fixture" not in previous_payloads["imagepack.previous.ndjson"]):
+            raise RuntimeError("The ZIP did not preserve the seeded previous image-pack journal record.")
         events = [json.loads(line) for line in archive.read("imagepack.ndjson").decode("utf-8").splitlines() if line.strip()]
         if not events or not any(item.get("requestId") for item in events):
             raise RuntimeError("The ZIP has no correlated image-picker request diagnostics.")

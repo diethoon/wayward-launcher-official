@@ -177,6 +177,10 @@ assert.match(smoke, /picker-frame\.html/, "the integration test must invoke the 
 assert.match(smoke, /ChooserActivity|ResolverActivity/, "Android 15 smoke must verify the diagnostic ZIP share sheet opens");
 assert.match(smoke, /wayward-diagnostics-/, "Android 15 smoke must verify a diagnostic ZIP was generated");
 assert.match(smoke, /"launcher\.ndjson"/, "Android 15 smoke must verify the ZIP contains general launcher diagnostics");
+assert.match(smoke, /ensure_previous_diagnostic_journals\(\)/,
+  "Android 15 smoke must create or retain previous journals for ZIP inclusion checks");
+assert.match(smoke, /json\.loads\(line\)/,
+  "Android 15 smoke must validate previous journal entries as NDJSON");
 assert.match(smoke, /PASS_PACK_JSON_MULTI_FILES/, "the game session must regression-test multiple real pack.json selection");
 assert.match(smoke, /PASS_ZIP_MULTI_FILES/, "the game session must regression-test ZIP multi-selection");
 assert.match(smoke, /dumpsys", "activity", "recents"/, "the Android 15 test must inspect the actual Recent Apps task list");

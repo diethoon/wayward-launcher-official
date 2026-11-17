@@ -221,3 +221,8 @@ Updated: 2026-11-15 (Asia/Seoul)
 - Added dependency-free severity tests for WARN/ERROR and rejection of INFO/DEBUG/TRACE/empty/null, plus a source contract ensuring the logger's reader invokes the policy.
 - The Android 15 smoke fixture now ensures both previous journal files exist and verifies their contents, as well as the active journals and metadata, in the manual ZIP. It continues scanning every included NDJSON file for credentials, full content URIs, and absolute paths.
 - Previous full CI run on the pre-correction commit: [Run #44007028392](https://github.com/diethoon/wayward-launcher-official/actions/runs/44007028392) succeeded, including Android 15 emulator UI and existing native instrumentation. This follow-up requires its own final CI run.
+
+
+### Previous-journal ZIP verification detail — 2026-11-17
+- The Android 15 export test retains pre-existing rotated files; when either is absent/empty in the clean emulator, it writes a small valid NDJSON fixture without replacing existing content.
+- ZIP acceptance parses every previous-journal line as JSON and confirms newly seeded fixture records are preserved. This verifies actual rotated-log inclusion rather than only checking exporter source.
