@@ -2425,9 +2425,6 @@ public class MainActivity extends Activity {
                         && imagePackFolderPickerOrigin.equals(sessionOrigin(activeProfileId));
                 boolean trustedCapability = ImagePackFolderPickerScript.matchesCapability(
                         imagePackFolderPickerCapability, capability);
-                Log.i("WaywardImagePackSAF", "bridge_request received origin=" + trustedOrigin
-                        + " capability=" + trustedCapability + " requestIdPresent="
-                        + (requestId != null && !requestId.isEmpty()));
                 if (!trustedOrigin || !trustedCapability) {
                     ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, requestId,
                             "wmlhost_choose_folder_rejected", "error",
