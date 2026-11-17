@@ -349,3 +349,9 @@ Updated: 2026-11-15 (Asia/Seoul)
 ### Cloudflare diagnostic upload end-to-end acceptance — 2026-11-18
 - Extended the Android 15 MainActivity diagnostics-button test to wait for the durable `diagnostics_cloud_upload_succeeded` event in the local image-pack journal. A ticket rejection, upload HTTP error, timeout, or absent completion event now fails acceptance with the safe result code.
 - This verifies the user-triggered Cloudflare `/v1/ticket` + checksum-bound `/v1/upload` path, not merely ZIP generation and share-sheet presentation. The test emulator sends only its generated fixture diagnostics ZIP; no installed user's game folder or selected game files are involved.
+
+
+### Launcher Activity singleTop — 2026-11-18
+- Android 15 run #44128228790 retained the full activity/task dump after the final background/foreground failure. Task 10 contained two `MainActivity` records: the original root (ActivityRecord `912f62d`) and a second top instance (ActivityRecord `64d6d85`) created from the second MAIN/LAUNCHER intent. They shared the launcher Task ID; per-profile GameSessionActivity Task affinity and URI routing were already correct.
+- Set `android:launchMode="singleTop"` only on the exported launcher `.MainActivity`. When the launcher Activity is already the top entry after game sessions close, tapping the app icon now delivers `onNewIntent` to that existing home instance instead of stacking another MainActivity. This is deliberately not `singleTask`.
+- `.GameSessionActivity` does not inherit this manifest launch mode; it remains standard and continues to create/reuse URI-keyed per-profile document tasks under `${applicationId}.games`. QR pairing, Remote Play, and other activity entry points are unchanged.

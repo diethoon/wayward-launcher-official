@@ -208,6 +208,11 @@ assert.ok(gameSessionActivity.length > 0,
   "the dedicated game-session activity must be declared");
 assert.ok(gameSessionActivity.includes('android:taskAffinity="${applicationId}.games"'),
   "the real game-session activity must use a task affinity separate from the app-icon launcher task");
+const launcherActivity = manifest.match(/<activity android:name="\.MainActivity"[^>]*>/)?.[0] || "";
+assert.ok(launcherActivity.includes('android:launchMode="singleTop"'),
+  "the app-icon launcher MainActivity must receive a new launcher intent instead of stacking a duplicate home Activity");
+assert.doesNotMatch(gameSessionActivity, /android:launchMode=/,
+  "per-profile GameSessionActivity must retain standard document-root behavior and independent Activity instances");
 assert.doesNotMatch(manifest, /<activity-alias/,
   "game task affinity must be defined on a real activity, not an alias that inherits MainActivity affinity");
 const gameSessionSource = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/GameSessionActivity.java", import.meta.url), "utf8");
