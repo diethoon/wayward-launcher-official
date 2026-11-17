@@ -248,6 +248,10 @@ assert.match(smoke, /wayward-diagnostics-/, "Android 15 smoke must verify a diag
 assert.match(smoke, /"launcher\.ndjson"/, "Android 15 smoke must verify the ZIP contains general launcher diagnostics");
 assert.match(smoke, /ensure_previous_diagnostic_journals\(\)/,
   "Android 15 smoke must create or retain previous journals for ZIP inclusion checks");
+assert.match(smoke, /diagnostics_dir = "\/data\/user\/0\/" \+ PACKAGE \+ "\/files\/diagnostics"/,
+  "diagnostic fixtures must target the exact Android getFilesDir diagnostics folder");
+assert.match(smoke, /mkdir -p " \+ diagnostics_dir \+ " && echo "/,
+  "the fixture writer must create its target folder and seed NDJSON in one shell operation");
 assert.match(smoke, /json\.loads\(line\)/,
   "Android 15 smoke must validate previous journal entries as NDJSON");
 assert.match(smoke, /PASS_PACK_JSON_MULTI_FILES/, "the game session must regression-test multiple real pack.json selection");

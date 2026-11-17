@@ -76,7 +76,9 @@ def parse_wayward_recent_task_records(dumpsys_output: str) -> list[tuple[int, st
 def ensure_previous_diagnostic_journals() -> set[str]:
     """Ensure both rotated journals exist so the manual ZIP path verifies their inclusion."""
     seeded: set[str] = set()
-    adb("shell", "run-as", PACKAGE, "mkdir", "-p", "files/diagnostics")
+    # run-as starts the shell with an implementation-dependent working directory;
+    # write to the exact getFilesDir() path used by ImagePackDiagnostics.
+    diagnostics_dir = "/data/user/0/" + PACKAGE + "/files/diagnostics"
     fixtures = {
         "launcher.previous.ndjson": {
             "id": "ci-previous-launcher",
@@ -105,7 +107,8 @@ def ensure_previous_diagnostic_journals() -> set[str]:
         ).decode("ascii")
         adb(
             "shell", "run-as", PACKAGE, "sh", "-c",
-            "printf '%s' " + encoded + " | base64 -d > files/diagnostics/" + name,
+            "mkdir -p " + diagnostics_dir + " && echo " + encoded
+            + " | base64 -d > " + diagnostics_dir + "/" + name,
         )
         seeded.add(name)
     return seeded
