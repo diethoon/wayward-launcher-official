@@ -422,3 +422,7 @@ Updated: 2026-11-15 (Asia/Seoul)
 
 ### Diagnostic upload/share same-file assertion — 2026-11-18
 - Tightened the retry-aware contract: it now asserts both Cloudflare upload and Android sharesheet receive the same `selectedArchive` object, for either a new diagnostic ZIP or a retry of a previously failed one.
+
+
+### Retry marker static test reference correction — 2026-11-18
+- The upload retry contract assertions were accidentally checking the pre-existing WARN/ERROR `DiagnosticsUploader` source variable instead of the newly added `DiagnosticsBundleUploader` source. Pointed the marker, failure-retention and success-cleanup assertions at the actual ZIP uploader implementation; no product code changed.
