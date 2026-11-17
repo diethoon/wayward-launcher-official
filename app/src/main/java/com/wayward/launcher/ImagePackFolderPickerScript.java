@@ -58,7 +58,8 @@ final class ImagePackFolderPickerScript {
             if (!source.contains(placeholder)) {
                 throw new IOException("imagepack-folder-picker.js is missing its native capability placeholder.");
             }
-            return source.replace(placeholder, JSONObject.quote(capability));
+            // The asset already wraps the marker in quotes; capability is URL-safe Base64.
+            return source.replace(placeholder, capability);
         }
     }
 
