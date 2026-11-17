@@ -113,6 +113,11 @@ final class ImagePackDirectoryAccess {
         });
     }
 
+    void rejectRequest(String requestId, String errorName, String message) {
+        if (requestId == null || !requestId.matches("[A-Za-z0-9._:-]{1,128}")) return;
+        deliver(requestId, failure(errorName, message));
+    }
+
     private Uri resolveInitialPickerUri() {
         if (initialUriForTesting != null) return initialUriForTesting;
         if (treeUri != null) {
