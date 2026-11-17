@@ -404,3 +404,7 @@ Updated: 2026-11-15 (Asia/Seoul)
 - 진단 버튼은 기존 `*.zip.upload-pending` 마커가 있으면 새 ZIP을 생성하지 않고 해당 ZIP을 재사용해 Cloudflare에 재전송한다. 업로드가 이미 실행 중인 중복 터치는 새 요청이나 새 공유 ZIP을 만들지 않고 안내한다.
 - 업로더는 서버가 `ok=true`와 유효한 `submissionId`를 반환한 경우에만 재시도 마커를 삭제한다. 네트워크, 타임아웃, HTTP/서버 실패는 ZIP을 cache에 남기고 fsync한 retry 마커를 유지한다.
 - cache pruning으로 ZIP이 사라지고 마커만 남으면 stale marker를 지우고 새 ZIP을 생성한다. 기존 Android 공유 시트는 업로드와 동일한 ZIP을 계속 사용한다.
+
+
+### ② 진단 ZIP 재시도 런타임 계측 — 2026-11-18
+- Added `DiagnosticsBundleUploaderInstrumentedTest`: creates a private cache ZIP fixture, asserts no pending marker initially, simulates failed upload by writing the pending marker, verifies the exact same filename is selected for retry, and verifies the marker disappears only when the success-path cleanup is called. The test always removes its own fixture.

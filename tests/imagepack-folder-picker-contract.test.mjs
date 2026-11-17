@@ -153,6 +153,10 @@ assert.match(uploader, /rememberPendingArchive\(archive\)/,
   "network, timeout, and server failures must keep the ZIP available for retry");
 assert.match(uploader, /clearPendingArchive\(archive\)/,
   "the retry marker must only clear following a valid server success response");
+const diagnosticsRetryTest = readFileSync(new URL("../app/src/androidTest/java/com/wayward/launcher/DiagnosticsBundleUploaderInstrumentedTest.java", import.meta.url), "utf8");
+assert.match(diagnosticsRetryTest, /failedZipIsSelectedAgainAndMarkerClearsOnlyAfterSuccess/,
+  "Android instrumentation must verify failed ZIP reuse and marker clearing");
+
 
 assert.match(bundleUploader, /setConnectTimeout|setReadTimeout/,
   "network operations must have bounded timeouts");
