@@ -414,3 +414,7 @@ Updated: 2026-11-15 (Asia/Seoul)
 - Replaced full-resolution `InputImage.fromFilePath()` decoding with a bounded decode: read dimensions only first, reject invalid or extreme (>100,000 px) source dimensions, choose power-of-two sampling to cap output to 4096 px per side and 8 million pixels, preserve EXIF rotation, then decode and pass the sampled bitmap to ML Kit.
 - The temporary bitmap is recycled after ML Kit success/failure, after optional scanner module setup fails, or if the Activity is finishing. The selected URI and QR payload are never logged or persisted.
 - Added Android instrumentation covering standard image no-resize, 12k×8k sampling and pixel ceiling, 4096-square source sampling, zero dimensions and extreme dimensions.
+
+
+### Diagnostic uploader contract follows retry-selected archive — 2026-11-18
+- The current implementation now deliberately selects either the failed ZIP retained by `findPendingArchive()` or a newly created ZIP, stores that selection in `selectedArchive`, and uploads/shares that exact object. Updated the static contract from the original local variable name `archive` to `selectedArchive`; behavior is unchanged and retry semantics remain explicitly covered by the instrumentation test.

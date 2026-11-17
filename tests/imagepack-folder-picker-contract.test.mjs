@@ -124,8 +124,8 @@ assert.match(uploader, /https:\/\/wayward-launcher-diagnostics-/,
   "diagnostic events must be sent over HTTPS");
 
 const bundleUploader = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/DiagnosticsBundleUploader.java", import.meta.url), "utf8");
-assert.match(main, /DiagnosticsBundleUploader\.upload\(this, archive/,
-  "the diagnostics button must automatically upload the generated ZIP on explicit tap");
+assert.match(main, /DiagnosticsBundleUploader\.upload\(this, selectedArchive/,
+  "the diagnostics button must automatically upload the selected new or retry ZIP on explicit tap");
 assert.match(exporter, /static void share\(Activity activity, File archive\)/,
   "the existing native share sheet must use the same ZIP as Cloudflare upload");
 assert.match(bundleUploader, /https:\/\/wayward-diagnostics-ingest\.trpgengine\.workers\.dev/,
