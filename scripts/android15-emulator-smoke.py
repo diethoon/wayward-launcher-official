@@ -28,6 +28,7 @@ LOCAL_PID = pathlib.Path("/tmp/wayward-launcher-app-pid.txt")
 LOCAL_CRASH = pathlib.Path("/tmp/wayward-launcher-crash.log")
 FIXTURE_FOLDER = "/sdcard/Download"
 GAME_FOLDER = "/sdcard/Download/WaywardGameTest"
+GAME_FOLDER_TWO = "/sdcard/Download/WaywardGameTestTwo"
 
 
 def run(command: list[str], *, check: bool = True, capture: bool = False) -> subprocess.CompletedProcess:
@@ -167,6 +168,26 @@ def tap_bounds(bounds: tuple[int, int, int, int]) -> None:
     adb("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
 
 
+def node_bounds_all_exact(xml: str, labels: tuple[str, ...]) -> list[tuple[int, int, int, int]]:
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError:
+        return []
+    wanted = {label.casefold() for label in labels}
+    found = []
+    for node in root.iter("node"):
+        if node.attrib.get("clickable", "false") != "true" or node.attrib.get("enabled", "true") != "true":
+            continue
+        text = node.attrib.get("text", "").strip().casefold()
+        description = node.attrib.get("content-desc", "").strip().casefold()
+        if text not in wanted and description not in wanted:
+            continue
+        match = re.search(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if match:
+            found.append(tuple(int(value) for value in match.groups()))
+    return found
+
+
 def node_bounds_exact(xml: str, labels: tuple[str, ...]) -> tuple[int, int, int, int] | None:
     try:
         root = ET.fromstring(xml)
@@ -222,7 +243,56 @@ def wait_for_ui_contains(local_path: pathlib.Path, device_path: str, marker: str
     raise RuntimeError("Timed out waiting for UI marker " + marker + ": " + latest[-2500:])
 
 
-def choose_download_as_game_folder(local_path: pathlib.Path, device_path: str) -> str:
+def count_main_activity_instances() -> tuple[int, set[int], str]:
+    state = adb("shell", "dumpsys", "activity", "activities", check=False, capture=True).stdout or ""
+    records = set()
+    task_ids = set()
+    for match in re.finditer(r"ActivityRecord\{([^}]*)\}", state):
+        body = match.group(1)
+        if PACKAGE not in body or "MainActivity" not in body:
+            continue
+        fields = body.split()
+        if fields:
+            records.add(fields[0])
+        task = re.search(r"\bt(\d+)\b", body)
+        if task:
+            task_ids.add(int(task.group(1)))
+    return len(records), task_ids, state
+
+
+def read_launcher_events() -> list[dict]:
+    result = adb("shell", "run-as", PACKAGE, "cat", "files/diagnostics/launcher.ndjson",
+                 check=False, capture=True)
+    if result.returncode != 0:
+        return []
+    events = []
+    for line in (result.stdout or "").splitlines():
+        try:
+            item = json.loads(line)
+            details = item.get("details", "")
+            if isinstance(details, str):
+                try:
+                    item["parsedDetails"] = json.loads(details) if details else {}
+                except json.JSONDecodeError:
+                    item["parsedDetails"] = {}
+            else:
+                item["parsedDetails"] = details if isinstance(details, dict) else {}
+            events.append(item)
+        except json.JSONDecodeError:
+            continue
+    return events
+
+
+def session_events(events: list[dict], event_name: str, session_id: str) -> list[dict]:
+    return [
+        event for event in events
+        if event.get("event") == event_name
+        and event.get("parsedDetails", {}).get("sessionId") == session_id
+    ]
+
+
+def choose_download_as_game_folder(local_path: pathlib.Path, device_path: str,
+                                   folder_name: str = "WaywardGameTest") -> str:
     """Drive the real MainActivity game-folder SAF picker and select a child of Download."""
     home_xml = dump_ui(local_path, device_path)
     add_button = node_bounds(home_xml, ("현재 기기 폴더", "Add device folder"))
@@ -237,7 +307,7 @@ def choose_download_as_game_folder(local_path: pathlib.Path, device_path: str) -
         latest = dump_ui(local_path, device_path)
 
         if download_selected and not game_folder_opened:
-            child_folder = node_bounds(latest, ("WaywardGameTest",), require_clickable=False)
+            child_folder = node_bounds(latest, (folder_name,), require_clickable=False)
             if child_folder is not None:
                 tap_bounds(child_folder)
                 game_folder_opened = True
@@ -270,7 +340,7 @@ def choose_download_as_game_folder(local_path: pathlib.Path, device_path: str) -
         time.sleep(1)
     else:
         (ARTIFACTS / "android15-game-tree-picker.xml").write_text(latest, encoding="utf-8")
-        raise RuntimeError("DocumentsUI did not allow the real launcher to select Download/WaywardGameTest.")
+        raise RuntimeError("DocumentsUI did not allow the real launcher to select Download/" + folder_name + ".")
 
     # Android may ask for a second explicit grant after the tree button is pressed.
     time.sleep(1)
@@ -396,6 +466,9 @@ def run_main_activity_game_session_acceptance() -> None:
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body>
 <h1>WAYWARD MAIN ACTIVITY GAME SESSION</h1>
+<button id="interact">Interact with game</button>
+<div id="interaction-result">WAITING_FOR_GAME_INTERACTION</div>
+<button id="return-home">Return to launcher</button>
 <button id="pick">Open image-pack folder</button>
 <iframe id="picker-frame" src="picker-frame.html" title="Image-pack folder picker frame"
         style="width:1px;height:1px;border:0"></iframe>
@@ -406,6 +479,15 @@ def run_main_activity_game_session_acceptance() -> None:
 <a id="second" href="session-second.html">Open second internal page</a>
 <div id="result">READY</div><div id="file-result">FILE_READY</div>
 <script>
+let interactionCount = 0;
+document.getElementById('interact').addEventListener('click', () => {
+  interactionCount += 1;
+  document.getElementById('interaction-result').textContent =
+    'GAME_INTERACTION_OK count=' + interactionCount;
+});
+document.getElementById('return-home').addEventListener('click', () => {
+  if (window.WMLHost && typeof window.WMLHost.menu === 'function') window.WMLHost.menu();
+});
 document.getElementById('pick').addEventListener('click', async () => {
   try {
     const frame = document.getElementById('picker-frame');
@@ -470,6 +552,10 @@ window.pickImagePackFolder = async function() {
 };
 </script></body></html>"""
     (fixture_dir / "Wayward_WML_ko.html").write_text(game_page, encoding="utf-8")
+    second_game_page = game_page.replace(
+        "WAYWARD MAIN ACTIVITY GAME SESSION", "WAYWARD SECOND GAME SESSION"
+    )
+    (fixture_dir / "Wayward_WML_ko-second.html").write_text(second_game_page, encoding="utf-8")
     (fixture_dir / "session-second.html").write_text(second_page, encoding="utf-8")
     (fixture_dir / "picker-frame.html").write_text(picker_page, encoding="utf-8")
     for archive_name in ("test-one.zip", "test-two.zip"):
@@ -492,20 +578,23 @@ window.pickImagePackFolder = async function() {
     for archive_name in ("test-one.zip", "test-two.zip"):
         adb("push", str(fixture_dir / archive_name), FIXTURE_FOLDER + "/" + archive_name)
 
-    adb("shell", "mkdir", "-p", GAME_FOLDER)
-    adb("push", str(fixture_dir / "Wayward_WML_ko.html"), GAME_FOLDER + "/Wayward_WML_ko.html")
-    adb("push", str(fixture_dir / "session-second.html"), GAME_FOLDER + "/session-second.html")
-    adb("push", str(fixture_dir / "picker-frame.html"), GAME_FOLDER + "/picker-frame.html")
+    for folder in (GAME_FOLDER, GAME_FOLDER_TWO):
+        adb("shell", "mkdir", "-p", folder)
+        game_asset = "Wayward_WML_ko-second.html" if folder == GAME_FOLDER_TWO else "Wayward_WML_ko.html"
+        adb("push", str(fixture_dir / game_asset), folder + "/Wayward_WML_ko.html")
+        adb("push", str(fixture_dir / "session-second.html"), folder + "/session-second.html")
+        adb("push", str(fixture_dir / "picker-frame.html"), folder + "/picker-frame.html")
     adb("shell", "appops", "set", "--uid", PACKAGE, "MANAGE_EXTERNAL_STORAGE", "allow")
     adb("logcat", "-c")
 
     picker_local = pathlib.Path("/tmp/wayward-main-activity-game.xml")
     picker_device = "/sdcard/wayward-main-activity-game.xml"
-    home_xml = choose_download_as_game_folder(picker_local, picker_device)
-    launch_button = node_bounds(home_xml, ("실행", "Launch"))
-    if launch_button is None:
-        raise RuntimeError("The registered Download game profile did not expose its launch button.")
-    tap_bounds(launch_button)
+    home_xml = choose_download_as_game_folder(picker_local, picker_device, "WaywardGameTest")
+    home_xml = choose_download_as_game_folder(picker_local, picker_device, "WaywardGameTestTwo")
+    launch_buttons = node_bounds_all_exact(home_xml, ("실행", "Launch"))
+    if len(launch_buttons) != 2:
+        raise RuntimeError("The launcher did not retain exactly two registered game profiles.")
+    tap_bounds(launch_buttons[0])
 
     game_xml = wait_for_ui_contains(
         picker_local, picker_device, "Open image-pack folder", timeout_seconds=35
@@ -576,7 +665,136 @@ window.pickImagePackFolder = async function() {
         raise RuntimeError("The WebView ZIP multi-select callback did not return both selected URIs.")
     print("PASS: the real game WebView ZIP multi-select callback returned both selected files.")
 
-    second_link = node_bounds(zip_xml, ("Open second internal page",))
+    first_count, first_tasks, first_state = count_main_activity_instances()
+    if first_count != 2:
+        (ARTIFACTS / "android15-game-activity-stack-before-relaunch.txt").write_text(first_state, encoding="utf-8")
+        raise RuntimeError("Expected launcher + one game-session MainActivity before relaunch; found "
+                           + str(first_count) + " activities.")
+    events = read_launcher_events()
+    first_created = [event for event in events if event.get("event") == "game_webview_created"]
+    if len(first_created) != 1:
+        raise RuntimeError("The first game launch did not create exactly one WebView instance.")
+    first_session = first_created[0].get("parsedDetails", {}).get("sessionId", "")
+    first_activity_instance = first_created[0].get("parsedDetails", {}).get("activityInstanceId", "")
+    first_webview_instance = first_created[0].get("parsedDetails", {}).get("webViewInstanceId", "")
+    if not first_session or not first_activity_instance or not first_webview_instance:
+        raise RuntimeError("The first game WebView creation event is missing instance/session correlation.")
+
+    return_button = node_bounds(zip_xml, ("Return to launcher",))
+    if return_button is None:
+        raise RuntimeError("The game fixture did not expose its return-to-launcher control.")
+    tap_bounds(return_button)
+    home_xml = wait_for_ui_contains(picker_local, picker_device, "내 게임", timeout_seconds=20)
+    same_profile_buttons = node_bounds_all_exact(home_xml, ("실행", "Launch"))
+    if len(same_profile_buttons) != 2:
+        raise RuntimeError("Both registered game launch actions were not present in the in-session launcher.")
+    count_before_relaunch, _, state_before_relaunch = count_main_activity_instances()
+    tap_bounds(same_profile_buttons[0])
+    game_xml = wait_for_ui_contains(
+        picker_local, picker_device, "Open image-pack folder", timeout_seconds=25
+    )
+    count_after_relaunch, _, state_after_relaunch = count_main_activity_instances()
+    (ARTIFACTS / "android15-game-activity-stack-same-profile-relaunch.txt").write_text(
+        state_after_relaunch, encoding="utf-8"
+    )
+    if count_before_relaunch != 2 or count_after_relaunch != count_before_relaunch:
+        raise RuntimeError(
+            "Same-profile relaunch created a duplicate MainActivity. Before="
+            + str(count_before_relaunch) + " after=" + str(count_after_relaunch)
+        )
+    events = read_launcher_events()
+    if len(session_events(events, "game_webview_created", first_session)) != 1:
+        raise RuntimeError("Same-profile relaunch recreated the existing game's WebView.")
+    same_instance_visible = [
+        event for event in session_events(events, "game_session_visible", first_session)
+        if event.get("parsedDetails", {}).get("activityInstanceId") == first_activity_instance
+        and event.get("parsedDetails", {}).get("webViewInstanceId") == first_webview_instance
+    ]
+    if not same_instance_visible:
+        raise RuntimeError("Same-profile relaunch did not re-show the original Activity and WebView instance.")
+    interact_button = node_bounds(game_xml, ("Interact with game",))
+    if interact_button is None:
+        raise RuntimeError("The relaunched game did not expose its interactive game action.")
+    tap_bounds(interact_button)
+    interaction_xml = wait_for_ui_contains(
+        picker_local, picker_device, "GAME_INTERACTION_OK count=1", timeout_seconds=15
+    )
+    if "GAME_INTERACTION_OK count=1" not in interaction_xml:
+        raise RuntimeError("The existing game WebView did not respond to a real user interaction.")
+    print("PASS: same-profile relaunch reused one Activity/WebView and the game fixture remained interactive.")
+
+    return_button = node_bounds(interaction_xml, ("Return to launcher",))
+    if return_button is None:
+        raise RuntimeError("The first game did not expose its launcher return control after interaction.")
+    tap_bounds(return_button)
+    home_xml = wait_for_ui_contains(picker_local, picker_device, "내 게임", timeout_seconds=20)
+    profile_buttons = node_bounds_all_exact(home_xml, ("실행", "Launch"))
+    if len(profile_buttons) != 2:
+        raise RuntimeError("The second registered game's launch action is missing.")
+    count_before_second, _, _ = count_main_activity_instances()
+    tap_bounds(profile_buttons[1])
+    second_game_xml = wait_for_ui_contains(
+        picker_local, picker_device, "WAYWARD SECOND GAME SESSION", timeout_seconds=35
+    )
+    count_after_second, _, second_stack = count_main_activity_instances()
+    (ARTIFACTS / "android15-game-activity-stack-two-sessions.txt").write_text(
+        second_stack, encoding="utf-8"
+    )
+    if count_before_second != 2 or count_after_second != 3:
+        raise RuntimeError("Launching a different profile did not create exactly one independent session Activity.")
+    events = read_launcher_events()
+    all_created = [event for event in events if event.get("event") == "game_webview_created"]
+    second_created = next((
+        event for event in all_created
+        if event.get("parsedDetails", {}).get("sessionId") != first_session
+    ), None)
+    if second_created is None:
+        raise RuntimeError("The second profile did not get its own independent WebView instance.")
+    second_session = second_created.get("parsedDetails", {}).get("sessionId", "")
+    second_activity_instance = second_created.get("parsedDetails", {}).get("activityInstanceId", "")
+    if not second_session or second_activity_instance == first_activity_instance:
+        raise RuntimeError("The second profile did not get an independent Activity identity.")
+    print("PASS: a different registered game opened in its own independent Activity and WebView.")
+
+    return_button = node_bounds(second_game_xml, ("Return to launcher",))
+    if return_button is None:
+        raise RuntimeError("The second game fixture did not expose its launcher return control.")
+    tap_bounds(return_button)
+    home_xml = wait_for_ui_contains(picker_local, picker_device, "내 게임", timeout_seconds=20)
+    profile_buttons = node_bounds_all_exact(home_xml, ("실행", "Launch"))
+    count_before_route, _, _ = count_main_activity_instances()
+    tap_bounds(profile_buttons[0])
+    first_game_xml = wait_for_ui_contains(
+        picker_local, picker_device, "WAYWARD MAIN ACTIVITY GAME SESSION", timeout_seconds=30
+    )
+    count_after_route, _, route_state = count_main_activity_instances()
+    (ARTIFACTS / "android15-game-activity-stack-routed-existing.txt").write_text(
+        route_state, encoding="utf-8"
+    )
+    if count_before_route != 3 or count_after_route != count_before_route:
+        raise RuntimeError("Returning to the existing profile created another MainActivity instance.")
+    events = read_launcher_events()
+    routed = [
+        event for event in session_events(events, "activity_new_intent", first_session)
+        if event.get("parsedDetails", {}).get("activityInstanceId") == first_activity_instance
+    ]
+    if not routed:
+        raise RuntimeError("The previous game session did not receive its matching session Intent via onNewIntent.")
+    if len(session_events(events, "game_webview_created", first_session)) != 1:
+        raise RuntimeError("Returning to the first profile replaced its original WebView.")
+    print("PASS: an existing other game session was brought to front by its session URI and original WebView identity.")
+
+    interact_button = node_bounds(first_game_xml, ("Interact with game",))
+    if interact_button is None:
+        raise RuntimeError("The routed-back game did not expose its interactive action.")
+    tap_bounds(interact_button)
+    first_interaction = wait_for_ui_contains(
+        picker_local, picker_device, "GAME_INTERACTION_OK count=2", timeout_seconds=15
+    )
+    if "GAME_INTERACTION_OK count=2" not in first_interaction:
+        raise RuntimeError("The routed-back game's original JavaScript state did not survive the profile switch.")
+
+    second_link = node_bounds(first_interaction, ("Open second internal page",))
     if second_link is None:
         raise RuntimeError("The game fixture did not expose its second internal page link.")
     tap_bounds(second_link)
@@ -593,7 +811,64 @@ window.pickImagePackFolder = async function() {
     adb("shell", "input", "keyevent", "4")
     home_xml = wait_for_ui_contains(picker_local, picker_device, "내 게임", timeout_seconds=25)
     if "WAYWARD MAIN ACTIVITY GAME SESSION" in home_xml:
-        raise RuntimeError("The root BACK did not finish only the game-session Activity.")
+        raise RuntimeError("Finishing the first session did not reveal the prior second-session launcher panel.")
+
+    second_profile_buttons = node_bounds_all_exact(home_xml, ("실행", "Launch"))
+    if len(second_profile_buttons) != 2:
+        raise RuntimeError("The prior second-session Activity lost its game profile actions.")
+    count_before_second_reuse, _, _ = count_main_activity_instances()
+    tap_bounds(second_profile_buttons[1])
+    second_game_xml = wait_for_ui_contains(
+        picker_local, picker_device, "WAYWARD SECOND GAME SESSION", timeout_seconds=25
+    )
+    count_after_second_reuse, _, _ = count_main_activity_instances()
+    if count_before_second_reuse != 2 or count_after_second_reuse != count_before_second_reuse:
+        raise RuntimeError("Returning to the second profile created a duplicate Activity.")
+    if node_bounds(second_game_xml, ("Interact with game",)) is None:
+        raise RuntimeError("The second game did not return to its original WebView content.")
+    adb("shell", "input", "keyevent", "4")
+    home_xml = wait_for_ui_contains(picker_local, picker_device, "내 게임", timeout_seconds=25)
+    final_activity_count, _, final_activity_state = count_main_activity_instances()
+    (ARTIFACTS / "android15-game-activity-stack-after-all-sessions.txt").write_text(
+        final_activity_state, encoding="utf-8"
+    )
+    if final_activity_count != 1:
+        raise RuntimeError("Returning from both game sessions did not leave exactly one launcher Activity.")
+
+    # Exercise app background/foreground and process termination/restart.
+    adb("shell", "input", "keyevent", "3")
+    time.sleep(2)
+    adb("shell", "am", "start", "-W", "-n", ACTIVITY)
+    home_xml = wait_for_ui_contains(picker_local, picker_device, "내 게임", timeout_seconds=20)
+    foreground_count, _, foreground_state = count_main_activity_instances()
+    if foreground_count != 1:
+        raise RuntimeError("Background/foreground returned with duplicate launcher Activities.")
+    (ARTIFACTS / "android15-game-activity-stack-after-background.txt").write_text(
+        foreground_state, encoding="utf-8"
+    )
+    adb("shell", "am", "force-stop", PACKAGE)
+    adb("shell", "am", "start", "-W", "-n", ACTIVITY)
+    home_xml = wait_for_ui_contains(picker_local, picker_device, "WaywardGameTestTwo", timeout_seconds=25)
+    restart_count, _, restart_state = count_main_activity_instances()
+    if restart_count != 1:
+        raise RuntimeError("A process restart did not restore a single clean launcher Activity.")
+    (ARTIFACTS / "android15-game-activity-stack-after-process-restart.txt").write_text(
+        restart_state, encoding="utf-8"
+    )
+    restart_buttons = node_bounds_all_exact(home_xml, ("실행", "Launch"))
+    if len(restart_buttons) != 2:
+        raise RuntimeError("Registered game profiles did not survive process termination.")
+    tap_bounds(restart_buttons[1])
+    restarted_game = wait_for_ui_contains(
+        picker_local, picker_device, "WAYWARD SECOND GAME SESSION", timeout_seconds=35
+    )
+    restart_interact = node_bounds(restarted_game, ("Interact with game",))
+    if restart_interact is None:
+        raise RuntimeError("The game did not launch after a process restart.")
+    tap_bounds(restart_interact)
+    wait_for_ui_contains(picker_local, picker_device, "GAME_INTERACTION_OK count=1", timeout_seconds=15)
+    adb("shell", "input", "keyevent", "4")
+    home_xml = wait_for_ui_contains(picker_local, picker_device, "내 게임", timeout_seconds=25)
 
     recent = adb("shell", "dumpsys", "activity", "recents", check=False, capture=True).stdout or ""
     launcher_tasks = parse_wayward_recent_task_records(recent)
