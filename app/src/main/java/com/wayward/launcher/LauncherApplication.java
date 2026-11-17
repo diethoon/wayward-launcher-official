@@ -15,12 +15,8 @@ public final class LauncherApplication extends Application {
     @Override public void onCreate() {
         super.onCreate();
         installCrashHandler();
-        if (getPackageName().equals(Application.getProcessName())) {
-            capturePreviousExitReasons();
-            DiagnosticsLogger.event(this, "INFO", "launcher", "process_started", null);
-        } else {
-            DiagnosticsLogger.event(this, "INFO", "imagegen_service", "process_started", null);
-        }
+        capturePreviousExitReasons();
+        DiagnosticsLogger.event(this, "INFO", "launcher", "process_started", null);
     }
 
     private void installCrashHandler() {
