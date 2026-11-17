@@ -733,12 +733,16 @@ def select_download_tree_through_documents_ui(
     (ARTIFACTS / f"{artifact_prefix}-documentsui-timeout.xml").write_text(
         latest, encoding="utf-8"
     )
+    logcat = adb("logcat", "-d", "-v", "threadtime", "-t", "2500", check=False, capture=True)
+    logcat_text = (logcat.stdout or "") + (logcat.stderr or "")
+    (ARTIFACTS / f"{artifact_prefix}-logcat.txt").write_text(logcat_text, encoding="utf-8")
     raise RuntimeError(
         "Android ACTION_OPEN_DOCUMENT_TREE did not complete Download selection; "
         + "picker_seen=" + str(picker_seen)
         + " use_folder_tapped=" + str(use_folder_tapped)
         + " allow_tapped=" + str(allow_tapped)
         + " last_ui=" + latest[-3500:]
+        + " logcat_tail=" + logcat_text[-6000:]
     )
 
 

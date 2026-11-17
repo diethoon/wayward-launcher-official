@@ -2413,32 +2413,49 @@ public class MainActivity extends Activity {
                     requestId, stage, detailsJson);
         }
         @JavascriptInterface public void chooseImagePackFolder(String requestId, String capability){
-            boolean trustedOrigin = web != null && activeProfileId != null
-                    && ImagePackFolderPickerScript.isSameOrigin(web.getUrl(), imagePackFolderPickerOrigin)
-                    && imagePackFolderPickerOrigin.equals(sessionOrigin(activeProfileId));
-            boolean trustedCapability = ImagePackFolderPickerScript.matchesCapability(
-                    imagePackFolderPickerCapability, capability);
-            if(!trustedOrigin || !trustedCapability){
+            // JavascriptInterface methods run on WebView's private background thread.
+            // WebView state and native Activity launches must be handled on the UI thread.
+            MainActivity.this.runOnUiThread(() ->
+                    chooseImagePackFolderOnUiThread(requestId, capability));
+        }
+        private void chooseImagePackFolderOnUiThread(String requestId, String capability) {
+            try {
+                boolean trustedOrigin = web != null && activeProfileId != null
+                        && ImagePackFolderPickerScript.isSameOrigin(web.getUrl(), imagePackFolderPickerOrigin)
+                        && imagePackFolderPickerOrigin.equals(sessionOrigin(activeProfileId));
+                boolean trustedCapability = ImagePackFolderPickerScript.matchesCapability(
+                        imagePackFolderPickerCapability, capability);
+                Log.i("WaywardImagePackSAF", "bridge_request received origin=" + trustedOrigin
+                        + " capability=" + trustedCapability + " requestIdPresent="
+                        + (requestId != null && !requestId.isEmpty()));
+                if (!trustedOrigin || !trustedCapability) {
+                    ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, requestId,
+                            "wmlhost_choose_folder_rejected", "error",
+                            ImagePackDiagnostics.details("requestSource", "showDirectoryPicker",
+                                    "originValidated", trustedOrigin, "capabilityValidated", trustedCapability));
+                    if (imagePackDirectoryAccess != null) imagePackDirectoryAccess.rejectRequest(requestId,
+                            trustedOrigin ? "NotAllowedError" : "SecurityError",
+                            "The image-pack folder request was rejected by the native security boundary.");
+                    return;
+                }
                 ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, requestId,
-                        "wmlhost_choose_folder_rejected", "error",
+                        "wmlhost_choose_folder_entered", "info",
                         ImagePackDiagnostics.details("requestSource", "showDirectoryPicker",
-                                "originValidated", trustedOrigin, "capabilityValidated", trustedCapability));
-                if(imagePackDirectoryAccess!=null)imagePackDirectoryAccess.rejectRequest(requestId,
-                        trustedOrigin ? "NotAllowedError" : "SecurityError",
-                        "The image-pack folder request was rejected by the native security boundary.");
-                return;
-            }
-            ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, requestId,
-                    "wmlhost_choose_folder_entered", "info",
-                    ImagePackDiagnostics.details("requestSource", "showDirectoryPicker",
-                            "originValidated", true, "capabilityValidated", true));
-            if(imagePackDirectoryAccess!=null)imagePackDirectoryAccess.openFolderPicker(requestId);
-            else {
-                ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, requestId,
-                        "wmlhost_directory_access_missing", "error", null);
-                if(web!=null)web.evaluateJavascript("(function(){if(typeof window.__waywardNativeImagePackPickerDispatch==='function')"
-                        + "window.__waywardNativeImagePackPickerDispatch(" + JSONObject.quote(requestId)
-                        + ",{ok:false,name:'NotReadableError',message:'Native folder access is unavailable.',state:'FAILED'});})()", null);
+                                "originValidated", true, "capabilityValidated", true));
+                if (imagePackDirectoryAccess != null) {
+                    imagePackDirectoryAccess.openFolderPicker(requestId);
+                } else {
+                    ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, requestId,
+                            "wmlhost_directory_access_missing", "error", null);
+                    if (web != null) web.evaluateJavascript("(function(){if(typeof window.__waywardNativeImagePackPickerDispatch==='function')"
+                            + "window.__waywardNativeImagePackPickerDispatch(" + JSONObject.quote(requestId)
+                            + ",{ok:false,name:'NotReadableError',message:'Native folder access is unavailable.',state:'FAILED'});})()", null);
+                }
+            } catch (Exception error) {
+                ImagePackDiagnostics.error(MainActivity.this, imagePackDiagnosticSessionId, requestId,
+                        "wmlhost_choose_folder_ui_dispatch_failed", error);
+                if (imagePackDirectoryAccess != null) imagePackDirectoryAccess.rejectRequest(requestId,
+                        "NotAllowedError", "Android could not start the system image-pack folder picker.");
             }
         }
         @JavascriptInterface public String listImagePackDirectoryForRequest(String path, String requestId){

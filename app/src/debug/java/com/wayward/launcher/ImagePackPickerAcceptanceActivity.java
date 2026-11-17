@@ -137,19 +137,30 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
 
     private final class TestWmlHost {
         @JavascriptInterface public void chooseImagePackFolder(String requestId, String capability) {
-            boolean trustedOrigin = webView != null
-                    && ImagePackFolderPickerScript.isSameOrigin(webView.getUrl(), TEST_ORIGIN);
-            boolean trustedCapability = ImagePackFolderPickerScript.matchesCapability(
-                    folderPickerCapability, capability);
-            if (!trustedOrigin || !trustedCapability) {
-                Log.w(TAG, "REJECT folder request origin=" + trustedOrigin
-                        + " capability=" + trustedCapability);
-                access.rejectRequest(requestId,
-                        trustedOrigin ? "NotAllowedError" : "SecurityError",
-                        "The folder request was rejected by the native test bridge.");
-                return;
+            // Mirror production: do not call WebView methods on the JavascriptInterface thread.
+            runOnUiThread(() -> chooseImagePackFolderOnUiThread(requestId, capability));
+        }
+        private void chooseImagePackFolderOnUiThread(String requestId, String capability) {
+            try {
+                boolean trustedOrigin = webView != null
+                        && ImagePackFolderPickerScript.isSameOrigin(webView.getUrl(), TEST_ORIGIN);
+                boolean trustedCapability = ImagePackFolderPickerScript.matchesCapability(
+                        folderPickerCapability, capability);
+                if (!trustedOrigin || !trustedCapability) {
+                    Log.w(TAG, "REJECT folder request origin=" + trustedOrigin
+                            + " capability=" + trustedCapability);
+                    access.rejectRequest(requestId,
+                            trustedOrigin ? "NotAllowedError" : "SecurityError",
+                            "The folder request was rejected by the native test bridge.");
+                    return;
+                }
+                Log.i(TAG, "PASS folder bridge request accepted on UI thread");
+                access.openFolderPicker(requestId);
+            } catch (Exception error) {
+                Log.e(TAG, "FAIL folder bridge UI dispatch", error);
+                access.rejectRequest(requestId, "NotAllowedError",
+                        "Android could not start the system image-pack folder picker.");
             }
-            access.openFolderPicker(requestId);
         }
         @JavascriptInterface public String listImagePackDirectory(String path) {
             return access.listDirectoryJson(path);
