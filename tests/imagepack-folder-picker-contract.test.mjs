@@ -235,6 +235,10 @@ assert.match(smoke, /run_main_activity_game_session_acceptance\(\)/, "Android 15
 assert.match(smoke, /PASS_GAME_SESSION_DIRECTORY_HANDLE/, "the game session must verify the JavaScript directory handle and image read");
 assert.match(smoke, /picker-frame\.html/, "the integration test must invoke the folder picker from a same-origin iframe");
 assert.match(smoke, /ChooserActivity|ResolverActivity/, "Android 15 smoke must verify the diagnostic ZIP share sheet opens");
+assert.match(smoke, /wait_for_cloudflare_diagnostic_upload\(\)/,
+  "Android 15 smoke must verify the diagnostics button successfully uploads its ZIP to Cloudflare");
+assert.match(smoke, /diagnostics_cloud_upload_succeeded/,
+  "the Android 15 upload acceptance must be based on the uploader's durable success event");
 assert.match(smoke, /wayward-diagnostics-/, "Android 15 smoke must verify a diagnostic ZIP was generated");
 assert.match(smoke, /"launcher\.ndjson"/, "Android 15 smoke must verify the ZIP contains general launcher diagnostics");
 assert.match(smoke, /ensure_previous_diagnostic_journals\(\)/,

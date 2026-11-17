@@ -608,6 +608,38 @@ def pick_multiple_zip_documents(local_path: pathlib.Path, device_path: str) -> N
     )
 
 
+def wait_for_cloudflare_diagnostic_upload(timeout_seconds: int = 75) -> dict:
+    deadline = time.monotonic() + timeout_seconds
+    last_failure = None
+    while time.monotonic() < deadline:
+        for journal in ("imagepack.previous.ndjson", "imagepack.ndjson"):
+            result = adb("shell", "run-as", PACKAGE, "cat", "files/diagnostics/" + journal,
+                         check=False, capture=True)
+            if result.returncode != 0:
+                continue
+            for line in (result.stdout or "").splitlines():
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                stage = event.get("stage")
+                details = event.get("details", {})
+                if isinstance(details, str):
+                    try:
+                        details = json.loads(details) if details else {}
+                    except json.JSONDecodeError:
+                        details = {}
+                if stage == "diagnostics_cloud_upload_succeeded":
+                    return details if isinstance(details, dict) else {}
+                if stage == "diagnostics_cloud_upload_failed":
+                    result_code = details.get("result", "unknown") if isinstance(details, dict) else "unknown"
+                    last_failure = str(result_code)[:120]
+        if last_failure:
+            raise RuntimeError("Cloudflare diagnostics ZIP upload failed: " + last_failure)
+        time.sleep(2)
+    raise RuntimeError("Timed out waiting for Cloudflare diagnostics ZIP upload success event.")
+
+
 def run_main_activity_game_session_acceptance() -> None:
     """Exercise the real game WebView, folder bridge, back stack, and Recents."""
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
@@ -1157,7 +1189,11 @@ window.pickImagePackFolder = async function() {
             payload = archive.read(name).decode("utf-8", errors="replace")
             if any(pattern.search(payload) for pattern in sensitive_patterns):
                 raise RuntimeError("The diagnostic ZIP exposes a credential, URI, or absolute path in " + name)
+    upload_result = wait_for_cloudflare_diagnostic_upload()
+    if not upload_result.get("success"):
+        raise RuntimeError("The Cloudflare upload success event did not confirm a successful submission.")
     print("PASS: diagnostic ZIP created, metadata and correlated events verified, Android sharesheet opened.")
+    print("PASS: user-triggered diagnostic ZIP received a successful Cloudflare ticketed upload.")
 
     adb("shell", "input", "keyevent", "4")
     adb("shell", "am", "force-stop", PACKAGE)

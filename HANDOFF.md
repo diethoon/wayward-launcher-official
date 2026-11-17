@@ -344,3 +344,8 @@ Updated: 2026-11-15 (Asia/Seoul)
 
 ### Same-ZIP upload/share contract — 2026-11-18
 - Updated the diagnostics contract to assert that the Cloudflare uploader and Android native sharesheet receive the same generated `archive` object. The old one-argument share contract no longer describes the preserved share path after adding upload.
+
+
+### Cloudflare diagnostic upload end-to-end acceptance — 2026-11-18
+- Extended the Android 15 MainActivity diagnostics-button test to wait for the durable `diagnostics_cloud_upload_succeeded` event in the local image-pack journal. A ticket rejection, upload HTTP error, timeout, or absent completion event now fails acceptance with the safe result code.
+- This verifies the user-triggered Cloudflare `/v1/ticket` + checksum-bound `/v1/upload` path, not merely ZIP generation and share-sheet presentation. The test emulator sends only its generated fixture diagnostics ZIP; no installed user's game folder or selected game files are involved.
