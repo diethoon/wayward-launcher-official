@@ -199,8 +199,8 @@ assert.doesNotMatch(filesystem, /ACTION_OPEN_DOCUMENT_TREE/, "Android 11+ custom
 assert.match(main, /new ImagePackDirectoryAccess\(this,web,activeProfileId,imagePackDiagnosticSessionId\)/, "the production game WebView must own the request-correlated native image-pack bridge");
 assert.match(main, /recordImagePackDiagnostic\(String requestId/, "JavaScript diagnostics must enter the durable journal through WMLHost");
 assert.match(main, /diagnostics=compactButton\("진단"/, "the launcher home screen must expose the diagnostics share action");
-assert.match(main, /DiagnosticsBundleExporter\.share\(this,\s*archive\)/,
-  "the diagnostics button must open the Android share flow with the same ZIP sent to Cloudflare");
+assert.match(main, /DiagnosticsBundleExporter\.share\(this,\s*selectedArchive\)/,
+  "the diagnostics button must open the Android share flow with the same selected ZIP sent to Cloudflare");
 assert.match(access, /__waywardNativeImagePackPickerDispatch/, "native completion must resolve the original frame instead of main-frame-only delivery");
 assert.match(main, /imagePackDirectoryAccess\.onResume\(\)/, "the production activity must recheck all-files permission on resume");
 const gameLaunch = main.split("private void launchProfileSession(String id)")[1]

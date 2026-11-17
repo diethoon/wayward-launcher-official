@@ -426,3 +426,7 @@ Updated: 2026-11-15 (Asia/Seoul)
 
 ### Retry marker static test reference correction — 2026-11-18
 - The upload retry contract assertions were accidentally checking the pre-existing WARN/ERROR `DiagnosticsUploader` source variable instead of the newly added `DiagnosticsBundleUploader` source. Pointed the marker, failure-retention and success-cleanup assertions at the actual ZIP uploader implementation; no product code changed.
+
+
+### Same selected ZIP sharesheet contract — 2026-11-18
+- Aligned the static share-flow contract with the retry-aware implementation: the generated or pending retry ZIP is normalized to `selectedArchive`, then that same file is passed to both Cloudflare upload and the Android chooser. The prior `archive` local variable no longer exists at the share call.
