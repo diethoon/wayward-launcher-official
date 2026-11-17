@@ -95,6 +95,20 @@ assert.match(exporter, /launcher\.ndjson/, "the manual diagnostic ZIP must inclu
 assert.match(exporter, /imagepack\.ndjson/, "the manual diagnostic ZIP must include image-pack request traces");
 assert.match(launcherLogger, /DiagnosticsUploader\.uploadPending\(app\)/,
   "urgent launcher events must trigger automatic upload");
+assert.match(launcherLogger, /CONTENT_URI\.matcher\(out\)/,
+  "launcher log must redact full content URIs");
+assert.match(launcherLogger, /ABSOLUTE_PATH\.matcher\(out\)/,
+  "launcher log must redact external and private absolute paths");
+assert.match(imageDiagnostics, /ABSOLUTE_PATH\.matcher\(safe\)/,
+  "image-pack log must redact external and private absolute paths");
+assert.doesNotMatch(uploader, /imagepack\.ndjson|wayward-diagnostics-|DiagnosticsBundleExporter/,
+  "automatic upload must not read image-pack logs or user-shared diagnostic ZIPs");
+assert.match(main, /Toast\.makeText\(this,\s*"진단 ZIP 수집 실패: "\s*\+\s*msg\(error\)/,
+  "ZIP creation/share failure must be visible to the user");
+assert.match(main, /"diagnostics_share_failed"/,
+  "ZIP creation/share failure must be retained in the local diagnostic journal");
+assert.match(manifest, /android:allowBackup="true"/,
+  "global Android backup must remain enabled while targeted data is excluded");
 assert.match(launcherLogger, /"ERROR".equalsIgnoreCase\(level\) \|\| "WARN".equalsIgnoreCase\(level\)/,
   "automatic upload must remain limited to errors and warnings");
 assert.match(uploader, /https:\/\/wayward-launcher-diagnostics-/,

@@ -191,3 +191,25 @@ Updated: 2026-11-15 (Asia/Seoul)
 - Verification boundary: the Android 15 acceptance uses a debug-only WebView acceptance activity with the same production ImagePackDirectoryAccess class and document-start JS adapter; production MainActivity WMLHost registration, document-start asset injection and result routing are also checked in source contract tests. This confirms actual SAF selection, permission retention, and image bytes read through the same native bridge, but it is not an end-to-end run inside the live Faith game / production Image Studio view with a real user image-pack library. That in-game renderer integration remains unverified.
 - Ordinary file/ZIP selection passed source-contract regression tests and remains on the original ACTION_OPEN_DOCUMENT path; a full interactive ZIP multi-select DocumentsUI run was not part of this acceptance.
 - No physical handset was used. The UI acceptance was run in Android 15 (API 35) emulator DocumentsUI. No merge to main, public release, or deployment was performed. At this acceptance, main remained at 574c8cff9ffd5fbba3dbde7e6646bcde6989a488; active work branch head is 11bb760c309ce6af69164f2574698056dc459953.
+
+
+## Android image-pack / diagnostics finalization — 2026-11-17
+
+### 기준점 및 CI 실패 원인
+- 저장소 diethoon/wayward-launcher-official, 브랜치 fix/android-qr-pairing-20261116.
+- 조사 기준 HEAD 32bef8980509adaa78cd0f489b77206b35621905.
+- Actions Run #43985651545는 계약 검사, Debug/Release 빌드, Release 서명 검증까지 통과했고 Android 15 emulator smoke의 Recents 검사에서 실패했다.
+- android15-recents-after-game-back.txt에는 Wayward MainActivity Task ID 8이 canonical Recent tasks 목록에 한 번만 기록되어 있었다. 동일 Task ID 8은 뒤의 Visible recent tasks 요약에서도 반복 표시된다.
+- 기존 파서는 dumpsys 전체를 분할해 요약 블록의 동일 Task를 두 번째 Task로 중복 집계했다. 증거상 제품의 이중 Task 생성이 아니라 테스트 파서의 false positive다.
+- 수정은 canonical Recent tasks 절의 실제 Task 엔트리와 정확한 Activity component/Task ID만 검사한다. MainActivity, game-session routing, BACK, FLAG_ACTIVITY_REORDER_TO_FRONT 제품 코드는 변경하지 않는다. 회귀 테스트는 요약 중복, 실제 2개 Task, callingPackage 오탐, canonical 절 누락을 검증한다.
+
+### 개인정보 및 자동 전송 경계
+- DiagnosticsUploader는 DiagnosticsLogger가 관리하는 런처 이벤트(launcher.ndjson, launcher.previous.ndjson)만 읽는다. WARN/ERROR 이벤트 및 앱 resume 시 재시도하며, imagepack.ndjson나 사용자가 직접 공유하는 ZIP은 읽거나 전송하지 않는다.
+- 런처 업로드 이벤트는 id/timestamp/level/component/event, 생성된 deviceId, appVersion, SDK/model/process/PID 및 redaction 처리된 details를 포함한다. 기존 이벤트 범위와 HTTPS endpoint는 유지한다.
+- 런처와 이미지팩 로그에 content URI 및 외부 저장소/앱 내부 절대 경로 정제를 추가한다. ZIP 자동 검증은 현재/이전 로그 포함, 게임 미디어 제외, 인증정보/URI/절대 경로 패턴 검사를 수행하도록 강화한다.
+- 기존 메인 화면 진단 버튼, ZIP exporter, FileProvider 공유 시트는 재사용한다. ZIP 공유 예외는 기존 MainActivity에서 로컬 진단 로그와 사용자 Toast로 기록한다.
+
+### 백업 및 실제 제품 검증 경계
+- backup_rules.xml과 data_extraction_rules.xml의 cloud-backup/device-transfer 모두 sharedpref/wayward_launcher.xml, root/app_webview/, file/diagnostics/ 제외가 이미 적용되어 있다. android:allowBackup="true"는 유지한다. 앱 전체 백업을 비활성화하지 않는다.
+- Android 15 CI 게임 페이지는 workflow가 생성하는 HTML fixture다. 실제 MainActivity와 production native bridge를 통과하지만 Faith/실제 게임에 배포된 Image Studio 자산 자체를 실행한 검증은 아니다. 물리 Android 기기도 사용하지 않았다.
+- 이전 실패 실행은 Recents assertion에서 중단되어 뒤의 진단 ZIP/share-sheet 검증은 실행되지 않았다. 다음 Actions 결과와 artifact에서 ZIP/share/privacy 검증을 별도 확인한다.

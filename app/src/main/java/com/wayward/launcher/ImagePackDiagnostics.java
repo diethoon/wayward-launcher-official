@@ -40,7 +40,9 @@ final class ImagePackDiagnostics {
     ));
     private static final Pattern BEARER = Pattern.compile("(?i)(Bearer\\s+)[A-Za-z0-9._~+/-]+=*");
     private static final Pattern SECRET = Pattern.compile("(?i)((?:access|refresh)?_?(?:token|api[_-]?key|secret|password|cookie)\\s*[:=]\\s*[\\\"']?)[^\\s,;\\\"'}&]+");
-    private static final Pattern ABSOLUTE_PATH = Pattern.compile("(?i)(/storage/emulated/\\d+|/sdcard)/[^\\s,;\\\"']+");
+    private static final Pattern ABSOLUTE_PATH = Pattern.compile(
+            "(?i)(?:/storage/emulated/\\d+|/sdcard|/mnt/user/\\d+/primary"
+                    + "|/data/(?:user(?:_de)?/\\d+|data)|/data/local/tmp)/[^\\s,;\\\"']+");
     private static final Pattern CONTENT_URI = Pattern.compile("content://[^\\s,;\\\"']+");
 
     private ImagePackDiagnostics() {}

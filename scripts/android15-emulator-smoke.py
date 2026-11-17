@@ -43,6 +43,34 @@ def adb(*args: str, check: bool = True, capture: bool = False) -> subprocess.Com
     return run(["adb", *args], check=check, capture=capture)
 
 
+def parse_wayward_recent_task_records(dumpsys_output: str) -> list[tuple[int, str]]:
+    """Read only canonical Recent tasks entries, not the repeated visible-task summary."""
+    section = re.search(
+        r"(?ms)^\s*Recent tasks:\s*(.*?)(?=^\s*Visible recent tasks\b|\Z)",
+        dumpsys_output,
+    )
+    if section is None:
+        return []
+
+    records: list[tuple[int, str]] = []
+    entries = re.finditer(
+        r"(?ms)^\s*\*\s*Recent #\d+:\s*Task\{([^}]*)\}(.*?)"
+        r"(?=^\s*\*\s*Recent #\d+:|\Z)",
+        section.group(1),
+    )
+    for entry in entries:
+        task_id = re.search(r"(?:^|\s)#(\d+)(?:\s|$)", entry.group(1))
+        component = re.search(r"^\s*mActivityComponent=([^\s]+)", entry.group(2), re.MULTILINE)
+        if component is None:
+            component = re.search(r"^\s*intent=.*?\bcmp=([^\s}]+)", entry.group(2), re.MULTILINE)
+        if task_id is None or component is None:
+            continue
+        name = component.group(1)
+        if name.split("/", 1)[0] == PACKAGE:
+            records.append((int(task_id.group(1)), name))
+    return records
+
+
 def make_png() -> bytes:
     def chunk(name: bytes, data: bytes) -> bytes:
         return struct.pack(">I", len(data)) + name + data + struct.pack(">I", zlib.crc32(name + data) & 0xFFFFFFFF)
@@ -529,20 +557,19 @@ window.pickImagePackFolder = async function() {
         raise RuntimeError("The root BACK did not finish only the game-session Activity.")
 
     recent = adb("shell", "dumpsys", "activity", "recents", check=False, capture=True).stdout or ""
-    sections = re.split(r"(?=Recent #\d+:)", recent)
-    launcher_tasks = [section for section in sections if PACKAGE in section]
-    if not launcher_tasks:
-        # Some Android builds use a different Recent-entry formatter. Fall back to Task sections.
-        sections = re.split(r"(?=Task\{)", recent)
-        launcher_tasks = [section for section in sections if PACKAGE in section]
-    if len(launcher_tasks) != 1:
+    launcher_tasks = parse_wayward_recent_task_records(recent)
+    task_ids = [task_id for task_id, _component in launcher_tasks]
+    if len(launcher_tasks) != 1 or len(set(task_ids)) != 1:
         (ARTIFACTS / "android15-recents-after-game-back.txt").write_text(recent, encoding="utf-8")
         raise RuntimeError(
-            "Expected exactly one Wayward recent-app task after returning from the game; "
-            + str(len(launcher_tasks)) + " task records matched."
+            "Expected exactly one Wayward task in canonical Recent tasks after returning from the game; "
+            + "found task records " + repr(launcher_tasks) + "."
         )
     (ARTIFACTS / "android15-recents-after-game-back.txt").write_text(recent, encoding="utf-8")
-    print("PASS: first BACK navigated the WebView; root BACK returned to the launcher; Recents contains one launcher task.")
+    print(
+        "PASS: first BACK navigated the WebView; root BACK returned to the launcher; "
+        + "canonical Recents contains Wayward Task ID " + str(task_ids[0]) + "."
+    )
 
     diagnostics_button = node_bounds(home_xml, ("진단",))
     if diagnostics_button is None:
@@ -566,10 +593,23 @@ window.pickImagePackFolder = async function() {
             ["adb", "exec-out", "run-as", PACKAGE, "cat", "cache/diagnostics/" + zip_names[-1]],
             check=True, stdout=output
         )
+    source_listing = adb("shell", "run-as", PACKAGE, "ls", "-1", "files/diagnostics",
+                           check=False, capture=True)
+    if source_listing.returncode != 0:
+        raise RuntimeError("The local diagnostics journal directory could not be inspected.")
+    available_sources = {line.strip() for line in (source_listing.stdout or "").splitlines()}
     with zipfile.ZipFile(exported_zip, "r") as archive:
         names = set(archive.namelist())
-        if "metadata.json" not in names or "imagepack.ndjson" not in names or "launcher.ndjson" not in names:
-            raise RuntimeError("The shared ZIP is missing metadata, launcher logs, or request-correlated image-pack logs.")
+        required = {"metadata.json", "launcher.ndjson", "imagepack.ndjson"}
+        expected_previous = {
+            name for name in ("launcher.previous.ndjson", "imagepack.previous.ndjson")
+            if name in available_sources
+        }
+        if not required.issubset(names) or not expected_previous.issubset(names):
+            raise RuntimeError("The shared ZIP is missing active journals or an existing previous journal.")
+        media = {name for name in names if name.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".zip"))}
+        if media:
+            raise RuntimeError("The shared ZIP unexpectedly contains game/user media: " + repr(sorted(media)))
         metadata = json.loads(archive.read("metadata.json").decode("utf-8"))
         if not metadata.get("appVersion") or not metadata.get("androidSdk"):
             raise RuntimeError("The shared ZIP metadata is missing the app or Android build information.")
@@ -584,9 +624,18 @@ window.pickImagePackFolder = async function() {
                           if item.get("details", {}).get("mode") == "multiple"]
         if not json_calls or not multiple_calls or not chooser_results:
             raise RuntimeError(
-                "The ZIP is missing the actual game pack.json / multiple-file chooser request "
-                "or its WebView callback result."
+                "The ZIP is missing pack.json/multiple-file chooser requests or their WebView callback result."
             )
+        sensitive_patterns = (
+            re.compile(r"(?i)content://[^\s,;\"']+"),
+            re.compile(r"(?i)(?:/storage/emulated/\d+|/sdcard|/mnt/user/\d+/primary|/data/(?:user(?:_de)?/\d+|data)|/data/local/tmp)/[^\s,;\"']+"),
+            re.compile(r"(?i)Bearer\s+[A-Za-z0-9._~+/-]+=*"),
+            re.compile(r"(?i)(?:access|refresh)?_?(?:token|api[_-]?key|secret|password|cookie)\s*[:=]\s*[\"']?[^\s,;\"'}&]+"),
+        )
+        for name in sorted(value for value in names if value.endswith(".ndjson")):
+            payload = archive.read(name).decode("utf-8", errors="replace")
+            if any(pattern.search(payload) for pattern in sensitive_patterns):
+                raise RuntimeError("The diagnostic ZIP exposes a credential, URI, or absolute path in " + name)
     print("PASS: diagnostic ZIP created, metadata and correlated events verified, Android sharesheet opened.")
 
     adb("shell", "input", "keyevent", "4")

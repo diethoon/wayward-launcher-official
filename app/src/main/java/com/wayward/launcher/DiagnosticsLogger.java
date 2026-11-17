@@ -32,6 +32,10 @@ final class DiagnosticsLogger {
     private static final Pattern BEARER = Pattern.compile("(?i)(Bearer\\s+)[A-Za-z0-9._~+/-]+=*");
     private static final Pattern SECRET = Pattern.compile("(?i)((?:access|refresh)?_?(?:token|api[_-]?key|secret|password|cookie)\\s*[:=]\\s*[\\\"']?)[^\\s,;\\\"'}&]+");
     private static final Pattern QUERY_SECRET = Pattern.compile("(?i)([?&](?:token|key|secret|password)=)[^&\\s]+");
+    private static final Pattern CONTENT_URI = Pattern.compile("(?i)content://[^\\s,;\\\"']+");
+    private static final Pattern ABSOLUTE_PATH = Pattern.compile(
+            "(?i)(?:/storage/emulated/\\d+|/sdcard|/mnt/user/\\d+/primary"
+                    + "|/data/(?:user(?:_de)?/\\d+|data)|/data/local/tmp)/[^\\s,;\\\"']+");
 
     private DiagnosticsLogger() {}
 
@@ -209,6 +213,8 @@ final class DiagnosticsLogger {
         String out = BEARER.matcher(value).replaceAll("$1[REDACTED]");
         out = SECRET.matcher(out).replaceAll("$1[REDACTED]");
         out = QUERY_SECRET.matcher(out).replaceAll("$1[REDACTED]");
+        out = CONTENT_URI.matcher(out).replaceAll("[URI]");
+        out = ABSOLUTE_PATH.matcher(out).replaceAll("[PATH]");
         return out.length() > 12000 ? out.substring(0, 12000) : out;
     }
 }
