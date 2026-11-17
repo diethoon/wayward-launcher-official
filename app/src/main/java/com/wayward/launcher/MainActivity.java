@@ -84,6 +84,8 @@ public final class MainActivity extends Activity {
     private static volatile String LAST_ACTIVE_SESSION_ID = "";
     private static final String EXTRA_OPEN_IMAGE_STUDIO_SETTINGS =
             "com.wayward.launcher.OPEN_IMAGE_STUDIO_SETTINGS";
+    private static final String EXTRA_GAME_LAUNCH_REQUEST_ID =
+            "com.wayward.launcher.GAME_LAUNCH_REQUEST_ID";
     private static final Pattern MOD_ID=Pattern.compile("(?:\\bid\\s*:\\s*|[\\\"']id[\\\"']\\s*:\\s*)[\\\"']([a-z0-9][a-z0-9._-]*)[\\\"']");
     private Uri treeUri;
     private SafTree tree;
@@ -117,6 +119,11 @@ public final class MainActivity extends Activity {
     private final List<Runnable> imageGenReadyCallbacks = new ArrayList<>();
     private Runnable imageGenPollRunnable;
     private WebView web;
+    private final String activityInstanceId = UUID.randomUUID().toString();
+    private String activeGameLaunchRequestId = "";
+    private String webViewInstanceId = "";
+    private int webViewGeneration = 0;
+    private boolean gamePageLoaded = false;
     private WebFileChooser webFileChooser;
     private ImagePackDirectoryAccess imagePackDirectoryAccess;
     private String imagePackDiagnosticSessionId = "";
@@ -128,12 +135,15 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle b){
         super.onCreate(b);
-        DiagnosticsLogger.event(this,"INFO","launcher","activity_create",null);
+        String sessionId=sessionProfileId(getIntent());
+        String requestId=getIntent().getStringExtra(EXTRA_GAME_LAUNCH_REQUEST_ID);
+        activeGameLaunchRequestId=requestId==null?"":requestId;
+        logGameLifecycle("INFO","activity_create",sessionId,activeGameLaunchRequestId,
+                sessionId==null?"launcher_intent":"game_session_intent");
         registerRemotePcControl();
         zipMods=new ZipModStore(getFilesDir());
         loadProfiles();
         showHome();
-        String sessionId=sessionProfileId(getIntent());
         if(sessionId!=null)openProfileSession(sessionId);
         else refreshStatus();
     }
@@ -141,7 +151,8 @@ public final class MainActivity extends Activity {
         super.onResume();
         DiagnosticsUploader.uploadPending(this);
         if(imagePackDirectoryAccess!=null)imagePackDirectoryAccess.onResume();
-        DiagnosticsLogger.event(this,"INFO","launcher","activity_resume",null);
+        logGameLifecycle("INFO","activity_resume",sessionProfileId(getIntent()),
+                activeGameLaunchRequestId,"onResume");
         loadProfiles();
         long revision=getSharedPreferences(PREFS,MODE_PRIVATE).getLong(KEY_ZIP_REV,0);
         if(web!=null&&revision!=loadedZipRevision){loadedZipRevision=revision;web.reload();}
@@ -154,6 +165,8 @@ public final class MainActivity extends Activity {
         }
     }
     @Override protected void onPause(){
+        logGameLifecycle("INFO","activity_pause",sessionProfileId(getIntent()),
+                activeGameLaunchRequestId,"onPause");
         if(remoteHostDiscovery!=null){
             try{remoteHostDiscovery.close();}catch(Exception ignored){}
             remoteHostDiscovery=null;
@@ -163,11 +176,13 @@ public final class MainActivity extends Activity {
     @Override protected void onNewIntent(Intent intent){
         super.onNewIntent(intent);setIntent(intent);
         String sessionId=sessionProfileId(intent);
+        String requestId=intent==null?null:intent.getStringExtra(EXTRA_GAME_LAUNCH_REQUEST_ID);
+        if(requestId!=null&&!requestId.isEmpty())activeGameLaunchRequestId=requestId;
+        logGameLifecycle("INFO","activity_new_intent",sessionId,activeGameLaunchRequestId,
+                "onNewIntent");
         if(sessionId==null)return;
         if(sessionId.equals(activeProfileId)&&web!=null){
-            if(home!=null)home.setVisibility(View.GONE);
-            web.setVisibility(View.VISIBLE);
-            registerSessionActivity();
+            showGameSession("existing_activity_new_intent");
         }else openProfileSession(sessionId);
     }
     private static final class GameProfile{
@@ -955,21 +970,124 @@ public final class MainActivity extends Activity {
     }
 
     private void launchProfileSession(String id){
-        Intent i=new Intent(this,MainActivity.class);i.setData(Uri.parse("wayward://session/"+Uri.encode(id)));
-        startActivity(i);
+        String requestId=UUID.randomUUID().toString();
+        DiagnosticsLogger.event(this,"INFO","game-session","game_launch_requested",
+                gameLifecycleDetails(id,requestId,"profile_button"));
+        if(id!=null&&id.equals(activeProfileId)&&!isFinishing()){
+            activeGameLaunchRequestId=requestId;
+            if(web!=null){
+                showGameSession("same_activity_same_profile");
+                DiagnosticsLogger.event(this,"INFO","game-session","game_launch_reused_current_activity",
+                        gameLifecycleDetails(id,requestId,"same_activity_same_profile"));
+            }else{
+                openProfileSession(id);
+            }
+            return;
+        }
+
+        MainActivity existing=findSessionActivity(id);
+        Intent intent=new Intent(this,MainActivity.class);
+        intent.setData(Uri.parse("wayward://session/"+Uri.encode(id)));
+        intent.putExtra(EXTRA_GAME_LAUNCH_REQUEST_ID,requestId);
+        if(existing!=null&&existing!=this){
+            // The unique session URI distinguishes this Activity from other MainActivity
+            // instances in the same task. REORDER_TO_FRONT delivers onNewIntent to that
+            // session instead of creating another WebView for an already-running profile.
+            intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+            DiagnosticsLogger.event(this,"INFO","game-session","game_launch_reordered_existing_activity",
+                    gameLifecycleDetails(id,requestId,"existing_session"));
+        }else{
+            DiagnosticsLogger.event(this,"INFO","game-session","game_launch_new_activity",
+                    gameLifecycleDetails(id,requestId,"new_session"));
+        }
+        startActivity(intent);
+    }
+
+    private static MainActivity findSessionActivity(String id){
+        if(id==null||!id.matches("[a-f0-9]{32}"))return null;
+        WeakReference<MainActivity> reference=SESSION_ACTIVITIES.get(id);
+        MainActivity activity=reference==null?null:reference.get();
+        if(activity==null||activity.isFinishing()||activity.isDestroyed()
+                ||!id.equals(activity.activeProfileId)||activity.web==null||activity.tree==null){
+            if(reference!=null)SESSION_ACTIVITIES.remove(id,reference);
+            return null;
+        }
+        return activity;
+    }
+
+    private JSONObject gameLifecycleDetails(String sessionId,String requestId,String reason){
+        JSONObject details=new JSONObject();
+        try{
+            details.put("activityInstanceId",activityInstanceId);
+            details.put("taskId",getTaskId());
+            details.put("sessionId",sessionId==null?"":sessionId);
+            details.put("launchRequestId",requestId==null?"":requestId);
+            details.put("webViewInstanceId",webViewInstanceId);
+            details.put("webViewGeneration",webViewGeneration);
+            details.put("webViewCreated",web!=null);
+            details.put("webViewVisible",web!=null&&web.getVisibility()==View.VISIBLE);
+            details.put("homeVisible",home!=null&&home.getVisibility()==View.VISIBLE);
+            details.put("gamePageLoaded",gamePageLoaded);
+            details.put("reason",reason==null?"":reason);
+        }catch(Exception ignored){}
+        return details;
+    }
+
+    private void logGameLifecycle(String level,String event,String sessionId,String requestId,String reason){
+        DiagnosticsLogger.event(this,level,"game-session",event,
+                gameLifecycleDetails(sessionId,requestId,reason));
+    }
+
+    private boolean isCurrentGamePage(String url){
+        if(activeProfileId==null||activeProfileId.isEmpty()||url==null)return false;
+        try{
+            Uri parsed=Uri.parse(url);
+            return "https".equalsIgnoreCase(parsed.getScheme())
+                    &&"localhost".equalsIgnoreCase(parsed.getHost())
+                    &&parsed.getPort()==sessionPort(activeProfileId)
+                    &&parsed.getPath()!=null&&parsed.getPath().startsWith("/game/");
+        }catch(Exception ignored){return false;}
+    }
+
+    private void showGameSession(String reason){
+        if(web==null)return;
+        if(home!=null)home.setVisibility(View.GONE);
+        web.setVisibility(View.VISIBLE);
+        web.bringToFront();
+        registerSessionActivity();
+        logGameLifecycle("INFO","game_session_brought_to_front",activeProfileId,
+                activeGameLaunchRequestId,reason);
+        if(gamePageLoaded){
+            logGameLifecycle("INFO","game_session_visible",activeProfileId,
+                    activeGameLaunchRequestId,"loaded_page_reused");
+        }
     }
 
     private void openProfileSession(String id){
-        DiagnosticsLogger.event(this,"INFO","launcher","game_session_open_requested",null);
+        if(activeGameLaunchRequestId==null||activeGameLaunchRequestId.isEmpty()){
+            activeGameLaunchRequestId=UUID.randomUUID().toString();
+        }
+        logGameLifecycle("INFO","game_session_open_started",id,activeGameLaunchRequestId,"openProfileSession");
         GameProfile p=findProfile(id);
-        if(p==null){status("등록된 게임 폴더를 찾지 못했습니다. 홈에서 다시 등록해 주세요.");return;}
+        if(p==null){
+            logGameLifecycle("ERROR","game_page_error",id,activeGameLaunchRequestId,"profile_not_found");
+            status("등록된 게임 폴더를 찾지 못했습니다. 홈에서 다시 등록해 주세요.");
+            return;
+        }
         try{
             if(web!=null)destroyWeb();
             activeProfileId=p.id;treeUri=Uri.parse(p.uri);tree=new SafTree(treeUri);
+            gamePageLoaded=false;
             imagePackDiagnosticSessionId=ImagePackDiagnostics.newSessionId();
             ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "", "game_session_start",
                     "info", ImagePackDiagnostics.pageDetails(sessionOrigin(activeProfileId), true));
-            String file=gameFile();if(file==null){DiagnosticsLogger.event(this,"ERROR","launcher","game_html_not_found",null);status("선택한 폴더에서 Wayward HTML을 찾지 못했습니다: "+p.label);return;}
+            String file=gameFile();
+            if(file==null){
+                DiagnosticsLogger.event(this,"ERROR","game-session","game_page_error",
+                        gameLifecycleDetails(id,activeGameLaunchRequestId,"game_html_not_found"));
+                status("선택한 폴더에서 Wayward HTML을 찾지 못했습니다: "+p.label);
+                return;
+            }
             setTitle("Wayward · "+p.label);
             RUNNING_SESSIONS.add(p.id);
             if(home!=null)home.setVisibility(View.GONE);
@@ -977,10 +1095,13 @@ public final class MainActivity extends Activity {
             createWeb();web.setVisibility(View.VISIBLE);
             registerSessionActivity();
             String gameUrl=sessionOrigin(activeProfileId)+"/game/"+Uri.encode(file)+"?launcher="+System.currentTimeMillis();
-            web.setVisibility(View.VISIBLE);
-            DiagnosticsLogger.event(this,"INFO","launcher","game_webview_load_requested",null);
+            logGameLifecycle("INFO","game_webview_load_requested",p.id,activeGameLaunchRequestId,"loadUrl");
             web.loadUrl(gameUrl);
-        }catch(Exception e){DiagnosticsLogger.error(this,"launcher","game_session_open_failed",e);status("게임 실행 실패: "+msg(e));}
+        }catch(Exception e){
+            DiagnosticsLogger.error(this,"game-session","game_session_open_failed",e);
+            logGameLifecycle("ERROR","game_page_error",id,activeGameLaunchRequestId,"open_profile_exception");
+            status("게임 실행 실패: "+msg(e));
+        }
     }
 
     private void removeProfile(String id){
@@ -1107,9 +1228,15 @@ public final class MainActivity extends Activity {
         String domain=sessionDomain(activeProfileId);
         String origin=sessionOrigin(activeProfileId);
         int originPort=sessionPort(activeProfileId);
-        web=new WebView(this);WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setDatabaseEnabled(true);s.setUseWideViewPort(true);s.setLoadWithOverviewMode(true);s.setTextZoom(100);s.setSupportZoom(true);s.setBuiltInZoomControls(false);s.setDisplayZoomControls(false);s.setAllowFileAccess(false);s.setAllowContentAccess(false);s.setCacheMode(WebSettings.LOAD_DEFAULT);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);imagePackDirectoryAccess=new ImagePackDirectoryAccess(this,web,activeProfileId,imagePackDiagnosticSessionId);
+        web=new WebView(this);
+        webViewGeneration++;
+        webViewInstanceId=UUID.randomUUID().toString();
+        gamePageLoaded=false;
+        WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setDatabaseEnabled(true);s.setUseWideViewPort(true);s.setLoadWithOverviewMode(true);s.setTextZoom(100);s.setSupportZoom(true);s.setBuiltInZoomControls(false);s.setDisplayZoomControls(false);s.setAllowFileAccess(false);s.setAllowContentAccess(false);s.setCacheMode(WebSettings.LOAD_DEFAULT);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);imagePackDirectoryAccess=new ImagePackDirectoryAccess(this,web,activeProfileId,imagePackDiagnosticSessionId);
         ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "", "webview_created", "info",
                 new JSONObject());
+        logGameLifecycle("INFO","game_webview_created",activeProfileId,activeGameLaunchRequestId,
+                "generation_"+webViewGeneration);
         web.addJavascriptInterface(new HostBridge(),"WMLHost");
         ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "", "javascript_interface_registered",
                 "info", null);
@@ -1124,12 +1251,26 @@ public final class MainActivity extends Activity {
                 DiagnosticsLogger.event(MainActivity.this,"INFO","webview","page_started",null);
                 ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, "",
                         "webview_page_started", "info", ImagePackDiagnostics.pageDetails(url, true));
+                if(view==web&&isCurrentGamePage(url)){
+                    gamePageLoaded=false;
+                    logGameLifecycle("INFO","game_page_started",activeProfileId,activeGameLaunchRequestId,
+                            ImagePackDiagnostics.pageDetails(url,true).optString("pagePath"));
+                }
                 super.onPageStarted(view,url,favicon);
             }
             @Override public void onPageFinished(WebView view,String url){
                 DiagnosticsLogger.event(MainActivity.this,"INFO","webview","page_finished",null);
                 ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, "",
                         "webview_page_finished", "info", ImagePackDiagnostics.pageDetails(url, true));
+                if(view==web&&isCurrentGamePage(url)){
+                    gamePageLoaded=true;
+                    logGameLifecycle("INFO","game_page_finished",activeProfileId,activeGameLaunchRequestId,
+                            ImagePackDiagnostics.pageDetails(url,true).optString("pagePath"));
+                    if(web.getVisibility()==View.VISIBLE){
+                        logGameLifecycle("INFO","game_session_visible",activeProfileId,
+                                activeGameLaunchRequestId,"main_frame_page_finished");
+                    }
+                }
                 if(imagePackFolderPickerScript!=null
                         &&ImagePackFolderPickerScript.isSameOrigin(url,imagePackFolderPickerOrigin)){
                     ImagePackFolderPickerScript.installAfterPageFinished(
@@ -1172,6 +1313,11 @@ public final class MainActivity extends Activity {
                     ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, "",
                             "webview_main_frame_load_failed", "error",
                             ImagePackDiagnostics.pageDetails(request.getUrl().toString(), true));
+                    if(isCurrentGamePage(request.getUrl().toString())){
+                        gamePageLoaded=false;
+                        logGameLifecycle("ERROR","game_page_error",activeProfileId,activeGameLaunchRequestId,
+                                "main_frame_network_error_"+(error==null?0:error.getErrorCode()));
+                    }
                 }
                 super.onReceivedError(view,request,error);
             }
@@ -1208,6 +1354,11 @@ public final class MainActivity extends Activity {
                             ImagePipelineDiagnostics.record(MainActivity.this,"webview_image_http_error",pipeline);
                         }
                     }
+                    if(request.isForMainFrame()&&isCurrentGamePage(request.getUrl().toString())){
+                        gamePageLoaded=false;
+                        logGameLifecycle("ERROR","game_page_error",activeProfileId,activeGameLaunchRequestId,
+                                "main_frame_http_"+response.getStatusCode());
+                    }
                     if(imageResource&&!handledByLocalImageLogger&&imageDiagnostics.getAndIncrement()<16){
                         JSONObject details=new JSONObject();
                         try{
@@ -1229,6 +1380,11 @@ public final class MainActivity extends Activity {
                 JSONObject details=new JSONObject();
                 try{details.put("didCrash",detail!=null&&detail.didCrash());details.put("priority",detail==null?-1:detail.rendererPriorityAtExit());}catch(Exception ignored){}
                 DiagnosticsLogger.event(MainActivity.this,"ERROR","webview","renderer_process_gone",details);
+                if(view==web){
+                    gamePageLoaded=false;
+                    logGameLifecycle("ERROR","game_page_error",activeProfileId,activeGameLaunchRequestId,
+                            "webview_renderer_process_gone");
+                }
                 return super.onRenderProcessGone(view,detail);
             }
             @Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest r){
@@ -2144,13 +2300,31 @@ public final class MainActivity extends Activity {
         file.delete();
     }
 
-    private void showHomePanel(){runOnUiThread(()->{if(web!=null)web.setVisibility(View.GONE);if(home!=null)home.setVisibility(View.VISIBLE);refreshStatus();refreshImageGenStatus();renderImageModePanel();});}
-    private void destroyWeb(){if(webFileChooser!=null){webFileChooser.cancelPending();webFileChooser=null;}if(imagePackDirectoryAccess!=null){imagePackDirectoryAccess.cancelPending();imagePackDirectoryAccess=null;}if(web==null)return;web.removeJavascriptInterface("WMLHost");root.removeView(web);web.stopLoading();web.loadUrl("about:blank");web.destroy();web=null;}
+    private void showHomePanel(){runOnUiThread(()->{
+        if(web!=null&&sessionProfileId(getIntent())!=null){
+            logGameLifecycle("INFO","game_return_requested",activeProfileId,activeGameLaunchRequestId,
+                    "launcher_menu");
+        }
+        if(web!=null)web.setVisibility(View.GONE);
+        if(home!=null)home.setVisibility(View.VISIBLE);
+        refreshStatus();refreshImageGenStatus();renderImageModePanel();
+    });}
+    private void destroyWeb(){
+        if(webFileChooser!=null){webFileChooser.cancelPending();webFileChooser=null;}
+        if(imagePackDirectoryAccess!=null){imagePackDirectoryAccess.cancelPending();imagePackDirectoryAccess=null;}
+        if(web==null)return;
+        logGameLifecycle("INFO","game_webview_destroyed",activeProfileId,activeGameLaunchRequestId,
+                "destroyWeb");
+        web.removeJavascriptInterface("WMLHost");root.removeView(web);web.stopLoading();web.loadUrl("about:blank");web.destroy();web=null;
+        webViewInstanceId="";gamePageLoaded=false;
+    }
     @Override public void onBackPressed(){
         if(web!=null&&web.getVisibility()==View.VISIBLE){
             if(web.canGoBack()){
                 web.goBack();
             }else if(sessionProfileId(getIntent())!=null){
+                logGameLifecycle("INFO","game_return_requested",activeProfileId,activeGameLaunchRequestId,
+                        "system_back_finish");
                 DiagnosticsLogger.event(this,"INFO","launcher","game_session_back_to_launcher",null);
                 finish();
             }else{
@@ -2161,9 +2335,12 @@ public final class MainActivity extends Activity {
         super.onBackPressed();
     }
     @Override protected void onDestroy(){
-        String sessionId=sessionProfileId(getIntent());if(sessionId!=null)RUNNING_SESSIONS.remove(sessionId);
+        String sessionId=sessionProfileId(getIntent());
+        if(sessionId!=null)logGameLifecycle("INFO","game_session_destroyed",sessionId,
+                activeGameLaunchRequestId,"onDestroy");
         unregisterSessionActivity();
-        DiagnosticsLogger.event(this,"INFO","launcher","activity_destroy",null);
+        if(sessionId!=null&&findSessionActivity(sessionId)==null)RUNNING_SESSIONS.remove(sessionId);
+        logGameLifecycle("INFO","activity_destroy",sessionId,activeGameLaunchRequestId,"onDestroy");
         destroyWeb();if(zipMods!=null)zipMods.close();super.onDestroy();
     }
     private String msg(Throwable e){return e==null||e.getMessage()==null?"알 수 없는 오류":e.getMessage();}
