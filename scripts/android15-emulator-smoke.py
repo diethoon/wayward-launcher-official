@@ -666,10 +666,10 @@ window.pickImagePackFolder = async function() {
     print("PASS: the real game WebView ZIP multi-select callback returned both selected files.")
 
     first_count, first_tasks, first_state = count_main_activity_instances()
-    if first_count != 2:
+    if first_count != 2 or len(first_tasks) != 1:
         (ARTIFACTS / "android15-game-activity-stack-before-relaunch.txt").write_text(first_state, encoding="utf-8")
-        raise RuntimeError("Expected launcher + one game-session MainActivity before relaunch; found "
-                           + str(first_count) + " activities.")
+        raise RuntimeError("Expected launcher + one game-session Activity in one Task; found activities="
+                           + str(first_count) + " taskIds=" + repr(sorted(first_tasks)))
     events = read_launcher_events()
     first_created = [event for event in events if event.get("event") == "game_webview_created"]
     if len(first_created) != 1:
@@ -736,12 +736,13 @@ window.pickImagePackFolder = async function() {
     second_game_xml = wait_for_ui_contains(
         picker_local, picker_device, "WAYWARD SECOND GAME SESSION", timeout_seconds=35
     )
-    count_after_second, _, second_stack = count_main_activity_instances()
+    count_after_second, second_tasks, second_stack = count_main_activity_instances()
     (ARTIFACTS / "android15-game-activity-stack-two-sessions.txt").write_text(
         second_stack, encoding="utf-8"
     )
-    if count_before_second != 2 or count_after_second != 3:
-        raise RuntimeError("Launching a different profile did not create exactly one independent session Activity.")
+    if count_before_second != 2 or count_after_second != 3 or len(second_tasks) != 1:
+        raise RuntimeError("Launching a different profile did not create exactly one independent session Activity in the same Task. "
+                           + "activities=" + str(count_after_second) + " taskIds=" + repr(sorted(second_tasks)))
     events = read_launcher_events()
     all_created = [event for event in events if event.get("event") == "game_webview_created"]
     second_created = next((
@@ -767,12 +768,13 @@ window.pickImagePackFolder = async function() {
     first_game_xml = wait_for_ui_contains(
         picker_local, picker_device, "WAYWARD MAIN ACTIVITY GAME SESSION", timeout_seconds=30
     )
-    count_after_route, _, route_state = count_main_activity_instances()
+    count_after_route, routed_tasks, route_state = count_main_activity_instances()
     (ARTIFACTS / "android15-game-activity-stack-routed-existing.txt").write_text(
         route_state, encoding="utf-8"
     )
-    if count_before_route != 3 or count_after_route != count_before_route:
-        raise RuntimeError("Returning to the existing profile created another MainActivity instance.")
+    if count_before_route != 3 or count_after_route != count_before_route or len(routed_tasks) != 1:
+        raise RuntimeError("Returning to the existing profile created another MainActivity or Task. "
+                           + "activities=" + str(count_after_route) + " taskIds=" + repr(sorted(routed_tasks)))
     events = read_launcher_events()
     routed = [
         event for event in session_events(events, "activity_new_intent", first_session)
@@ -838,7 +840,8 @@ window.pickImagePackFolder = async function() {
     # Exercise app background/foreground and process termination/restart.
     adb("shell", "input", "keyevent", "3")
     time.sleep(2)
-    adb("shell", "am", "start", "-W", "-n", ACTIVITY)
+    adb("shell", "am", "start", "-W", "-a", "android.intent.action.MAIN",
+        "-c", "android.intent.category.LAUNCHER", "-n", ACTIVITY)
     home_xml = wait_for_ui_contains(picker_local, picker_device, "내 게임", timeout_seconds=20)
     foreground_count, _, foreground_state = count_main_activity_instances()
     if foreground_count != 1:
@@ -847,7 +850,8 @@ window.pickImagePackFolder = async function() {
         foreground_state, encoding="utf-8"
     )
     adb("shell", "am", "force-stop", PACKAGE)
-    adb("shell", "am", "start", "-W", "-n", ACTIVITY)
+    adb("shell", "am", "start", "-W", "-a", "android.intent.action.MAIN",
+        "-c", "android.intent.category.LAUNCHER", "-n", ACTIVITY)
     home_xml = wait_for_ui_contains(picker_local, picker_device, "WaywardGameTestTwo", timeout_seconds=25)
     restart_count, _, restart_state = count_main_activity_instances()
     if restart_count != 1:

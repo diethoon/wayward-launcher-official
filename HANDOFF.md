@@ -239,3 +239,8 @@ Updated: 2026-11-15 (Asia/Seoul)
 - Same-profile relaunch from its own in-session launcher panel now reuses that Activity and existing WebView; when a profile already has another live session Activity, launch routes to its existing session intent using `FLAG_ACTIVITY_REORDER_TO_FRONT`. The Activity launch mode and manifest task behavior remain unchanged.
 - Page load success is only recorded after a matching main-frame game URL finishes without a main-frame network/HTTP or renderer error. UI visibility by itself does not set the success marker.
 - Android 15 CI will be extended to exercise same-profile relaunch, switch to another registered profile, route back to an existing session, app background/restart and actual interaction with the generated game fixtures. These fixtures use MainActivity's production SAF/WebView route but are not the live Faith game assets; real game execution still requires a physical-device check with the user's actual game folder.
+
+
+### Activity/Task count assertions — 2026-11-17
+- Android 15 smoke deduplicates ActivityRecord instances by their stable record token and checks both Activity count and Task IDs. The two live profile sessions and the route back to a previous session must remain in one Wayward task.
+- Background/foreground and post-force-stop relaunch use the explicit MAIN/LAUNCHER intent, matching an actual app-icon launch rather than a generic explicit Activity start.
