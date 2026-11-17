@@ -332,3 +332,7 @@ Updated: 2026-11-15 (Asia/Seoul)
 
 ### Test parser correction for the game Activity declaration — 2026-11-18
 - The combined feature run exposed an invalid JavaScript regular expression in the new manifest contract assertion. Replaced the expression with a literal XML element boundary search; product code and task behavior are unchanged.
+
+
+### QR image success log privacy contract — 2026-11-18
+- Updated the image-recognition success log to use a separate numeric `qrCharacterCount` variable rather than referencing the QR payload variable in the Log call. The logged value remains length-only; QR contents are never emitted.

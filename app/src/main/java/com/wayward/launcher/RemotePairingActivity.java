@@ -269,8 +269,9 @@ public final class RemotePairingActivity extends Activity {
                         return;
                     }
                     // Never log or persist the QR payload or selected image URI.
+                    int qrCharacterCount = raw.length();
                     processing = false;
-                    Log.i(TAG, "stage=qr_image_recognition result=success count=1 chars=" + raw.length());
+                    Log.i(TAG, "stage=qr_image_recognition result=success count=1 chars=" + qrCharacterCount);
                     ImagePackDiagnostics.event(this, "", "", "pairing_qr_image_recognized", "info", null);
                     handleQr(barcode);
                 })
