@@ -102,8 +102,13 @@ jobs:
           javac -d "$test_dir" app/src/main/java/com/wayward/launcher/ImageServerModeCoordinator.java tests/ImageServerModeCoordinatorTest.java
           java -cp "$test_dir" com.wayward.launcher.ImageServerModeCoordinatorTest
 
-      - name: Test WebView ordinary file and ZIP chooser contracts
-        run: node tests/web-file-chooser-contract.test.mjs
+      - name: Test WebView file and folder chooser request policy
+        run: |
+          node tests/web-file-chooser-contract.test.mjs
+          test_dir="$RUNNER_TEMP/web-file-chooser-policy-test"
+          mkdir -p "$test_dir"
+          javac -d "$test_dir" app/src/main/java/com/wayward/launcher/WebFileChooserRequestPolicy.java tests/WebFileChooserRequestPolicyTest.java
+          java -cp "$test_dir" com.wayward.launcher.WebFileChooserRequestPolicyTest
 
       - name: Test native image-pack SAF folder bridge contract
         run: node tests/imagepack-folder-picker-contract.test.mjs

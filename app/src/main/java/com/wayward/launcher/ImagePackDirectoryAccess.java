@@ -78,13 +78,21 @@ final class ImagePackDirectoryAccess {
         }
         activity.runOnUiThread(() -> {
             if (pendingRequestId != null) {
-                diagnostic("native_folder_picker_previous_request_replaced", pendingRequestId,
-                        "warn", details("result", "replaced"));
-                finishPending(failure("AbortError", "A previous folder request was replaced."));
+                if (pendingRequestId.equals(requestId)) {
+                    diagnostic("native_folder_picker_duplicate_request_id_ignored", requestId,
+                            "warn", details("pendingRequest", true, "result", "duplicate_request_id"));
+                    return;
+                }
+                diagnostic("native_folder_picker_request_rejected_busy", requestId,
+                        "warn", details("pendingRequest", true, "result", "invalid_state"));
+                deliver(requestId, failure("InvalidStateError",
+                        "Another image-pack folder selection is already in progress."));
+                return;
             }
             pendingRequestId = requestId;
             diagnostic("native_folder_picker_ui_start", requestId, "info",
-                    details("permissionBefore", "saf_tree_grant_pending"));
+                    details("permissionBefore", "saf_tree_grant_pending",
+                            "requestSource", "showDirectoryPicker"));
             Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
             picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
                     | Intent.FLAG_GRANT_WRITE_URI_PERMISSION

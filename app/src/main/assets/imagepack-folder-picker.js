@@ -1,7 +1,8 @@
 (() => {
   "use strict";
   const host = window.WMLHost;
-  if (!host || typeof host.chooseImagePackFolder !== "function") return;
+  const nativeCapability = "__WAYWARD_FOLDER_PICKER_CAPABILITY__";
+  if (!host || typeof host.chooseImagePackFolder !== "function" || !nativeCapability) return;
   if (window.__waywardNativeImagePackPickerInstalled &&
       typeof window.showDirectoryPicker === "function") return;
 
@@ -83,7 +84,7 @@
           bridgeAvailable: typeof host.chooseImagePackFolder === "function",
           isTopFrame: topFrame
         });
-        host.chooseImagePackFolder(id);
+        host.chooseImagePackFolder(id, nativeCapability);
         diagnose("wmlhost_choose_folder_call_returned", id, { durationMs: Date.now() - startedAt });
       } catch (error) {
         pending.delete(id);

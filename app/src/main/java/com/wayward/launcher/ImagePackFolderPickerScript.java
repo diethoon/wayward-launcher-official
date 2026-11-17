@@ -14,6 +14,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.util.Collections;
 
 /** Installs the image-pack File System Access adapter for the active game origin. */
@@ -24,7 +26,23 @@ final class ImagePackFolderPickerScript {
 
     private ImagePackFolderPickerScript() {}
 
-    static String read(Context context) throws IOException {
+    static String createCapability() {
+        byte[] secret = new byte[32];
+        new SecureRandom().nextBytes(secret);
+        return android.util.Base64.encodeToString(secret,
+                android.util.Base64.URL_SAFE | android.util.Base64.NO_WRAP | android.util.Base64.NO_PADDING);
+    }
+
+    static boolean matchesCapability(String expected, String supplied) {
+        if (expected == null || expected.isEmpty() || supplied == null || supplied.isEmpty()) return false;
+        return MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8),
+                supplied.getBytes(StandardCharsets.UTF_8));
+    }
+
+    static String read(Context context, String capability) throws IOException {
+        if (capability == null || capability.isEmpty()) {
+            throw new IOException("A native folder-picker capability is required.");
+        }
         try (InputStream input = context.getAssets().open("imagepack-folder-picker.js");
              ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             byte[] buffer = new byte[8192];
@@ -35,7 +53,12 @@ final class ImagePackFolderPickerScript {
                     throw new IOException("imagepack-folder-picker.js exceeds the 64 KiB limit.");
                 }
             }
-            return new String(output.toByteArray(), StandardCharsets.UTF_8);
+            String source = new String(output.toByteArray(), StandardCharsets.UTF_8);
+            String placeholder = "__WAYWARD_FOLDER_PICKER_CAPABILITY__";
+            if (!source.contains(placeholder)) {
+                throw new IOException("imagepack-folder-picker.js is missing its native capability placeholder.");
+            }
+            return source.replace(placeholder, JSONObject.quote(capability));
         }
     }
 

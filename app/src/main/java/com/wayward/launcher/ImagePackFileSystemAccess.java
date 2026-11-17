@@ -69,14 +69,22 @@ final class ImagePackFileSystemAccess {
         }
         activity.runOnUiThread(() -> {
             if (pendingRequestId != null) {
-                diagnostic("native_folder_picker_previous_request_replaced", pendingRequestId,
-                        "warn", details("result", "replaced"));
-                finishPending(failure("AbortError", "A previous folder request was replaced."));
+                if (pendingRequestId.equals(requestId)) {
+                    diagnostic("native_folder_picker_duplicate_request_id_ignored", requestId,
+                            "warn", details("pendingRequest", true, "result", "duplicate_request_id"));
+                    return;
+                }
+                diagnostic("native_folder_picker_request_rejected_busy", requestId,
+                        "warn", details("pendingRequest", true, "result", "invalid_state"));
+                deliver(requestId, failure("InvalidStateError",
+                        "Another image-pack folder selection is already in progress."));
+                return;
             }
             pendingRequestId = requestId;
             boolean permission = hasAllFilesAccess();
             diagnostic("native_folder_picker_entered", requestId, "info",
-                    details("apiLevel", Build.VERSION.SDK_INT, "permissionGranted", permission));
+                    details("apiLevel", Build.VERSION.SDK_INT, "permissionGranted", permission,
+                            "requestSource", "showDirectoryPicker"));
             if (permission) {
                 diagnostic("native_all_files_permission_already_granted", requestId, "info",
                         details("permissionGranted", true));

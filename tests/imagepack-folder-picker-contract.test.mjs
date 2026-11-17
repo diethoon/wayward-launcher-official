@@ -38,11 +38,17 @@ assert.match(smoke, /application\/json/, "the file-input acceptance test must us
 assert.match(picker, /CATEGORY_OPENABLE/, "ordinary file picker must remain OPENABLE");
 assert.match(picker, /Intent\.EXTRA_ALLOW_MULTIPLE/, "ZIP multi-select must remain supported");
 assert.match(picker, /getClipData\(\)/, "ZIP selections must preserve ClipData support");
-assert.doesNotMatch(picker, /MODE_OPEN_FOLDER|ACTION_OPEN_DOCUMENT_TREE|pendingFolderSelection/, "folder selection must use the JS-native bridge rather than the WebView file callback");
+assert.match(picker, /WebFileChooserRequestPolicy\.isFolder\(kind\)/,
+  "only explicit WebView folder mode may use a tree picker");
+assert.match(picker, /WebFileChooserRequestPolicy\.allowsMultipleFiles\(kind\)/,
+  "multiple-file mode must remain file-only");
+assert.doesNotMatch(picker, /kind\s*==\s*WebFileChooserRequestPolicy\.Kind\.OPEN_MULTIPLE[\s\S]{0,300}ACTION_OPEN_DOCUMENT_TREE/,
+  "MODE_OPEN_MULTIPLE must never be routed to folder selection");
 assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT/, "ordinary files and ZIPs must retain the SAF document picker");
 
 assert.match(bridge, /window\.showDirectoryPicker\s*=/, "the Image Studio directory API must be intercepted at document start");
-assert.match(bridge, /host\.chooseImagePackFolder\(id\)/, "the folder action must call the native launcher bridge directly");
+assert.match(bridge, /host\.chooseImagePackFolder\(id, nativeCapability\)/,
+  "the folder action must call the capability-guarded native launcher bridge");
 assert.match(bridge, /show_directory_picker_called/, "the actual showDirectoryPicker call must be journaled");
 assert.match(bridge, /wmlhost_choose_folder_call_start/, "the JS-to-native bridge call must be journaled");
 assert.match(bridge, /setTimeout\([\s\S]*?120000/, "a lost native callback must not leave the game Promise pending forever");
@@ -248,7 +254,14 @@ assert.match(main, /ImagePackFolderPickerScript\.installAfterPageFinished\(/, "t
 assert.match(readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackFolderPickerScript.java", import.meta.url), "utf8"), /isSameOrigin\(/, "runtime fallback must be restricted to the active game origin");
 assert.match(readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackFolderPickerScript.java", import.meta.url), "utf8"), /WebViewCompat\.addDocumentStartJavaScript/, "supported document-start injection must remain");
 assert.match(main, /installDocumentStartAsset\("imagegen-proxy\.js", origin\)/, "image-generation scripts must remain installed separately");
-assert.match(main, /chooseImagePackFolder\(String requestId\)/, "WMLHost must preserve the existing folder action");
+assert.match(main, /chooseImagePackFolder\(String requestId, String capability\)/,
+  "WMLHost preserves the folder action and requires a scoped capability");
+assert.match(main, /matchesCapability\(\s*imagePackFolderPickerCapability, capability\)/,
+  "native folder requests validate the injected per-WebView capability");
+assert.match(main, /isSameOrigin\(web\.getUrl\(\), imagePackFolderPickerOrigin\)/,
+  "native folder requests verify the active game origin");
+assert.match(access, /native_folder_picker_request_rejected_busy/,
+  "overlapping folder requests are rejected without replacing the active request");
 assert.match(main, /listImagePackDirectory\(String path\)/, "WMLHost must preserve the existing directory-list method");
 assert.match(main, /readImagePackFile\(String path\)/, "WMLHost must preserve the existing file-read method");
 assert.match(readFileSync(new URL("../app/src/debug/java/com/wayward/launcher/ImagePackPickerAcceptanceActivity.java", import.meta.url), "utf8"), /PASS_FS_DIRECTORY_HANDLE/, "acceptance must inspect a real directory-handle object, enumerate it, and read a file");

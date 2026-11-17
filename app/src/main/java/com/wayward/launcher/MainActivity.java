@@ -130,6 +130,7 @@ public class MainActivity extends Activity {
     private String imagePackDiagnosticSessionId = "";
     private String imagePackFolderPickerScript;
     private String imagePackFolderPickerOrigin = "";
+    private String imagePackFolderPickerCapability = "";
     private Button pairingButton;
     private RemoteHostDiscovery remoteHostDiscovery;
     private boolean remoteReconnectInProgress;
@@ -877,8 +878,8 @@ public class MainActivity extends Activity {
             if(imagePackDirectoryAccess!=null)imagePackDirectoryAccess.handleActivityResult(result,data);
             return;
         }
-        if(req==WebFileChooser.REQUEST_CODE){
-            if(webFileChooser!=null)webFileChooser.handleActivityResult(result,data);
+        if(WebFileChooser.isRequestCode(req)){
+            if(webFileChooser!=null)webFileChooser.handleActivityResult(req,result,data);
             return;
         }
         if(req==PICK_TREE){
@@ -1721,7 +1722,9 @@ public class MainActivity extends Activity {
     private void installImageGenDocumentStartScript(String origin) {
         boolean documentStartSupported = WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT);
         try {
-            imagePackFolderPickerScript = ImagePackFolderPickerScript.read(this);
+            imagePackFolderPickerCapability = ImagePackFolderPickerScript.createCapability();
+            imagePackFolderPickerScript = ImagePackFolderPickerScript.read(
+                    this, imagePackFolderPickerCapability);
             imagePackFolderPickerOrigin = origin;
             boolean registered = false;
             ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "",
@@ -1746,6 +1749,7 @@ public class MainActivity extends Activity {
             }
         } catch (Exception error) {
             imagePackFolderPickerScript = null;
+            imagePackFolderPickerCapability = "";
             ImagePackDiagnostics.error(this, imagePackDiagnosticSessionId, "",
                     "folder_picker_script_load_failed", error);
             DiagnosticsLogger.error(this, "image-pack", "folder_picker_script_install", error);
@@ -2369,6 +2373,7 @@ public class MainActivity extends Activity {
     private void destroyWeb(){
         if(webFileChooser!=null){webFileChooser.cancelPending();webFileChooser=null;}
         if(imagePackDirectoryAccess!=null){imagePackDirectoryAccess.cancelPending();imagePackDirectoryAccess=null;}
+        imagePackFolderPickerCapability = "";
         if(web==null)return;
         logGameLifecycle("INFO","game_webview_destroyed",activeProfileId,activeGameLaunchRequestId,
                 "destroyWeb");
@@ -2407,9 +2412,23 @@ public class MainActivity extends Activity {
             ImagePackDiagnostics.javascriptEvent(MainActivity.this, imagePackDiagnosticSessionId,
                     requestId, stage, detailsJson);
         }
-        @JavascriptInterface public void chooseImagePackFolder(String requestId){
+        @JavascriptInterface public void chooseImagePackFolder(String requestId, String capability){
+            boolean trustedOrigin = web != null && activeProfileId != null
+                    && ImagePackFolderPickerScript.isSameOrigin(web.getUrl(), imagePackFolderPickerOrigin)
+                    && imagePackFolderPickerOrigin.equals(sessionOrigin(activeProfileId));
+            boolean trustedCapability = ImagePackFolderPickerScript.matchesCapability(
+                    imagePackFolderPickerCapability, capability);
+            if(!trustedOrigin || !trustedCapability){
+                ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, requestId,
+                        "wmlhost_choose_folder_rejected", "error",
+                        ImagePackDiagnostics.details("requestSource", "showDirectoryPicker",
+                                "originValidated", trustedOrigin, "capabilityValidated", trustedCapability));
+                return;
+            }
             ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, requestId,
-                    "wmlhost_choose_folder_entered", "info", null);
+                    "wmlhost_choose_folder_entered", "info",
+                    ImagePackDiagnostics.details("requestSource", "showDirectoryPicker",
+                            "originValidated", true, "capabilityValidated", true));
             if(imagePackDirectoryAccess!=null)imagePackDirectoryAccess.openFolderPicker(requestId);
             else ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, requestId,
                     "wmlhost_directory_access_missing", "error", null);
