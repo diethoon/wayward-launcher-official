@@ -5,8 +5,6 @@ const main = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/Mai
 const picker = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/WebFileChooser.java", import.meta.url), "utf8");
 const access = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackDirectoryAccess.java", import.meta.url), "utf8");
 const bridge = readFileSync(new URL("../app/src/main/assets/imagepack-folder-picker.js", import.meta.url), "utf8");
-const pathGuard = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackPathGuard.java", import.meta.url), "utf8");
-const atomicWriter = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackAtomicFileWriter.java", import.meta.url), "utf8");
 const manifest = readFileSync(new URL("../app/src/main/AndroidManifest.xml", import.meta.url), "utf8");
 const smoke = readFileSync(new URL("../scripts/android15-emulator-smoke.py", import.meta.url), "utf8");
 const helper = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackFolderPickerScript.java", import.meta.url), "utf8");
@@ -68,6 +66,8 @@ assert.match(helper, /typeof frame\.showDirectoryPicker==='function'/, "runtime 
 assert.match(helper, /frame\.__waywardNativeImagePackPickerInstalled!==true/,
   "a pre-existing browser API must not suppress installation of the native adapter");
 assert.match(helper, /frame\.eval\(source\)/, "runtime fallback must reach same-origin child frames");
+assert.doesNotMatch(access, /ImagePackFileSystemAccess|fileSystemAccess|ImagePackPathGuard|ImagePackAtomicFileWriter/,
+  "the retired local-filesystem chooser/backend and its path helpers must not remain in the SAF provider path");
 assert.doesNotMatch(access, /ImagePackFileSystemAccess|fileSystemAccess|Environment\.isExternalStorageManager|AlertDialog/,
   "image-pack selection must not instantiate or fall back to a Wayward-owned filesystem browser");
 assert.match(access, /new Intent\(Intent\.ACTION_OPEN_DOCUMENT_TREE\)/,
@@ -346,8 +346,6 @@ assert.match(smoke, /dumpsys", "activity", "recents"/, "the Android 15 test must
 assert.equal((smoke.match(/"-f", "0x10200000"/g) || []).length, 2,
   "foreground and process restart must use actual launcher NEW_TASK|RESET_TASK_IF_NEEDED semantics");
 assert.doesNotMatch(smoke, /run_documentsui_acceptance/i, "the Android 15 smoke test must also exercise an actual MainActivity game session");
-assert.match(readFileSync(new URL("../tests/ImagePackPathGuardTest.java", import.meta.url), "utf8"), /linked-documents/, "path tests must cover symbolic-link escape");
-assert.match(readFileSync(new URL("../tests/ImagePackAtomicFileWriterTest.java", import.meta.url), "utf8"), /simulated short write/, "writer tests must verify preservation after an incomplete write");
 assert.match(smoke, /__wayward_nav_child/, "Android 15 smoke must verify child and parent folder navigation");
 assert.match(smoke, /require_clickable: bool = True/, "Android 15 smoke must support locating non-clickable ListView text rows");
 assert.match(smoke, /require_clickable=False/, "folder navigation must use bounds for ListView text rows");
