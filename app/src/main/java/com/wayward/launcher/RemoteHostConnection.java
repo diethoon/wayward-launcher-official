@@ -353,7 +353,7 @@ final class RemoteHostConnection {
                     uri.getRawUserInfo() != null || uri.getRawQuery() != null ||
                     uri.getRawFragment() != null ||
                     (path != null && !path.isEmpty() && !"/".equals(path)) ||
-                    !isPrivateLanIpv4(uri.getHost())) {
+                    (!isPrivateLanIpv4(uri.getHost()) && !isGloballyRoutableIpv4(uri.getHost()))) {
                 throw new IllegalArgumentException(
                         "부트스트랩 PC 주소는 명시적 포트가 있는 HTTPS 사설 IPv4 루트 주소만 허용합니다.");
             }
