@@ -304,8 +304,14 @@ assert.match(pairing, /REQUEST_QR_IMAGE/,
   "the image import path must return its selected URI to the pairing activity");
 assert.match(pairing, /Intent\.ACTION_OPEN_DOCUMENT[\s\S]*?setType\("image\/\*"/,
   "the temporary tool must use the system image picker without replacing camera scanning");
-assert.match(pairing, /InputImage\.fromFilePath\(this, imageUri\)/,
-  "the image QR reader must decode the selected image URI");
+assert.match(pairing, /loadBoundedQrImage\(imageUri\)/,
+  "the image QR reader must open the selected image URI through bounded decoding");
+assert.match(pairing, /InputImage\.fromBitmap\(decoded\.bitmap, decoded\.rotationDegrees\)/,
+  "the image QR reader must pass the memory-bounded bitmap and EXIF rotation to ML Kit");
+assert.match(pairing, /calculateQrImageSampleSize/,
+  "extreme QR images must be downsampled before allocation");
+assert.match(pairing, /recycleQrBitmap\(bitmapForCallbacks\)/,
+  "decoded QR bitmaps must be recycled on all asynchronous scanner completion paths");
 assert.match(pairing, /Barcode\.FORMAT_QR_CODE/,
   "the image recognizer must only detect QR codes");
 assert.match(pairing, /if \(count == 0\)/,

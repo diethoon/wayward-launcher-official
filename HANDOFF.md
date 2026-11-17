@@ -430,3 +430,7 @@ Updated: 2026-11-15 (Asia/Seoul)
 
 ### Same selected ZIP sharesheet contract — 2026-11-18
 - Aligned the static share-flow contract with the retry-aware implementation: the generated or pending retry ZIP is normalized to `selectedArchive`, then that same file is passed to both Cloudflare upload and the Android chooser. The prior `archive` local variable no longer exists at the share call.
+
+
+### Bounded QR image decode contract updated — 2026-11-18
+- Updated the developer QR image source contract to match the memory-safe decoder: ACTION_OPEN_DOCUMENT URI is opened through `loadBoundedQrImage`, the sampled Bitmap plus EXIF rotation is passed through `InputImage.fromBitmap`, and callback completion recycles the temporary Bitmap. This prevents regression to unbounded full-resolution image allocation.
