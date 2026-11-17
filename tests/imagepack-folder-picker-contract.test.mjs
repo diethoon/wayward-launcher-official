@@ -10,6 +10,7 @@ const atomicWriter = readFileSync(new URL("../app/src/main/java/com/wayward/laun
 const manifest = readFileSync(new URL("../app/src/main/AndroidManifest.xml", import.meta.url), "utf8");
 const smoke = readFileSync(new URL("../scripts/android15-emulator-smoke.py", import.meta.url), "utf8");
 const helper = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackFolderPickerScript.java", import.meta.url), "utf8");
+const acceptance = readFileSync(new URL("../app/src/debug/java/com/wayward/launcher/ImagePackPickerAcceptanceActivity.java", import.meta.url), "utf8");
 const imageDiagnostics = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackDiagnostics.java", import.meta.url), "utf8");
 const exporter = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/DiagnosticsBundleExporter.java", import.meta.url), "utf8");
 const launcherLogger = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/DiagnosticsLogger.java", import.meta.url), "utf8");
@@ -212,8 +213,14 @@ assert.match(smoke, /PASS_SINGLE_IMAGE_FILE/,
   "the real game page must verify its independent single-file input contract");
 assert.match(smoke, /PASS persisted-after-restart/,
   "the selected SAF tree must remain readable after process restart");
-assert.match(smoke, /revokePersistedTreeGrantForTesting/,
-  "Android 15 acceptance must revoke a persisted SAF grant and test access denial");
+assert.match(smoke, /"verify_revoked"/,
+  "Android 15 acceptance must launch the persisted SAF permission-revocation scenario");
+assert.match(acceptance, /revokePersistedTreeGrantForTesting/,
+  "the debug acceptance Activity must revoke the exact saved SAF grant before the denial check");
+assert.match(acceptance, /PASS test fixture released the persisted SAF tree grant/,
+  "the device fixture must record that the real persisted tree permission was released");
+assert.match(acceptance, /verifyPermissionRevoked\(\)/,
+  "the post-revocation test must verify provider reads and listings are denied");
 assert.match(main, /private final SafImageCache imageCache = new SafImageCache\(MainActivity\.this\)/,
   "the game's original SAF image cache must remain in its resource-serving layer");
 assert.match(main, /MAX_CACHED_DIRECTORIES=2048/,
