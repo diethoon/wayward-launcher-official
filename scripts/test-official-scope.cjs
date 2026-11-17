@@ -120,23 +120,32 @@ assert(webStart >= 0 && webEnd > webStart, 'WebView construction method must exi
 assert.match(main.slice(webStart, webEnd), /installImageGenDocumentStartScript\(origin\)/,
   'the Image Studio adapter must be installed on the game origin');
 
-// Static picker request codes remain unique. Google auth uses a monotonic
-// nonce-scoped range so a late cancelled result cannot satisfy a later request.
+// MainActivity owns its fixed request codes. WebView file chooser requests use
+// an isolated per-request range so a late result cannot satisfy a later callback.
 const mainRequestCodeNames = ['PICK_TREE', 'PICK_MOD_ZIP', 'REQUEST_NAI_SETTINGS'];
 const mainRequestCodes = mainRequestCodeNames.map((name) => {
-  const match = main.match(new RegExp(`\\b${name}\\s*=\\s*(\\d+)`));
-  assert(match, `MainActivity request code ${name} must exist`);
+  const match = main.match(new RegExp(\`\\\\b\${name}\\\\s*=\\\\s*(\\\\d+)\`));
+  assert(match, \`MainActivity request code \${name} must exist\`);
   return Number(match[1]);
 });
-const chooserRequestMatch = webFileChooser.match(/static final int REQUEST_CODE\s*=\s*(\d+)/);
-assert(chooserRequestMatch, 'WebView file chooser request code must exist');
-const allRequestCodes = [...mainRequestCodes, Number(chooserRequestMatch[1])];
+const chooserMinMatch = webFileChooser.match(/REQUEST_CODE_MIN\\s*=\\s*(\\d+)/);
+const chooserMaxMatch = webFileChooser.match(/REQUEST_CODE_MAX\\s*=\\s*(\\d+)/);
+assert(chooserMinMatch && chooserMaxMatch, 'WebView per-request code range must exist');
+const chooserMin = Number(chooserMinMatch[1]);
+const chooserMax = Number(chooserMaxMatch[1]);
+assert.ok(chooserMin >= 1 && chooserMax <= 65534 && chooserMin < chooserMax,
+  'WebView chooser request-code range must be valid and bounded');
+assert.match(webFileChooser, /NEXT_REQUEST_CODE\\.getAndUpdate\\(/,
+  'each file chooser request must reserve a distinct ActivityResult code');
+assert.match(webFileChooser, /static boolean isRequestCode\\(int requestCode\\)/,
+  'MainActivity must route the reserved WebView chooser range');
 assert.match(main, /REQUEST_GOOGLE_AUTH_MIN=60000/);
 assert.match(main, /REQUEST_GOOGLE_AUTH_MAX=65534/);
 assert.ok(main.includes('reserveGoogleAuthRequestCode(nonce)'));
-assert.ok(allRequestCodes.every(code => code < 60000 || code > 65534),
-  'static picker codes must not overlap the dynamic Google auth range');
-assert.equal(new Set(allRequestCodes).size, allRequestCodes.length,
-  'MainActivity and WebView file chooser ActivityResult request codes must be unique');
-
+assert.ok(chooserMax < 60000 || chooserMin > 65534,
+  'WebView chooser codes must not overlap the dynamic Google auth range');
+assert.ok(mainRequestCodes.every(code => code < chooserMin || code > chooserMax),
+  'MainActivity fixed picker codes must not overlap the WebView chooser range');
+assert.equal(new Set(mainRequestCodes).size, mainRequestCodes.length,
+  'MainActivity fixed ActivityResult request codes must remain unique');
 console.log('Official v1 scope checks passed');
