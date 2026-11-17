@@ -66,6 +66,14 @@ jobs:
           java -cp "$test_dir" com.wayward.launcher.SafImageDocumentResolverTest
           node tests/saf-image-fast-path.contract.test.cjs
 
+      - name: Test Image Studio isolation and local image-pack preservation
+        run: |
+          test_dir="$RUNNER_TEMP/wml-module-policy-test"
+          mkdir -p "$test_dir"
+          javac -d "$test_dir" app/src/main/java/com/wayward/launcher/WmlModulePolicy.java tests/WmlModulePolicyTest.java
+          java -cp "$test_dir" com.wayward.launcher.WmlModulePolicyTest
+          node tests/local-imagepack-only.contract.test.cjs
+
       - name: Prepare optional release keystore
         shell: bash
         env:
