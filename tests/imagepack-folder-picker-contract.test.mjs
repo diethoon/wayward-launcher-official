@@ -65,12 +65,18 @@ assert.match(legacyBackup, /exclude domain="sharedpref" path="wayward_launcher.x
   "legacy cloud backup must exclude the profile and game-session preferences file");
 assert.ok(legacyBackup.includes('exclude domain="file" path="diagnostics/"'),
   "legacy cloud backup must exclude local diagnostic journals");
+assert.ok(legacyBackup.includes('exclude domain="root" path="app_webview/"'),
+  "legacy cloud backup must exclude WebView game saves and session storage");
 const cloudBackupRules = extractionBackup.split("<cloud-backup>")[1].split("</cloud-backup>")[0];
 const deviceTransferRules = extractionBackup.split("<device-transfer>")[1].split("</device-transfer>")[0];
 assert.ok(cloudBackupRules.includes('exclude domain="sharedpref" path="wayward_launcher.xml"'),
   "Android cloud backup must exclude game registrations");
 assert.ok(deviceTransferRules.includes('exclude domain="sharedpref" path="wayward_launcher.xml"'),
   "Android device-to-device transfer must exclude game registrations");
+assert.ok(cloudBackupRules.includes('exclude domain="root" path="app_webview/"'),
+  "Android cloud backup must exclude WebView game saves and session storage");
+assert.ok(deviceTransferRules.includes('exclude domain="root" path="app_webview/"'),
+  "Android device-to-device transfer must exclude WebView game saves and session storage");
 assert.equal(extractionBackup.split('exclude domain="file" path="diagnostics/"').length - 1, 2,
   "both cloud backup and device transfer must exclude picker diagnostics");
 assert.match(manifest, /android\.permission\.MANAGE_EXTERNAL_STORAGE/, "the app must declare all-files access");

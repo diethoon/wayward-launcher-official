@@ -3,6 +3,7 @@
     <cloud-backup>
         <!-- This shared preference file contains registered game folders and session state. -->
         <exclude domain="sharedpref" path="wayward_launcher.xml" />
+        <exclude domain="root" path="app_webview/" />
         <exclude domain="file" path="diagnostics/" />
         <exclude domain="file" path="image-providers.enc" />
         <exclude domain="file" path="image-providers.enc.tmp" />
