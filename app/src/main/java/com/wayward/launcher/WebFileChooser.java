@@ -6,7 +6,6 @@ import android.content.ContentResolver;
 import android.content.Intent;
 import android.content.res.AssetFileDescriptor;
 import android.net.Uri;
-import android.provider.DocumentsContract;
 import android.webkit.MimeTypeMap;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -15,7 +14,6 @@ import android.webkit.WebView;
 
 import org.json.JSONObject;
 
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -41,19 +39,17 @@ final class WebFileChooser extends WebChromeClient {
         final String requestId;
         final int requestCode;
         final int mode;
-        final int permissionMode;
         final WebFileChooserRequestPolicy.Kind kind;
         final List<String> acceptedMimeTypes;
         final String pickerAction;
 
         PendingRequest(ValueCallback<Uri[]> callback, String requestId, int requestCode,
-                int mode, int permissionMode, WebFileChooserRequestPolicy.Kind kind,
+                int mode, WebFileChooserRequestPolicy.Kind kind,
                 List<String> acceptedMimeTypes, String pickerAction) {
             this.callback = callback;
             this.requestId = requestId;
             this.requestCode = requestCode;
             this.mode = mode;
-            this.permissionMode = permissionMode;
             this.kind = kind;
             this.acceptedMimeTypes = acceptedMimeTypes;
             this.pickerAction = pickerAction;
@@ -127,7 +123,6 @@ final class WebFileChooser extends WebChromeClient {
         try {
             mode = params.getMode();
             kind = WebFileChooserRequestPolicy.classify(mode);
-            permissionMode = readPermissionMode(params);
             accepted = acceptedMimeTypes(params.getAcceptTypes());
             captureEnabled = params.isCaptureEnabled();
         } catch (Exception error) {
@@ -149,7 +144,7 @@ final class WebFileChooser extends WebChromeClient {
 
         final Intent picker;
         try {
-            picker = buildPickerIntent(params, kind, accepted, captureEnabled, permissionMode);
+            picker = buildPickerIntent(params, kind, accepted, captureEnabled);
         } catch (Exception error) {
             ImagePackDiagnostics.error(activity, diagnosticSessionId, requestId,
                     "web_file_chooser_intent_build_failed", error);
@@ -159,7 +154,7 @@ final class WebFileChooser extends WebChromeClient {
 
         int requestCode = nextRequestCode();
         PendingRequest request = new PendingRequest(filePathCallback, requestId, requestCode,
-                mode, permissionMode, kind, accepted, picker.getAction());
+                mode, kind, accepted, picker.getAction());
         JSONObject details = ImagePackDiagnostics.pageDetails(
                 webView == null ? null : webView.getUrl(), true);
         try {
@@ -167,7 +162,6 @@ final class WebFileChooser extends WebChromeClient {
             details.put("requestType", WebFileChooserRequestPolicy.label(kind));
             details.put("mode", mode);
             details.put("captureEnabled", captureEnabled);
-            details.put("permissionMode", permissionMode);
             details.put("mimeTypeCount", accepted.size());
             details.put("acceptTypes", joinMimeTypes(accepted));
             details.put("pickerAction", picker.getAction());
@@ -196,15 +190,7 @@ final class WebFileChooser extends WebChromeClient {
 
     private Intent buildPickerIntent(FileChooserParams params,
             WebFileChooserRequestPolicy.Kind kind, List<String> accepted,
-            boolean captureEnabled, int permissionMode) {
-        if (WebFileChooserRequestPolicy.isFolder(kind)) {
-            Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-            int flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-                    | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION;
-            if (permissionMode == WebFileChooserRequestPolicy.PERMISSION_MODE_READ_WRITE) {
-                flags |= Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
-            }
+            boolean captureEnabled) {
             picker.addFlags(flags);
             addTitle(picker, params.getTitle());
             return picker;
@@ -264,16 +250,6 @@ final class WebFileChooser extends WebChromeClient {
             picker.setType("*/*");
             picker.putExtra(Intent.EXTRA_MIME_TYPES, accepted.toArray(new String[0]));
         }
-    }
-
-    private static int readPermissionMode(FileChooserParams params) {
-        // getPermissionMode() is API 37; reflection avoids raising compileSdk 35.
-        try {
-            Method method = params.getClass().getMethod("getPermissionMode");
-            Object value = method.invoke(params);
-            if (value instanceof Number) return ((Number) value).intValue();
-        } catch (Exception ignored) {}
-        return WebFileChooserRequestPolicy.PERMISSION_MODE_READ;
     }
 
     private static List<String> acceptedMimeTypes(String[] acceptTypes) {
@@ -356,9 +332,7 @@ final class WebFileChooser extends WebChromeClient {
         }
 
         try {
-            Uri[] selected = WebFileChooserRequestPolicy.isFolder(request.kind)
-                    ? collectFolderResult(request, data)
-                    : collectFileResult(request, data);
+            Uri[] selected = collectFileResult(request, data);
             if (selected == null || selected.length == 0) {
                 complete(request, null, "result_validation_failed", "empty_selection");
                 return;
@@ -375,28 +349,6 @@ final class WebFileChooser extends WebChromeClient {
                     "web_file_chooser_result_validation_failed", error);
             complete(request, null, "result_validation_failed", error.getClass().getSimpleName());
         }
-    }
-
-    private Uri[] collectFolderResult(PendingRequest request, Intent data) throws Exception {
-        Uri tree = data.getData();
-        if (!isContentUri(tree) || !DocumentsContract.isTreeUri(tree)) {
-            throw new IllegalArgumentException("The folder request did not return a SAF tree URI.");
-        }
-        int flags = data.getFlags();
-        int grants = flags & (Intent.FLAG_GRANT_READ_URI_PERMISSION
-                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-        boolean readGranted = (grants & Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0;
-        boolean writeRequired = request.permissionMode
-                == WebFileChooserRequestPolicy.PERMISSION_MODE_READ_WRITE;
-        boolean writeGranted = (grants & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0;
-        if (!readGranted || (writeRequired && !writeGranted)) {
-            throw new PermissionDeniedException("required_tree_grant_missing");
-        }
-        String documentId = DocumentsContract.getTreeDocumentId(tree);
-        if (documentId == null || documentId.trim().isEmpty()) {
-            throw new IllegalArgumentException("The selected tree has no root document ID.");
-        }
-        return new Uri[] {tree};
     }
 
     private Uri[] collectFileResult(PendingRequest request, Intent data) throws Exception {
