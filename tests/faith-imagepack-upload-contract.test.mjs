@@ -128,6 +128,7 @@ let chooseCount = 0;
 let capturedId = "";
 let grantedWrite = false;
 let lastChangeTarget = null;
+let asyncChangeTask = Promise.resolve();
 let cancelNextPicker = false;
 let forceReadQuota = false;
 let windowObject;
@@ -264,6 +265,22 @@ Object.assign(input, {
     if (event.type === "change") {
       receivedFiles = this.files;
       lastChangeTarget = event.target;
+      // Model a real async change listener that reads event.target.files again
+      // after multiple turns and after an asynchronous File.text() operation.
+      asyncChangeTask = (async () => {
+        const eventFiles = event.target.files;
+        await Promise.resolve();
+        assert.equal(event.target.files, eventFiles,
+          "event.target.files must survive the first asynchronous continuation");
+        assert.equal(this.files, eventFiles,
+          "input.files and event.target.files must expose the same retained FileList");
+        await eventFiles.item(0).text();
+        await Promise.resolve();
+        assert.equal(event.target.files, eventFiles,
+          "event.target.files must survive multiple async continuations and File.text()");
+        assert.equal(this.files, eventFiles,
+          "input.files must remain stable until a later successful selection");
+      })();
       changeResolve();
     }
     return true;
@@ -286,6 +303,7 @@ await Promise.race([
 ]);
 
 assert.deepEqual(inputEvents, ["input", "change"]);
+await asyncChangeTask;
 assert.equal(receivedFiles instanceof FakeFileList, true);
 assert.equal(input.files, receivedFiles, "the FileList remains attached after synchronous event dispatch");
 assert.equal(receivedFiles.length, 2);
