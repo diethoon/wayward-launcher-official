@@ -17,10 +17,7 @@ import java.util.UUID;
 /** Verified, public connection metadata for one Windows Remote Host. */
 final class RemoteHostConnection {
     final String baseUrl;
-    final String externalBaseUrl;
     final String hostId;
-    private final boolean externalTestEndpoint;
-    private final JSONObject externalPortMapping;
     final String publicKeyBase64;
     final String publicKeyFingerprint;
     final String certificateSha256;
@@ -31,46 +28,13 @@ final class RemoteHostConnection {
     RemoteHostConnection(String baseUrl, String hostId, String publicKeyBase64,
             String publicKeyFingerprint, String certificateSha256, String qrNonce,
             String signedPayloadBase64, String signatureBase64) {
-        this(baseUrl, "", hostId, publicKeyBase64, publicKeyFingerprint,
-                certificateSha256, qrNonce, signedPayloadBase64, signatureBase64);
-    }
-
-    RemoteHostConnection(String baseUrl, String externalBaseUrl, String hostId,
-            String publicKeyBase64, String publicKeyFingerprint, String certificateSha256,
-            String qrNonce, String signedPayloadBase64, String signatureBase64) {
-        this(baseUrl, externalBaseUrl, hostId, publicKeyBase64, publicKeyFingerprint,
-                certificateSha256, qrNonce, signedPayloadBase64, signatureBase64, false, null);
-    }
-
-    private RemoteHostConnection(String baseUrl, String externalBaseUrl, String hostId,
-            String publicKeyBase64, String publicKeyFingerprint, String certificateSha256,
-            String qrNonce, String signedPayloadBase64, String signatureBase64,
-            boolean externalTestEndpoint, JSONObject externalPortMapping) {
-        this.baseUrl = externalTestEndpoint
-                ? normalizeExternalBaseUrl(baseUrl) : normalizeBaseUrl(baseUrl);
-        this.externalBaseUrl = normalizeExternalBaseUrl(externalBaseUrl);
-        this.externalTestEndpoint = externalTestEndpoint;
-        if (externalTestEndpoint && (!this.baseUrl.equals(this.externalBaseUrl)
-                || externalPortMapping == null)) {
-            throw new IllegalArgumentException("외부 테스트 QR의 서명된 baseUrl, externalBaseUrl 및 포트 매핑이 일치하지 않습니다.");
-        }
-        if (externalTestEndpoint) {
-            try {
-                this.externalPortMapping = new JSONObject(externalPortMapping.toString());
-            } catch (org.json.JSONException error) {
-                throw new IllegalArgumentException("외부 테스트 QR의 포트 매핑 정보가 올바르지 않습니다.", error);
-            }
-        } else {
-            this.externalPortMapping = null;
-        }
+        this.baseUrl = normalizeBaseUrl(baseUrl);
         this.hostId = UUID.fromString(hostId).toString();
         this.publicKeyBase64 = requireText(publicKeyBase64, "Host public key");
         this.publicKeyFingerprint = normalizeFingerprint(publicKeyFingerprint);
         this.certificateSha256 = normalizeFingerprint(certificateSha256);
         this.qrNonce = requireText(qrNonce, "QR enrollment nonce").trim().toUpperCase(Locale.ROOT);
-        if (!this.qrNonce.matches("[0-9A-F]{64}")) {
-            throw new IllegalArgumentException("QR enrollment nonce format is invalid.");
-        }
+        if (!this.qrNonce.matches("[0-9A-F]{64}")) throw new IllegalArgumentException("QR enrollment nonce format is invalid.");
         this.signedPayloadBase64 = requireText(signedPayloadBase64, "Host signed payload");
         this.signatureBase64 = requireText(signatureBase64, "Host signature");
     }
@@ -157,26 +121,10 @@ final class RemoteHostConnection {
         if (value.optInt("protocolVersion", 0) != 1) {
             throw new IllegalArgumentException("지원하지 않는 Remote Host protocol입니다.");
         }
-        String baseUrl = value.getString("baseUrl");
-        String externalBaseUrl = value.optString("externalBaseUrl", "");
-        boolean externalTestEndpoint = !externalBaseUrl.isEmpty() && baseUrl.equals(externalBaseUrl);
-        JSONObject mapping = null;
-        if (externalTestEndpoint) {
-            mapping = value.optJSONObject("portMapping");
-            validateExternalTestQr(baseUrl, externalBaseUrl, mapping);
-        }
-        return new RemoteHostConnection(
-                baseUrl,
-                externalBaseUrl,
-                value.getString("hostId"),
-                value.getString("publicKeyBase64"),
-                value.getString("publicKeyFingerprint"),
-                value.getString("certificateSha256"),
-                value.getString("qrNonce"),
-                value.getString("signedPayloadBase64"),
-                value.getString("signatureBase64"),
-                externalTestEndpoint,
-                mapping);
+        return new RemoteHostConnection(value.getString("baseUrl"), value.getString("hostId"),
+                value.getString("publicKeyBase64"), value.getString("publicKeyFingerprint"),
+                value.getString("certificateSha256"), value.getString("qrNonce"),
+                value.getString("signedPayloadBase64"), value.getString("signatureBase64"));
     }
 
     void verifySignedManifest() throws Exception {
@@ -219,12 +167,6 @@ final class RemoteHostConnection {
             requireSignedLine(signedText, "protocol=1", false);
             requireSignedLine(signedText, "host=" + hostId, false);
             requireSignedLine(signedText, "baseUrl=" + baseUrl, false);
-            boolean hasExternalEndpoint = signedText.contains("externalBaseUrl=");
-            if (hasExternalEndpoint) {
-                requireSignedLine(signedText, "externalBaseUrl=" + externalBaseUrl, false);
-            } else if (!externalBaseUrl.isEmpty()) {
-                throw new SecurityException("서명되지 않은 외부 Remote Host 주소가 포함되어 있습니다.");
-            }
             requireSignedLine(signedText, "publicKeyFingerprint=" + actualFingerprint, false);
             requireSignedLine(signedText, "certificateSha256=" + certificateSha256, false);
             requireSignedLine(signedText, "qrNonce=" + qrNonce, false);
@@ -285,10 +227,6 @@ final class RemoteHostConnection {
         JSONObject value = new JSONObject();
         value.put("protocolVersion", 1);
         value.put("baseUrl", baseUrl);
-        if (!externalBaseUrl.isEmpty()) value.put("externalBaseUrl", externalBaseUrl);
-        if (externalTestEndpoint && externalPortMapping != null) {
-            value.put("portMapping", new JSONObject(externalPortMapping.toString()));
-        }
         value.put("hostId", hostId);
         value.put("publicKeyBase64", publicKeyBase64);
         value.put("publicKeyFingerprint", publicKeyFingerprint);
@@ -347,19 +285,10 @@ final class RemoteHostConnection {
         String trimmed = requireText(value, "Bootstrap Host URL").trim();
         try {
             URI uri = new URI(trimmed);
-            String path = uri.getRawPath();
-            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null ||
-                    uri.getPort() < 1 || uri.getPort() > 65535 ||
-                    uri.getRawUserInfo() != null || uri.getRawQuery() != null ||
-                    uri.getRawFragment() != null ||
-                    (path != null && !path.isEmpty() && !"/".equals(path)) ||
-                    (!isPrivateLanIpv4(uri.getHost()) && !isGloballyRoutableIpv4(uri.getHost()))) {
-                throw new IllegalArgumentException(
-                        "부트스트랩 PC 주소는 명시적 포트가 있는 HTTPS 사설 IPv4 루트 주소만 허용합니다.");
+            if (uri.getPort() < 1 || uri.getPort() > 65535) {
+                throw new IllegalArgumentException("LAN 부트스트랩 주소에는 유효한 포트가 필요합니다.");
             }
-            return isPrivateLanIpv4(uri.getHost())
-                    ? normalizeBaseUrl(trimmed)
-                    : normalizeExternalBaseUrl(trimmed);
+            return normalizeBaseUrl(trimmed);
         } catch (java.net.URISyntaxException error) {
             throw new IllegalArgumentException("부트스트랩 PC 주소 형식이 올바르지 않습니다.", error);
         }
@@ -381,86 +310,6 @@ final class RemoteHostConnection {
         } catch (java.net.URISyntaxException error) {
             throw new IllegalArgumentException("Remote Host URL 형식이 올바르지 않습니다.", error);
         }
-    }
-
-    private static void validateExternalTestQr(String baseUrl, String externalBaseUrl,
-            JSONObject mapping) throws Exception {
-        if (baseUrl == null || !baseUrl.equals(externalBaseUrl) || mapping == null) {
-            throw new IllegalArgumentException("외부 테스트 QR은 baseUrl과 externalBaseUrl이 같고 portMapping 정보가 있어야 합니다.");
-        }
-        URI uri = new URI(normalizeExternalBaseUrl(baseUrl));
-        String state = mapping.getString("state");
-        String protocol = mapping.getString("protocol");
-        String ownershipState = mapping.getString("ownershipState");
-        String localAddress = mapping.getString("localAddress");
-        String externalAddress = mapping.getString("externalAddress");
-        int internalPort = requireJsonInteger(mapping, "internalPort");
-        int externalPort = requireJsonInteger(mapping, "externalPort");
-
-        if (!"active".equals(state)
-                || !"TCP".equalsIgnoreCase(protocol)
-                || !ownershipState.startsWith("wayward-auto-")
-                || internalPort != 8765
-                || externalPort != uri.getPort()
-                || !uri.getHost().equalsIgnoreCase(externalAddress)
-                || !isPrivateLanIpv4(localAddress)) {
-            throw new IllegalArgumentException(
-                    "외부 테스트 QR은 활성 Wayward 자동 TCP 매핑(내부 8765)과 정확히 일치하는 공인 IPv4 주소·포트만 허용합니다.");
-        }
-    }
-
-    private static int requireJsonInteger(JSONObject value, String name) throws Exception {
-        Object raw = value.get(name);
-        if (!(raw instanceof Number)) {
-            throw new IllegalArgumentException("외부 테스트 QR의 portMapping." + name + " 값이 정수가 아닙니다.");
-        }
-        Number number = (Number) raw;
-        int result = number.intValue();
-        if (number.doubleValue() != (double) result || result < 1 || result > 65535) {
-            throw new IllegalArgumentException("외부 테스트 QR의 portMapping." + name + " 범위가 올바르지 않습니다.");
-        }
-        return result;
-    }
-
-    static String normalizeExternalBaseUrl(String value) {
-        if (value == null || value.trim().isEmpty()) return "";
-        String trimmed = value.trim();
-        try {
-            URI uri = new URI(trimmed);
-            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null ||
-                    uri.getPort() < 1 || uri.getPort() > 65535 ||
-                    uri.getRawUserInfo() != null || uri.getRawQuery() != null ||
-                    uri.getRawFragment() != null ||
-                    (uri.getRawPath() != null && !uri.getRawPath().isEmpty() && !"/".equals(uri.getRawPath())) ||
-                    !isGloballyRoutableIpv4(uri.getHost())) {
-                throw new IllegalArgumentException("외부 Remote Host 주소는 HTTPS와 공인 IPv4 주소·포트만 허용합니다.");
-            }
-            return trimmed.endsWith("/") ? trimmed : trimmed + "/";
-        } catch (java.net.URISyntaxException error) {
-            throw new IllegalArgumentException("외부 Remote Host URL 형식이 올바르지 않습니다.", error);
-        }
-    }
-
-    private static boolean isGloballyRoutableIpv4(String host) {
-        if (host == null || !host.matches("[0-9]{1,3}(\\.[0-9]{1,3}){3}")) return false;
-        String[] octets = host.split("\\.", -1);
-        int[] b = new int[4];
-        for (int i = 0; i < 4; i++) {
-            try { b[i] = Integer.parseInt(octets[i]); }
-            catch (NumberFormatException error) { return false; }
-            if (b[i] < 0 || b[i] > 255 ||
-                    (octets[i].length() > 1 && octets[i].startsWith("0"))) return false;
-        }
-        if (b[0] == 0 || b[0] == 10 || b[0] == 127 || b[0] >= 224) return false;
-        if (b[0] == 100 && b[1] >= 64 && b[1] <= 127) return false;
-        if (b[0] == 169 && b[1] == 254) return false;
-        if (b[0] == 172 && b[1] >= 16 && b[1] <= 31) return false;
-        if (b[0] == 192 && (b[1] == 168 ||
-                b[1] == 0 && b[2] <= 2 ||
-                b[1] == 88 && b[2] == 99)) return false;
-        if (b[0] == 198 && (b[1] == 18 || b[1] == 19 || b[1] == 51 && b[2] == 100)) return false;
-        if (b[0] == 203 && b[1] == 0 && b[2] == 113) return false;
-        return true;
     }
 
     private static boolean isPrivateLanIpv4(String host) {

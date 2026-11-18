@@ -469,12 +469,8 @@ final class RemoteHostClient {
     }
 
     static String[] endpointCandidates(RemoteHostConnection host) {
-        if (host == null) throw new IllegalArgumentException("Remote Host is missing.");
-        if (host.externalBaseUrl.isEmpty()
-                || host.externalBaseUrl.equalsIgnoreCase(host.baseUrl)) {
-            return new String[] {host.baseUrl};
-        }
-        return new String[] {host.baseUrl, host.externalBaseUrl};
+        if (host == null) throw new IllegalArgumentException("Trusted LAN Host is required.");
+        return new String[] {host.baseUrl};
     }
 
     private static HttpsURLConnection openPinned(RemoteHostConnection host, String path,

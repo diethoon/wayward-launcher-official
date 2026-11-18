@@ -230,13 +230,6 @@ public final class RemotePlayCryptoInstrumentedTest {
     }
 
     @Test
-    public void dynamicExternalPortsAreAcceptedWithoutChangingTheLanListenerPort() {
-        for (int port : new int[] {8765, 43210, 50000}) {
-            String external = "https://8.8.8.8:" + port + "/";
-            assertEquals(external, RemoteHostConnection.normalizeExternalBaseUrl(external));
-        }
-    }
-
     @Test
     public void externalEndpointRejectsMissingAndOutOfRangePorts() {
         for (String external : new String[] {
@@ -474,59 +467,6 @@ public final class RemotePlayCryptoInstrumentedTest {
                 "https://8.8.8.8:8765/", hostId,
                 Base64.encodeToString(keyPair.getPublic().getEncoded(), Base64.NO_WRAP),
                 fingerprint, "C".repeat(64), "D".repeat(64), "payload", "signature"));
-    }
-
-    private static JSONObject createExternalTestQr(KeyPair signer, String baseUrl,
-            String externalBaseUrl, String localAddress, int internalPort,
-            String externalAddress, int externalPort, String mappingState,
-            String protocol, String ownershipState) throws Exception {
-        String hostId = UUID.randomUUID().toString();
-        String fingerprint = RemoteHostConnection.sha256Hex(signer.getPublic().getEncoded());
-        String certificatePin = "C".repeat(64);
-        String qrNonce = UUID.randomUUID().toString().replace("-", "").toUpperCase(java.util.Locale.ROOT)
-                + UUID.randomUUID().toString().replace("-", "").toUpperCase(java.util.Locale.ROOT);
-        long issuedAt = System.currentTimeMillis();
-        long expiresAt = issuedAt + 300_000L;
-        String payloadText = String.join("\n",
-                "Wayward-Remote-Host-Connection",
-                "protocol=1",
-                "host=" + hostId,
-                "baseUrl=" + baseUrl,
-                "externalBaseUrl=" + externalBaseUrl,
-                "publicKeyFingerprint=" + fingerprint,
-                "certificateSha256=" + certificatePin,
-                "qrNonce=" + qrNonce,
-                "issued=" + issuedAt,
-                "expires=" + expiresAt);
-        byte[] payload = payloadText.getBytes(StandardCharsets.UTF_8);
-        byte[] signature = RemoteHostClient.derToP1363(sign(signer, payload));
-        try {
-            JSONObject mapping = new JSONObject()
-                    .put("state", mappingState)
-                    .put("method", "upnp")
-                    .put("localAddress", localAddress)
-                    .put("internalPort", internalPort)
-                    .put("externalAddress", externalAddress)
-                    .put("externalPort", externalPort)
-                    .put("protocol", protocol)
-                    .put("ownershipState", ownershipState)
-                    .put("mappingDescription", "Wayward Remote Host test");
-            return new JSONObject()
-                    .put("protocolVersion", 1)
-                    .put("baseUrl", baseUrl)
-                    .put("externalBaseUrl", externalBaseUrl)
-                    .put("portMapping", mapping)
-                    .put("hostId", hostId)
-                    .put("publicKeyBase64", Base64.encodeToString(signer.getPublic().getEncoded(), Base64.NO_WRAP))
-                    .put("publicKeyFingerprint", fingerprint)
-                    .put("certificateSha256", certificatePin)
-                    .put("qrNonce", qrNonce)
-                    .put("signedPayloadBase64", Base64.encodeToString(payload, Base64.NO_WRAP))
-                    .put("signatureBase64", Base64.encodeToString(signature, Base64.NO_WRAP));
-        } finally {
-            java.util.Arrays.fill(payload, (byte) 0);
-            java.util.Arrays.fill(signature, (byte) 0);
-        }
     }
 
     private static RemoteHostConnection createSignedHostManifest(KeyPair signer, String hostId,
