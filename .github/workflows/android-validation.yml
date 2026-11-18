@@ -114,6 +114,8 @@ jobs:
 
       - name: Test native image-pack SAF folder bridge contract
         run: node tests/imagepack-folder-picker-contract.test.mjs
+      - name: Test generic file-access policy isolation and large-tree safety
+        run: node tests/file-access-engine-policy.test.mjs
       - name: Test FAITH 3.0.0 webkitdirectory FileList adapter
         run: node tests/faith-imagepack-upload-contract.test.mjs
 
