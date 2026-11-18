@@ -42,6 +42,20 @@ public final class WebFileChooserRequestPolicyTest {
                 "empty accept list means unrestricted selection");
         expect(WebFileChooserRequestPolicy.acceptsFile(Arrays.asList(".tar.gz"), null, "backup.tar.gz"), true,
                 "compound extension is matched as a suffix");
+        List<String> waywardSaveImport = WebFileChooserRequestPolicy.parseAcceptTypes(
+                new String[] { "application/json,.json" });
+        expectTokens(waywardSaveImport, "application/json", ".json");
+        expect(WebFileChooserRequestPolicy.acceptsFile(waywardSaveImport,
+                "application/json", "savegame.json"), true, "Wayward single JSON save import");
+        expect(WebFileChooserRequestPolicy.acceptsFile(waywardSaveImport,
+                "application/octet-stream", "savegame.json"), true, "Wayward extension remains authoritative when provider MIME is generic");
+        List<String> waywardPackImport = WebFileChooserRequestPolicy.parseAcceptTypes(
+                new String[] { ".json,application/json" });
+        expectTokens(waywardPackImport, ".json", "application/json");
+        expect(WebFileChooserRequestPolicy.allowsMultipleFiles(
+                WebFileChooserRequestPolicy.classify(1)), true, "Wayward pack import retains multiple selection");
+        expect(WebFileChooserRequestPolicy.allowsMultipleFiles(
+                WebFileChooserRequestPolicy.classify(0)), false, "Wayward save import remains single selection");
         boolean invalidRejected = false;
         try { WebFileChooserRequestPolicy.parseAcceptTypes(new String[] { "not-a-filter" }); }
         catch (IllegalArgumentException expected) { invalidRejected = true; }
