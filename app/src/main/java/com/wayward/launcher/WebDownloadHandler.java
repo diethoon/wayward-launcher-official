@@ -199,13 +199,14 @@ final class WebDownloadHandler {
             }
             output.flush();
             if (copied != request.expectedBytes) throw new IllegalStateException("Export byte count mismatch.");
-            DiagnosticsLogger.event(activity, "INFO", "webview", "blob_download_saved", null);
-            Toast.makeText(activity, request.filename + " 저장 완료", Toast.LENGTH_LONG).show();
-            complete(request, true);
         } catch (Exception error) {
             DiagnosticsLogger.event(activity, "ERROR", "webview", "blob_download_write_failed", null);
             fail(request, "파일을 저장하지 못했습니다: " + safeMessage(error));
+            return;
         }
+        DiagnosticsLogger.event(activity, "INFO", "webview", "blob_download_saved", null);
+        Toast.makeText(activity, request.filename + " 저장 완료", Toast.LENGTH_LONG).show();
+        complete(request, true);
     }
 
     void cancelPending() {
