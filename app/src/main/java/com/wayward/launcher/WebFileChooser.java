@@ -453,7 +453,7 @@ final class WebFileChooser extends WebChromeClient {
     }
 
     private static boolean isLiveCaptureAction(String action) {
-        return Intent.ACTION_IMAGE_CAPTURE.equals(action)
+        return MediaStore.ACTION_IMAGE_CAPTURE.equals(action)
                 || MediaStore.ACTION_VIDEO_CAPTURE.equals(action)
                 || "android.provider.MediaStore.RECORD_SOUND".equals(action);
     }
