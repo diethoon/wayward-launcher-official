@@ -209,6 +209,18 @@
     return entries;
   }
 
+  function queryHandlePermission(permissions, options) {
+    const mode = options && options.mode !== undefined ? options.mode : "read";
+    if (mode !== "read" && mode !== "readwrite") throw new TypeError("Invalid permission mode.");
+    try {
+      const info = nativeJson("getImagePackFolderInfo", permissions.requestId || "");
+      if (info.uri !== permissions.treeUri) return "denied";
+      return mode === "readwrite" && info.writable !== true ? "denied" : "granted";
+    } catch (_) {
+      return "denied";
+    }
+  }
+
   function makeDirectory(uri, name, permissions) {
     const handle = {
       kind: "directory",
@@ -219,9 +231,7 @@
           other.__waywardSafDocumentUri === uri;
       },
       async queryPermission(options) {
-        const mode = options && options.mode !== undefined ? options.mode : "read";
-        if (mode !== "read" && mode !== "readwrite") throw new TypeError("Invalid permission mode.");
-        return mode === "readwrite" && !permissions.writable ? "denied" : "granted";
+        return queryHandlePermission(permissions, options);
       },
       async requestPermission(options) {
         return this.queryPermission(options);
@@ -310,9 +320,7 @@
           other.__waywardSafDocumentUri === uri;
       },
       async queryPermission(options) {
-        const mode = options && options.mode !== undefined ? options.mode : "read";
-        if (mode !== "read" && mode !== "readwrite") throw new TypeError("Invalid permission mode.");
-        return mode === "readwrite" && !permissions.writable ? "denied" : "granted";
+        return queryHandlePermission(permissions, options);
       },
       async requestPermission(options) {
         return this.queryPermission(options);
