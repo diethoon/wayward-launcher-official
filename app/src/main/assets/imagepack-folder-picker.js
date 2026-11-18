@@ -433,23 +433,28 @@
     input.dispatchEvent(new EventType(name, { bubbles: !!bubbles, composed: true }));
   }
 
+  // Retain the successful selection after dispatch; FAITH scans asynchronously.
+  const activeFileLists = new WeakMap();
+
   function dispatchDirectoryFileList(input, files) {
     const fileList = makeFileList(files);
-    const previous = Object.getOwnPropertyDescriptor(input, "files");
-    let attached = false;
+    const previous = activeFileLists.get(input);
+    const previousDescriptor = Object.getOwnPropertyDescriptor(input, "files");
     try {
-      Object.defineProperty(input, "files", {
-        configurable: true, enumerable: true, get: () => fileList
-      });
-      attached = true;
+      Object.defineProperty(input, "files", { configurable: true, enumerable: true, get: () => fileList });
+      activeFileLists.set(input, fileList);
       // Match a successful native file selection: input first, then change.
       dispatchInputEvent(input, "input", true);
       dispatchInputEvent(input, "change", true);
-    } finally {
-      if (attached) {
-        if (previous) Object.defineProperty(input, "files", previous);
-        else delete input.files;
+    } catch (error) {
+      if (previous) {
+        Object.defineProperty(input, "files", { configurable: true, enumerable: true, get: () => previous });
+        activeFileLists.set(input, previous);
+      } else {
+        if (previousDescriptor) Object.defineProperty(input, "files", previousDescriptor); else delete input.files;
+        activeFileLists.delete(input);
       }
+      throw error;
     }
   }
 
@@ -568,7 +573,17 @@
         return queryHandlePermission(permissions, options);
       },
       async requestPermission(options) {
-        return this.queryPermission(options);
+        const mode = options && options.mode !== undefined ? options.mode : "read";
+        if (mode !== "read" && mode !== "readwrite") throw new TypeError("Invalid permission mode.");
+        const current = await this.queryPermission({ mode });
+        if (current === "granted") return "granted";
+        if (mode === "read") return current;
+        try {
+          const selection = await nativeRequest("readwrite", uri);
+          if (selection.uri !== permissions.treeUri || selection.writable !== true) return "denied";
+          permissions.writable = true;
+          return "granted";
+        } catch (error) { if (error && error.name === "AbortError") return "denied"; throw error; }
       },
       async getDirectoryHandle(child, options) {
         diagnose("directory_handle_get_directory_started", permissions.requestId, { method: "getDirectoryHandle" });
@@ -678,61 +693,38 @@
       async createWritable(options) {
         if (!permissions.writable) throw domError("NotAllowedError", "The selected SAF tree is read-only.");
         let buffer = new Uint8Array(0);
-        if (options && options.keepExistingData === true) {
-          const existing = await this.getFile();
-          buffer = new Uint8Array(await existing.arrayBuffer());
-        }
-        let position = 0;
-        let closed = false;
-        return {
-          async write(value) {
-            if (closed) throw domError("InvalidStateError", "The writable stream is closed.");
-            if (value && typeof value === "object" && value.type === "seek") {
-              position = Math.max(0, Number(value.position) || 0);
-              return;
-            }
-            if (value && typeof value === "object" && value.type === "truncate") {
-              const size = Math.max(0, Number(value.size) || 0);
-              if (size > 32 * 1024 * 1024) throw domError("QuotaExceededError", "The image file exceeds 32 MiB.");
-              const resized = new Uint8Array(size);
-              resized.set(buffer.subarray(0, size));
-              buffer = resized;
-              position = Math.min(position, size);
-              return;
-            }
-            if (value && typeof value === "object" && value.type === "write") {
-              if (Number.isFinite(value.position)) position = Math.max(0, value.position);
-              value = value.data;
-            }
-            let bytes;
-            if (value instanceof Blob) bytes = new Uint8Array(await value.arrayBuffer());
-            else if (typeof value === "string") bytes = new TextEncoder().encode(value);
-            else if (value instanceof ArrayBuffer) bytes = new Uint8Array(value);
-            else if (ArrayBuffer.isView(value)) {
-              bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-            } else throw new TypeError("Unsupported SAF writable data.");
-            const required = position + bytes.length;
-            if (required > 32 * 1024 * 1024) throw domError("QuotaExceededError", "The image file exceeds 32 MiB.");
-            const next = new Uint8Array(Math.max(buffer.length, required));
-            next.set(buffer);
-            next.set(bytes, position);
-            buffer = next;
-            position = required;
-          },
+        if (options && options.keepExistingData === true) { const existing = await this.getFile(); buffer = new Uint8Array(await existing.arrayBuffer()); }
+        let position = 0, closed = false, aborted = false;
+        const ensureOpen = () => { if (closed || aborted) throw domError("InvalidStateError", "The writable stream is no longer open."); };
+        const seek = async value => { ensureOpen(); const next = Number(value); if (!Number.isFinite(next) || next < 0) throw new TypeError("The seek position must be a non-negative finite number."); position = Math.floor(next); };
+        const truncate = async value => {
+          ensureOpen(); const size = Number(value);
+          if (!Number.isFinite(size) || size < 0) throw new TypeError("The truncate size must be a non-negative finite number.");
+          const length = Math.floor(size); if (length > 32 * 1024 * 1024) throw domError("QuotaExceededError", "The image file exceeds 32 MiB.");
+          const resized = new Uint8Array(length); resized.set(buffer.subarray(0, length)); buffer = resized; position = Math.min(position, length);
+        };
+        const write = async value => {
+          ensureOpen();
+          if (value && typeof value === "object" && value.type === "seek") return seek(value.position);
+          if (value && typeof value === "object" && value.type === "truncate") return truncate(value.size);
+          if (value && typeof value === "object" && value.type === "write") { if (value.position !== undefined) await seek(value.position); value = value.data; }
+          let bytes;
+          if (value instanceof Blob) bytes = new Uint8Array(await value.arrayBuffer());
+          else if (typeof value === "string") bytes = new TextEncoder().encode(value);
+          else if (value instanceof ArrayBuffer) bytes = new Uint8Array(value);
+          else if (ArrayBuffer.isView(value)) bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+          else throw new TypeError("Unsupported SAF writable data.");
+          const required = position + bytes.length; if (required > 32 * 1024 * 1024) throw domError("QuotaExceededError", "The image file exceeds 32 MiB.");
+          const next = new Uint8Array(Math.max(buffer.length, required)); next.set(buffer); next.set(bytes, position); buffer = next; position = required;
+        };
+        return { write, seek, truncate,
           async close() {
-            if (closed) return;
-            let binary = "";
-            for (let offset = 0; offset < buffer.length; offset += 0x8000) {
-              binary += String.fromCharCode(...buffer.subarray(offset, offset + 0x8000));
-            }
-            nativeJson("writeImagePackFile", permissions.requestId, uri,
-              metadata.mimeType || "application/octet-stream", btoa(binary));
+            ensureOpen(); let binary = "";
+            for (let offset = 0; offset < buffer.length; offset += 0x8000) binary += String.fromCharCode(...buffer.subarray(offset, offset + 0x8000));
+            nativeJson("writeImagePackFile", permissions.requestId, uri, metadata.mimeType || "application/octet-stream", btoa(binary));
             closed = true;
           },
-          async abort() {
-            closed = true;
-            buffer = new Uint8Array(0);
-          }
+          async abort() { if (closed || aborted) return; aborted = true; buffer = new Uint8Array(0); }
         };
       }
     };

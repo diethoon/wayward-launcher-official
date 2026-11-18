@@ -101,3 +101,12 @@ Operational limits are explicit: the current native full-file read bridge is bou
 ### Verification status
 
 The automated contract test exercises FAITH's FileList and relative-path contract, lazy Blob/File read methods, input/change event order, separation from normal file inputs, and the distinct DirectoryHandle flow. It uses a deterministic SAF provider stub; it does not replace Android WebView or real DocumentProvider runtime verification.
+
+
+## Exact source extraction and async integration
+
+The full FAITH HTML blob was fetched by its pinned object SHA and its Git blob SHA-1 was recomputed over the complete UTF-8 payload. The exact `wfPackFolderButton()` and `wfPackScanFolder()` bodies are embedded verbatim in the fixture with byte offsets and per-snippet Git blob SHA-1 values. The test evaluates the original scanner source against the actual FileList emitted by the Android adapter, stubbing only the game parser/state effects.
+
+The original scanner snapshots `Array.from(fileList)` before its first await. The adapter retains the last successful FileList on the input after event dispatch and replaces it on the next successful selection; the scanner's array snapshot preserves prior File objects if another selection starts. The original FAITH UI disables the input while scanning. This is the actual supported overlap boundary, not a claim that one input can expose multiple selection-specific FileLists simultaneously.
+
+The native SAF read bridge buffers each complete file up to 32 MiB, Base64-encodes it and decodes it in JavaScript. `File.stream()` chunks consumption after decoding and is not end-to-end streaming. The 32 MiB limit is retained as a memory-safety boundary. DirectoryHandle writable support exposes `write()`, `seek()`, `truncate()`, `close()` and `abort()` with bounded in-memory staging, not a native WritableStream subclass.

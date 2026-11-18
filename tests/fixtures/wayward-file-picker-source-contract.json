@@ -4,7 +4,7 @@
   "sourcePath": "Wayward_Faith_v3.0.0.html",
   "sourceBlobSha": "ac6b44ccb75584383ad2875f4f36a55138c228cf",
   "sourceIdentityVerified": true,
-  "sourceIdentityNote": "Exact GitHub Blob SHA queried and matched; no WML source identity or snippets are accepted as FAITH evidence.",
+  "sourceIdentityNote": "Full GitHub Blob API payload fetched; UTF-8 byte length and Git blob SHA-1 recomputed and matched the pinned object.",
   "imagePackFolderInput": {
     "type": "file",
     "webkitdirectory": true,
@@ -33,7 +33,8 @@
     "mustRemainUnmodified": [
       "wfPackFolderButton",
       "wfPackScanFolder"
-    ]
+    ],
+    "eventTargetLifetime": "Original onChange reads event.target.files before its first await; wfPackScanFolder immediately snapshots Array.from(fileList) before awaiting File.text(). The adapter retains the FileList on the input until the next successful folder selection."
   },
   "separateLauncherApi": {
     "api": "window.showDirectoryPicker",
@@ -64,14 +65,31 @@
       "input",
       "change"
     ],
-    "eventTarget": "original file input element; temporary files property is removed after synchronous event dispatch",
+    "eventTarget": "FileList remains attached to the original input after synchronous event dispatch; the next successful selection replaces it. The original scanner's Array.from() snapshot preserves prior File objects during an overlapping async scan.",
     "cancellation": "AbortError dispatches the input cancel event; other failures dispatch waywardfoldererror and a diagnostic",
     "safetyLimits": {
       "maximumFiles": 50000,
       "maximumDepth": 128,
-      "maximumReadBytesPerFile": 33554432
+      "maximumReadBytesPerFile": 33554432,
+      "memory": "Native SAF reads buffer the complete file, Base64-encode it, then JavaScript decodes it. File.stream() chunks consumption only after decoding; this is not end-to-end streaming. The 32 MiB per-file cap bounds memory amplification."
     },
     "ordinaryFileInputsUnchanged": true,
-    "sameOriginFrames": "document-start script is installed for every frame matching the active game origin; runtime fallback remains origin-checked"
+    "sameOriginFrames": "document-start script is installed for every frame matching the active game origin; runtime fallback remains origin-checked",
+    "writableStream": "Bounded FileSystemWritableFileStream-like sink exposing write(), seek(), truncate(), close(), abort(); supports string, Blob, ArrayBuffer, TypedArray/DataView and standard write/seek/truncate command objects. 32 MiB in-memory staging; not a native WritableStream subclass.",
+    "permissionSemantics": "queryPermission() inspects persisted SAF grants only. requestPermission({mode:'readwrite'}) starts a user-mediated SAF selection and grants write access only if the same tree is reselected with a persisted write grant; cancellation resolves denied."
+  },
+  "sourceFunctions": {
+    "wfPackFolderButton": {
+      "code": "function wfPackFolderButton(){const[o,s]=Z.useState(\"\"),[n,r]=Z.useState(!1),a=async i=>{if(i.target.files?.length){r(!0);try{s(`이미지팩 ${(await wfPackScanFolder(i.target.files)).toLocaleString()}개를 등록했습니다.`)}catch(l){s(l.message)}finally{r(!1),i.target.value=\"\"}}};return u.jsxs(\"div\",{className:\"space-y-2\",children:[u.jsxs(\"label\",{className:\"flex items-center justify-center w-full rounded border border-amber-700 bg-amber-900/30 px-4 py-2 text-sm font-semibold text-amber-200 cursor-pointer select-none\",children:[n?\"읽는 중…\":\"image-packs 폴더 선택\",u.jsx(\"input\",{type:\"file\",webkitdirectory:\"\",multiple:!0,onChange:a,disabled:n,className:\"hidden\",\"aria-label\":\"이미지팩 폴더 갱신\"})]}),o&&u.jsx(\"p\",{className:\"text-xs text-amber-300\",children:o})]})}",
+      "startByte": 23097419,
+      "endByteExclusive": 23098217,
+      "gitBlobSha": "46eebe6d21e98680b439b20778cc945b5926704b"
+    },
+    "wfPackScanFolder": {
+      "code": "async function wfPackScanFolder(o){const s=Object.create(null),n=new Set;for(const i of Array.from(o)){const l=String(i.webkitRelativePath??\"\").replace(/\\\\/g,\"/\"),h=l.indexOf(\"image-packs/\");if(h<0||!l.endsWith(\".js\"))continue;const d=await i.text();if(!d.startsWith(\"/* WAYWARD_FAITH_IMAGE_PACK */\"))continue;const c=wfPackValidate(wfPackParseScript(d),l.slice(h)),f=s[c.packId];if(f){const w=f.wfImagePack,p=c.wfImagePack;if(w.character!==p.character||w.basic!==p.basic||(w.part??\"\")!==(p.part??\"\")||!w.basic&&JSON.stringify([...w.outfits].sort())!==JSON.stringify([...p.outfits].sort()))throw new Error(`같은 ID의 이미지팩이 두 폴더에 있습니다: ${c.packId}`);(c.entryCount-f.entryCount||(Date.parse(c.generatedAt)||0)-(Date.parse(f.generatedAt)||0)||f.cataloguePath.localeCompare(c.cataloguePath))>0&&(s[c.packId]=c);continue}n.add(c.packId),s[c.packId]=c}const r=Object.values(s).map(({entries:i,...l})=>l);if(r.length===0)throw new Error(\"image-packs 폴더에서 이미지팩을 찾지 못했습니다.\");const a=wfPackInstalled().filter(i=>!i.cataloguePath&&!n.has(i.packId));return wfPackFreezeSelections(),wfPackCatalogues={...Object.fromEntries(a.filter(i=>wfPackCatalogues[i.packId]).map(i=>[i.packId,wfPackCatalogues[i.packId]])),...s},wfPackLinkExtensions(),Rt.getState().set({wfImagePacks:[...a,...r]}),wfPackDropOrphans(),ND(),wfPackRefreshClothes(),r.length}",
+      "startByte": 23071719,
+      "endByteExclusive": 23073109,
+      "gitBlobSha": "5cf26ac1a529e7902b8e1570b28ede8833546126"
+    }
   }
 }
