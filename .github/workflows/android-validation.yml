@@ -292,7 +292,16 @@ jobs:
             badging="$("$aapt" dump badging "$apk")"
             printf '%s\n' "$badging" | grep -F "application-label:'WWL'"
             entries="$(unzip -Z1 "$apk")"
-            printf '%s\n' "$entries" | grep -E 'res/mipmap-anydpi-v26(-v[0-9]+)?/ic_launcher.xml
+            printf '%s\n' "$entries" | grep -F 'ic_launcher.xml'
+            printf '%s\n' "$entries" | grep -F 'ic_launcher_round.xml'
+            printf '%s\n' "$entries" | grep -F 'ic_launcher_foreground.png'
+            resources="$("$aapt" dump resources "$apk")"
+            printf '%s\n' "$resources" | grep -F 'mipmap/ic_launcher'
+            printf '%s\n' "$resources" | grep -F 'mipmap/ic_launcher_round'
+            printf '%s\n' "$resources" | grep -i -A2 -F 'color/launcher_icon_background' | grep -i -F '#ff24170f'
+            sha256sum "$apk"
+            stat -c '%n %s bytes' "$apk"
+          done
           "$aapt" dump badging app/build/outputs/apk/debug/app-debug.apk | grep -F "package: name='com.wayward.launcher.official.debug' versionCode='107' versionName='1.0.7-debug'"
           "$aapt" dump badging app/build/outputs/apk/release/app-release.apk | grep -F "package: name='com.wayward.launcher.official' versionCode='107' versionName='1.0.7'"
 
