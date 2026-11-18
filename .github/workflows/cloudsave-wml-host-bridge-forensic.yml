@@ -1,0 +1,52 @@
+name: CloudSave WML host bridge forensic
+on:
+  push:
+    branches:
+      - forensic/cloudsave-runtime-bridge-20261119
+permissions:
+  contents: read
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: forensic/cloudsave-runtime-bridge-20261119
+      - name: Chunk-scan host and WML bridge sources
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,zipfile
+          from pathlib import Path
+          root=Path('.')
+          candidates=[]
+          for base in [root/'app/src/main',root/'app/src/debug',root/'app/build.gradle',root/'build.gradle',root/'settings.gradle']:
+              if base.is_file(): candidates.append(base)
+              elif base.exists(): candidates.extend(p for p in base.rglob('*') if p.is_file() and p.suffix.lower() in {'.java','.kt','.js','.ts','.xml','.json','.html'})
+          terms=['__WML__','WMLHost','api.ui.window','ui.window','window(','JavascriptInterface','addJavascriptInterface','evaluateJavascript','WebView','Dialog','AlertDialog','confirm(','game connected','game connection','connection check','connected','bridge','boot(','WML_BRIDGE','cloud-save-google-drive-main','연결 확인','게임 연결','확인창']
+          report={'files':[]}
+          out=Path('/tmp/host-source'); out.mkdir(parents=True,exist_ok=True)
+          with zipfile.ZipFile('/tmp/host-source.zip','w',zipfile.ZIP_DEFLATED) as z:
+              for p in sorted(set(candidates)):
+                  b=p.read_bytes(); chunks=[]; off=0
+                  while off<len(b):
+                      c=b[off:off+4096]; chunks.append({'offset':off,'length':len(c),'sha256':hashlib.sha256(c).hexdigest()}); off+=len(c)
+                  low=b.lower(); hits={}
+                  for term in terms:
+                      q=term.encode('utf-8').lower(); pos=[]; s=0
+                      while True:
+                          i=low.find(q,s)
+                          if i<0: break
+                          pos.append(i); s=i+1
+                      if pos: hits[term]=[{'offset':i,'context':b[max(0,i-500):min(len(b),i+1200)].decode('utf-8','replace')} for i in pos[:30]]
+                  report['files'].append({'path':str(p),'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest(),'chunks':chunks,'matches':hits})
+                  z.write(p,arcname=str(p))
+          Path('/tmp/host-scan.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
+          print(json.dumps({'files':len(report['files']),'matched_files':sum(bool(x['matches']) for x in report['files']),'source_zip_bytes':Path('/tmp/host-source.zip').stat().st_size},indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloudsave-wml-host-bridge-forensic
+          path: |
+            /tmp/host-scan.json
+            /tmp/host-source.zip
+          if-no-files-found: error
