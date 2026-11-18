@@ -149,6 +149,18 @@ const fakeFileStreams = new Map();
 let nextFakeStreamId = 0;
 let fakeStreamChunkCalls = 0;
 let fakeLargestChunk = 0;
+const fakeDirectoryRequests = new Map();
+function sendFakeDirectoryBatch(requestId, state) {
+  const entries = state.entries.slice(state.offset, state.offset + 32);
+  const done = state.offset + entries.length >= state.entries.length;
+  const batchIndex = state.batchIndex++;
+  state.offset += entries.length;
+  state.waitingBatch = batchIndex;
+  state.done = done;
+  setTimeout(() => windowObject.__waywardNativeImagePackDirectoryBatch(requestId, {
+    ok: true, batchIndex, done, entries
+  }), 0);
+}
 const host = {
   recordImagePackDiagnostic(requestId, stage, details) {
     diagnostics.push({ requestId, stage, details });
@@ -169,8 +181,31 @@ const host = {
       name: "Faith Library", writable: mode === "readwrite", state: "SUCCESS"
     }), 0);
   },
-  listImagePackDirectoryForRequest(capability, uri) {
+  listImagePackDirectoryForRequest(capability, uri, requestId) {
     assert.equal(capability, "test-native-capability");
+    if (uri.startsWith("__WAYWARD_DIR_START__:")) {
+      const directoryUri = uri.slice("__WAYWARD_DIR_START__:".length);
+      const state = { entries: directoryEntries.get(directoryUri) || [], offset: 0, batchIndex: 0,
+        waitingBatch: -1, done: false };
+      fakeDirectoryRequests.set(requestId, state);
+      sendFakeDirectoryBatch(requestId, state);
+      return JSON.stringify({ ok: true });
+    }
+    if (uri.startsWith("__WAYWARD_DIR_ACK__:")) {
+      const state = fakeDirectoryRequests.get(requestId);
+      const batchIndex = Number(uri.slice("__WAYWARD_DIR_ACK__:".length));
+      if (!state || state.waitingBatch !== batchIndex) {
+        return JSON.stringify({ ok: false, name: "AbortError", message: "Bad batch ack" });
+      }
+      if (state.done) fakeDirectoryRequests.delete(requestId);
+      else sendFakeDirectoryBatch(requestId, state);
+      return JSON.stringify({ ok: true });
+    }
+    if (uri === "__WAYWARD_DIR_CANCEL__:") {
+      fakeDirectoryRequests.delete(requestId);
+      return JSON.stringify({ ok: true });
+    }
+    if (uri === "__WAYWARD_DIR_RELEASE__:") return JSON.stringify({ ok: true });
     return JSON.stringify({ ok: true, uri, entries: directoryEntries.get(uri) || [] });
   },
   writeImagePackFile(capability, uri, mimeType, encoded) {

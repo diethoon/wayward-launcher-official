@@ -16,7 +16,29 @@
 
   let nextId = 0;
   const pending = new Map();
+  const pendingDirectoryLists = new Map();
+  let nextDirectoryListId = 0;
   const rootByHandle = new WeakMap();
+
+  window.__waywardNativeImagePackDirectoryBatch = function(requestId, packet) {
+    const state = pendingDirectoryLists.get(String(requestId || ""));
+    if (!state) {
+      try { host.listImagePackDirectoryForRequest(nativeCapability, "__WAYWARD_DIR_CANCEL__:", String(requestId || "")); } catch (_) {}
+      return false;
+    }
+    if (state.waiter) {
+      const resolve = state.waiter;
+      state.waiter = null;
+      resolve(packet);
+    } else if (!state.packet) {
+      state.packet = packet;
+    } else {
+      try { host.listImagePackDirectoryForRequest(nativeCapability, "__WAYWARD_DIR_CANCEL__:", String(requestId || "")); } catch (_) {}
+      return false;
+    }
+    return true;
+  };
+
 
   function domError(name, message) {
     try { return new DOMException(message || name, name); }
@@ -323,6 +345,18 @@
     }
     if (!active) return false;
     active.cancelled = true;
+    if (active.nativeDirectoryIds && typeof pendingDirectoryLists !== "undefined") {
+      for (const directoryRequestId of active.nativeDirectoryIds) {
+        const state = pendingDirectoryLists.get(directoryRequestId);
+        if (state && state.waiter) {
+          const resolve = state.waiter;
+          state.waiter = null;
+          resolve({ ok: false, name: "AbortError", message: "The folder processing request was cancelled.",
+            batchIndex: state.expectedBatch, done: true, entries: [] });
+        }
+        try { host.listImagePackDirectoryForRequest(nativeCapability, "__WAYWARD_DIR_CANCEL__:", directoryRequestId); } catch (_) {}
+      }
+    }
     return true;
   };
 
@@ -501,6 +535,60 @@
     Object.setPrototypeOf(SafBackedFile.prototype, File.prototype);
     return new SafBackedFile(0, metadata.size, metadata.type);
   }
+
+  async function* iterateDirectoryEntries(directoryUri, requestId, control) {
+    const directoryRequestId = String(requestId || "saf") + "-dir-" + (++nextDirectoryListId);
+    const state = { packet: null, waiter: null, expectedBatch: 0 };
+    pendingDirectoryLists.set(directoryRequestId, state);
+    if (control && control.nativeDirectoryIds) control.nativeDirectoryIds.add(directoryRequestId);
+    let completed = false;
+    try {
+      parseResult(host.listImagePackDirectoryForRequest(
+        nativeCapability, "__WAYWARD_DIR_START__:" + directoryUri, directoryRequestId));
+      while (true) {
+        checkUploadCancelled(control);
+        const packet = state.packet || await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            if (state.waiter === receivePacket) state.waiter = null;
+            reject(domError("TimeoutError", "The native SAF directory batch timed out."));
+          }, 35000);
+          const receivePacket = value => {
+            clearTimeout(timeout);
+            resolve(value);
+          };
+          state.waiter = receivePacket;
+        });
+        state.packet = null;
+        if (!packet || packet.batchIndex !== state.expectedBatch) {
+          throw domError("NotReadableError", "The native SAF directory batch sequence is invalid.");
+        }
+        if (packet.ok !== true) {
+          throw domError(packet.name || "NotReadableError",
+            packet.message || "The SAF provider could not list this directory.");
+        }
+        const entries = Array.isArray(packet.entries) ? packet.entries : [];
+        for (const entry of entries) {
+          checkUploadCancelled(control);
+          yield entry;
+        }
+        const done = packet.done === true;
+        parseResult(host.listImagePackDirectoryForRequest(
+          nativeCapability, "__WAYWARD_DIR_ACK__:" + String(packet.batchIndex), directoryRequestId));
+        state.expectedBatch++;
+        if (done) {
+          completed = true;
+          return;
+        }
+      }
+    } finally {
+      pendingDirectoryLists.delete(directoryRequestId);
+      if (control && control.nativeDirectoryIds) control.nativeDirectoryIds.delete(directoryRequestId);
+      if (!completed) {
+        try { host.listImagePackDirectoryForRequest(nativeCapability, "__WAYWARD_DIR_CANCEL__:", directoryRequestId); } catch (_) {}
+      }
+    }
+  }
+
   async function enumerateSafTree(rootUri, rootName, requestId, policy, control) {
     const rootSegment = safePathSegment(rootName);
     const visited = new Set();
@@ -526,10 +614,7 @@
       directoryCount++;
       // Sort the parsed result in place; cloning the provider's entire entry
       // array doubled peak references for large directories.
-      const children = listEntries(directoryUri, requestId);
-      children.sort((left, right) =>
-        String(left.name || "").localeCompare(String(right.name || "")));
-      for (const child of children) {
+      for await (const child of iterateDirectoryEntries(directoryUri, requestId, control)) {
         checkUploadCancelled(control);
         entryCount++;
         sinceYield++;
@@ -577,6 +662,7 @@
       await yieldUploadWork(control);
     }
 
+    try {
     await visit(rootUri, rootSegment, 0);
     checkUploadCancelled(control);
     diagnose("directory_enumeration_completed", requestId, {
@@ -585,6 +671,9 @@
       elapsedMs: Date.now() - startedAt
     });
     return files;
+    } finally {
+      try { host.listImagePackDirectoryForRequest(nativeCapability, "__WAYWARD_DIR_RELEASE__:", requestId); } catch (_) {}
+    }
   }
 
   function makeFileList(files) {
@@ -684,7 +773,7 @@
     }
     nativePickerBusy = true;
     let requestId = "";
-    const control = { requestId: "", cancelled: false };
+    const control = { requestId: "", cancelled: false, nativeDirectoryIds: new Set() };
     activeUploadControls.add(control);
     try {
       const policy = readRequestFilePolicy(input);
