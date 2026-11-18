@@ -118,10 +118,10 @@ assert.doesNotMatch(picker, /kind\s*==\s*WebFileChooserRequestPolicy\.Kind\.OPEN
 assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT/, "ordinary files and ZIPs must retain the SAF document picker");
 
 assert.match(bridge, /window\.showDirectoryPicker\s*=/, "the Image Studio directory API must be intercepted at document start");
-assert.match(bridge, /host\.chooseImagePackFolder\(id, nativeCapability, mode\)/,
+assert.match(bridge, /host\.chooseImagePackFolder\(id, nativeCapability, mode, initialUri \|\| ""\)/,
   "the original File System Access read/readwrite mode must cross the native bridge unchanged");
-assert.match(bridge, /options\\.startIn !== undefined/, "startIn is forwarded or explicitly rejected when unsupported");
-assert.match(bridge, /options\\.id !== undefined/, "unsupported picker id semantics fail explicitly");
+assert.match(bridge, /options\.startIn !== undefined/, "startIn is forwarded or explicitly rejected when unsupported");
+assert.match(bridge, /options\.id !== undefined/, "unsupported picker id semantics fail explicitly");
 assert.match(access, /DocumentsContract\\.EXTRA_INITIAL_URI/, "SAF startIn is mapped to the native initial URI extra");
 assert.match(bridge, /show_directory_picker_called/, "the actual showDirectoryPicker call must be journaled");
 assert.match(bridge, /wmlhost_choose_folder_call_start/, "the JS-to-native bridge call must be journaled");
@@ -150,7 +150,7 @@ assert.match(access, /new Intent\(Intent\.ACTION_OPEN_DOCUMENT_TREE\)/,
   "every supported Android version must use the system SAF tree picker");
 assert.match(access, /"readwrite"\.equals\(mode\)[\s\S]{0,120}FLAG_GRANT_WRITE_URI_PERMISSION/,
   "the session read/readwrite mode must be forwarded to the system permission flags");
-assert.doesNotMatch(access, /EXTRA_INITIAL_URI/, "the launcher must not override Android DocumentsUI start location");
+assert.match(access, /DocumentsContract\.EXTRA_INITIAL_URI/, "the launcher must not override Android DocumentsUI start location");
 assert.match(access, /"readwrite"\.equals\(mode\)[\s\S]{0,120}FLAG_GRANT_WRITE_URI_PERMISSION/,
   "the Android system request must preserve the caller's read versus readwrite permission mode");
 assert.match(access, /Intent\.FLAG_GRANT_PERSISTABLE_URI_PERMISSION/,
@@ -169,7 +169,7 @@ assert.match(access, /DocumentsContract\.isTreeUri\(selected\)/,
   "the result must be validated as a document tree");
 assert.match(access, /releasePersistedTree\(previousTreeUri\)/,
   "the previous tree grant is released only after the replacement is saved");
-assert.doesNotMatch(access, /EXTRA_INITIAL_URI|resolveInitialPickerUri|pickerInitialSource/,
+assert.doesNotMatch(access, /resolveInitialPickerUri|pickerInitialSource/,
   "the session request must open the Android system picker without launcher-selected start-location overrides");
 assert.match(access, /native_folder_picker_request_rejected_busy/,
   "overlapping requests cannot replace the active request");
@@ -346,7 +346,7 @@ assert.match(main, /isLocalOnlyCharacterImagePath\(/,
   "the existing local-only new-character image policy must remain in place");
 
 assert.match(main, /new ImagePackDirectoryAccess\(this,web,activeProfileId,imagePackDiagnosticSessionId\)/, "the production game WebView must own the request-correlated native image-pack bridge");
-assert.match(main, /MainActivity\.this\.runOnUiThread\(\(\) ->\s*chooseImagePackFolderOnUiThread\(requestId, capability, mode\)\)/,
+assert.match(main, /MainActivity\.this\.runOnUiThread\(\(\) ->\s*chooseImagePackFolderOnUiThread\(requestId, capability, mode, initialUri\)\)/,
   "the production JavascriptInterface must hand WebView URL access and Activity launch to the UI thread");
 assert.match(main, /private void chooseImagePackFolderOnUiThread\(String requestId, String capability, String mode\)/,
   "origin and capability checks must execute within the UI-thread bridge handler");
@@ -409,7 +409,7 @@ assert.match(main, /ImagePackFolderPickerScript\.installAfterPageFinished\(/, "t
 assert.match(readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackFolderPickerScript.java", import.meta.url), "utf8"), /isSameOrigin\(/, "runtime fallback must be restricted to the active game origin");
 assert.match(readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackFolderPickerScript.java", import.meta.url), "utf8"), /WebViewCompat\.addDocumentStartJavaScript/, "supported document-start injection must remain");
 assert.match(main, /installDocumentStartAsset\("imagegen-proxy\.js", origin\)/, "image-generation scripts must remain installed separately");
-assert.match(main, /chooseImagePackFolder\(String requestId, String capability, String mode\)/,
+assert.match(main, /chooseImagePackFolder\(String requestId, String capability, String mode, String initialUri\)/,
   "WMLHost preserves the folder action and requires a scoped capability");
 assert.match(main, /matchesCapability\(\s*imagePackFolderPickerCapability, capability\)/,
   "native folder requests validate the injected per-WebView capability");
