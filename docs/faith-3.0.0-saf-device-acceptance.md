@@ -9,7 +9,10 @@
 - 대상: Android 15 / API 35
 - 원본: `diethoon/wayward:main/Wayward_Faith_v3.0.0.html`
 - 원본 Git Blob SHA: `ac6b44ccb75584383ad2875f4f36a55138c228cf`
-- 최종 APK 파일명·SHA-256: 최종 Actions artifact 확보 후 아래 릴리스 기록에 기입
+- 최종 빌드 코드 커밋: `fb1ad15d6e90b8cf89ade0918680a0df409e7762`
+- Android validation run: [#659 성공](https://github.com/diethoon/wayward-launcher-official/actions/runs/44351299795)
+- Gateway validation run: [#153 성공](https://github.com/diethoon/wayward-launcher-official/actions/runs/44351299775)
+- APK artifact ID: `14448956114` (2026-12-02 16:49:35 UTC 만료)
 
 이 문서는 실기기 테스트 절차다. 자동 테스트와 빌드 성공은 실제 WebView·DocumentsUI·SAF Provider 런타임 성공을 의미하지 않는다.
 
@@ -149,11 +152,15 @@ adb logcat -v time -s WaywardImagePackSAF WaywardImagePackPicker chromium
 ## 10. 최종 릴리스 기록
 
 - Android 검증 run: [최종 Actions 실행](https://github.com/diethoon/wayward-launcher-official/actions)
-- 최종 코드 커밋: 이 문서의 릴리스 기록은 최종 검증 완료 후 갱신
+- 최종 빌드 코드 커밋: `fb1ad15d6e90b8cf89ade0918680a0df409e7762`
 - Release APK: `app-release.apk`
 - Debug APK: `app-debug.apk`
-- Release APK SHA-256: 최종 artifact 확인 후 기입
-- Debug APK SHA-256: 최종 artifact 확인 후 기입
+- Release APK SHA-256: `b3d404be82c439f136de0f1cce44caf964f535a565d8c857d153f9dd80ea7656` (9,289,757 bytes)
+- Debug APK SHA-256: `aae97cbb047f0d389ca3444590b20973a0ea4687356b62703919f60ee28ad55a` (10,934,320 bytes)
+- APK ZIP SHA-256: `c0cff6b4c17b4ea6b97603e75d246faed6dc3483dc97a70f395adf894e47b6c9` (7,745,650 bytes)
+- Artifact URL: [Download APK artifact](https://github.com/diethoon/wayward-launcher-official/actions/runs/44351299795/artifacts/14448956114)
+- Gradle: `testDebugUnitTest assembleDebug assembleRelease` 성공; 81 tasks (80 executed, 1 up-to-date)
+- APK Signature Scheme v2: verified; signer certificate SHA-1 `D9BE7443EB247D27C958CC4250D7F5D1E078F740` matches registered Android OAuth fingerprint
 - Release 인증서 SHA-1: `D9BE7443EB247D27C958CC4250D7F5D1E078F740`
 - Android OAuth 등록 지문 일치: CI 서명 검증 결과로 확인
-- 실기기/에뮬레이터 실행: 이 작업 범위에서 수행하지 않음
+- 실기기/에뮬레이터 실행: 이 작업 범위에서 수행하지 않음. API 35 emulator step was skipped by the branch condition; KVM setup alone is not runtime evidence.
