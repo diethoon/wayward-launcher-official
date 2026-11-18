@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 const main = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/MainActivity.java", import.meta.url), "utf8");
@@ -7,6 +8,78 @@ const access = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/I
 const bridge = readFileSync(new URL("../app/src/main/assets/imagepack-folder-picker.js", import.meta.url), "utf8");
 const manifest = readFileSync(new URL("../app/src/main/AndroidManifest.xml", import.meta.url), "utf8");
 const smoke = readFileSync(new URL("../scripts/android15-emulator-smoke.py", import.meta.url), "utf8");
+
+const chooserSemanticRegression = String.raw`
+import copy
+import runpy
+
+verify = runpy.run_path("scripts/android15-emulator-smoke.py")["validate_file_chooser_diagnostics"]
+
+def event(request_id, stage, details):
+    return {"requestId": request_id, "sessionId": "game-session", "stage": stage, "details": details}
+
+events = [
+    event("json-request", "web_file_chooser_called", {"mode": 1, "acceptTypes": "application/json"}),
+    event("json-request", "web_file_chooser_activity_result", {"result": "selected", "clipItemCount": 2}),
+    event("json-request", "web_file_chooser_callback_delivered", {"selectedCount": 2, "cancelled": False}),
+    event("zip-request", "web_file_chooser_called", {"mode": 1, "acceptTypes": "application/zip"}),
+    event("zip-request", "web_file_chooser_activity_result", {"result": "selected", "clipItemCount": 2}),
+    event("zip-request", "web_file_chooser_callback_delivered", {"selectedCount": 2, "cancelled": False}),
+]
+summary = verify(events)
+assert summary["packJson"]["requestId"] == "json-request"
+assert summary["packJson"]["nativeClipItemCount"] == 2
+assert summary["packJson"]["callbackSelectedCount"] == 2
+assert summary["zip"]["requestId"] == "zip-request"
+assert summary["zip"]["nativeClipItemCount"] == 2
+assert summary["zip"]["callbackSelectedCount"] == 2
+
+legacy = copy.deepcopy(events)
+legacy[0]["details"]["mode"] = "multiple"
+legacy[3]["details"]["mode"] = "multiple"
+verify(legacy)
+
+invalid_mode = copy.deepcopy(events)
+invalid_mode[3]["details"]["mode"] = 0
+try:
+    verify(invalid_mode)
+except RuntimeError:
+    pass
+else:
+    raise AssertionError("single-file MODE_OPEN must not satisfy multi-select acceptance")
+
+missing_callback = [item for item in events if not (
+    item["requestId"] == "zip-request" and item["stage"] == "web_file_chooser_callback_delivered"
+)]
+try:
+    verify(missing_callback)
+except RuntimeError:
+    pass
+else:
+    raise AssertionError("missing ZIP callback was accepted")
+
+mis_correlated = copy.deepcopy(events)
+mis_correlated[-1]["requestId"] = "other-request"
+try:
+    verify(mis_correlated)
+except RuntimeError:
+    pass
+else:
+    raise AssertionError("a callback from another request was accepted")
+
+partial_callback = copy.deepcopy(events)
+partial_callback[-1]["details"]["selectedCount"] = 1
+try:
+    verify(partial_callback)
+except RuntimeError:
+    pass
+else:
+    raise AssertionError("a one-file result was accepted as ZIP multi-select")
+
+print("PASS: Android WebView chooser diagnostics correlate numeric MODE_OPEN_MULTIPLE requests, native results, and one callback per pack.json/ZIP request.")
+`;
+execFileSync("python3", ["-c", chooserSemanticRegression], { encoding: "utf8" });
+
 const helper = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackFolderPickerScript.java", import.meta.url), "utf8");
 const acceptance = readFileSync(new URL("../app/src/debug/java/com/wayward/launcher/ImagePackPickerAcceptanceActivity.java", import.meta.url), "utf8");
 const imageDiagnostics = readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackDiagnostics.java", import.meta.url), "utf8");
@@ -352,6 +425,22 @@ assert.match(smoke, /json\.loads\(line\)/,
   "Android 15 smoke must validate previous journal entries as NDJSON");
 assert.match(smoke, /PASS_PACK_JSON_MULTI_FILES/, "the game session must regression-test multiple real pack.json selection");
 assert.match(smoke, /PASS_ZIP_MULTI_FILES/, "the game session must regression-test ZIP multi-selection");
+
+assert.match(smoke, /def _is_multiple_file_chooser_mode/,
+  "acceptance must normalize Android's numeric MODE_OPEN_MULTIPLE value instead of assuming a string");
+assert.match(smoke, /mode == 1/,
+  "the chooser contract must recognize WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE");
+assert.match(smoke, /def validate_file_chooser_diagnostics/,
+  "the diagnostic ZIP must validate pack.json and ZIP requests independently");
+assert.match(smoke, /matching_callbacks = \[\s*event for event in callbacks if event\.get\("requestId"\) == request_id\s*\]/,
+  "each chooser callback must be correlated to its originating request ID");
+assert.match(smoke, /android15-zip-multiselect-webview-callback\.xml/,
+  "successful ZIP selection must preserve the actual WebView callback UI hierarchy");
+assert.match(smoke, /imagepack-acceptance-logcat\.txt/,
+  "acceptance failures must retain image-pack logcat evidence");
+assert.match(smoke, /android15-main-activity-imagepack-picker\.xml/,
+  "the MainActivity SAF picker UI must be captured under its stable diagnostic name");
+
 assert.match(smoke, /dumpsys", "activity", "recents"/, "the Android 15 test must inspect the actual Recent Apps task list");
 assert.equal((smoke.match(/"-f", "0x10200000"/g) || []).length, 2,
   "foreground and process restart must use actual launcher NEW_TASK|RESET_TASK_IF_NEEDED semantics");
