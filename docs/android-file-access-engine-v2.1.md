@@ -5,6 +5,7 @@
 - `startListDirectory()` performs request-ID and SAF-tree URI validation only; it does not query the provider.
 - `ContentResolver.query(..., CancellationSignal)` and all Cursor iteration execute on a bounded two-thread executor.
 - Each `DirectoryTask` owns its request ID, `CancellationSignal`, `Future`, active Cursor reference, and per-batch acknowledgement latch.
+- The capability-checked `WMLHost.listImagePackDirectoryForRequest` bridge routes `__WAYWARD_DIR_START__`, `__WAYWARD_DIR_ACK__`, `__WAYWARD_DIR_CANCEL__`, and `__WAYWARD_DIR_RELEASE__` to the matching native task; ordinary legacy directory-list calls retain their existing synchronous path.
 - Cancellation calls `CancellationSignal.cancel()`, interrupts the Future, releases any waiting acknowledgement, and closes an already-open Cursor. If a provider ignores cancellation while blocked inside its own query implementation, Android cannot guarantee immediate interruption; once the query returns, the cancelled task closes/discards its Cursor and does not emit more entries.
 - WebView destruction calls `cancelPending()`/`cancelAllDirectoryLists()`, cancels all active tasks, clears request-scoped tree references, and shuts down the executor.
 
@@ -31,4 +32,5 @@
 - The Node policy suite covers independent limits and request-scoped policy isolation.
 - The async batch protocol test simulates ordered batches, empty directories, provider errors, concurrent request isolation, cancellation, and a 100,000-entry synthetic traversal in 32-entry batches.
 - CI compiles Java, runs the unit tests, builds Debug and Release APKs, and checks the Release signing certificate.
+- The asynchronous batch protocol applies to bulk `webkitdirectory` traversal. Legacy direct File System Access directory-handle listing still uses the existing synchronous `listDirectoryJson` API and is not part of the bulk scan path.
 - The synthetic protocol test is not a real DocumentsProvider test. Real SAF Provider behavior, provider-specific cancellation latency, device memory profiling, and WebView destruction during a live provider query remain unverified. Physical-device and emulator tests remain disabled under the existing prohibition.
