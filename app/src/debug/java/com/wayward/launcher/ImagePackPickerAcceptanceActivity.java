@@ -116,6 +116,22 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
             return;
         }
         Uri selected = Uri.parse(saved);
+        try {
+            JSONObject info = new JSONObject(access.getFolderInfoJson());
+            revokedTestRootDocumentUri = info.optString("documentUri", "");
+            JSONObject listing = new JSONObject(access.listDirectoryJson(
+                    revokedTestRootDocumentUri, "acceptance-revoke-list"));
+            org.json.JSONArray entries = listing.optJSONArray("entries");
+            if (entries != null) for (int i = 0; i < entries.length(); i++) {
+                JSONObject entry = entries.optJSONObject(i);
+                if (entry != null && "pixel.png".equals(entry.optString("name"))) {
+                    revokedTestFileUri = entry.optString("uri", "");
+                    break;
+                }
+            }
+        } catch (Exception error) {
+            Log.e(TAG, "FAIL capture document URI before grant revocation", error);
+        }
         for (android.content.UriPermission permission : getContentResolver().getPersistedUriPermissions()) {
             if (!selected.equals(permission.getUri())) continue;
             int flags = 0;
