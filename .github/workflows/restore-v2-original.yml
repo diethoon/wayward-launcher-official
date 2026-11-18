@@ -54,12 +54,9 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/src/main/assets/imagepack-folder-picker.js
           git add app/src/main/java/com/wayward/launcher/ImagePackDirectoryAccess.java
-          git add .github/workflows/android-validation.yml
           git add tests/file-access-engine-policy.test.mjs docs/android-file-access-engine-v2.md
           git rm -r .recovery/v2-original-chunks
           git rm .recovery/ASSEMBLE_NOW
-          git rm .github/workflows/import-file-engine-v2.yml || true
-          git rm .github/workflows/restore-v2-original.yml || true
           git commit -m "recovery(android): preserve exact original file-engine v2 sources"
           git push origin "HEAD:${GITHUB_REF_NAME}"
       - name: Preserve recovered v2 APKs as a CI artifact
