@@ -394,6 +394,12 @@ final class ImagePackDirectoryAccess {
         }
     }
 
+    void releaseDirectoryTreeForRequest(String requestId) {
+        if (requestId != null && !requestId.isEmpty()) {
+            releaseDirectoryTree(rootDirectoryRequestId(requestId));
+        }
+    }
+
     private void runDirectoryList(DirectoryTask task, Uri selectedTree, Uri directoryUri) {
         int batchIndex = 0;
         try {
