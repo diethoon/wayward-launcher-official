@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
+import android.os.SystemClock;
 import android.util.Log;
 import android.provider.DocumentsContract;
 import android.util.Base64;
@@ -314,8 +315,12 @@ final class ImagePackDirectoryAccess {
         try {
             Uri directoryUri = requireDocumentUri(documentUri, true);
             String documentId = DocumentsContract.getDocumentId(directoryUri);
+            long queryStartedAt = SystemClock.elapsedRealtime();
+            List<Node> children = queryChildren(documentId);
+            long queryElapsedMs = SystemClock.elapsedRealtime() - queryStartedAt;
+            long metadataStartedAt = SystemClock.elapsedRealtime();
             JSONArray entries = new JSONArray();
-            for (Node node : queryChildren(documentId)) {
+            for (Node node : children) {
                 JSONObject item = new JSONObject();
                 item.put("name", node.name);
                 item.put("kind", node.directory ? "directory" : "file");
@@ -329,9 +334,16 @@ final class ImagePackDirectoryAccess {
             result.put("ok", true);
             result.put("uri", directoryUri.toString());
             result.put("entries", entries);
+            long metadataElapsedMs = SystemClock.elapsedRealtime() - metadataStartedAt;
+            long serializationStartedAt = SystemClock.elapsedRealtime();
+            String payload = result.toString();
+            long serializationElapsedMs = SystemClock.elapsedRealtime() - serializationStartedAt;
             diagnostic("native_directory_list_succeeded", requestId, "info",
-                    details("entryCount", entries.length(), "uriBased", true));
-            return result.toString();
+                    details("entryCount", entries.length(), "uriBased", true,
+                            "safQueryMs", queryElapsedMs,
+                            "metadataJsonBuildMs", metadataElapsedMs,
+                            "jsonSerializationMs", serializationElapsedMs));
+            return payload;
         } catch (Exception error) {
             ImagePackDiagnostics.error(activity, diagnosticSessionId, requestId,
                     "native_directory_list_failed", error);
