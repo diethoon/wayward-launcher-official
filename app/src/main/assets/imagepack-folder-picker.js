@@ -332,6 +332,7 @@
   async function enumerateSafTree(rootUri, rootName, requestId) {
     const rootSegment = safePathSegment(rootName);
     const visited = new Set();
+    const visitedFileUris = new Set();
     const files = [];
     let entryCount = 0;
 
@@ -361,6 +362,14 @@
           if (files.length >= MAX_UPLOAD_FILES) {
             throw domError("QuotaExceededError", "The selected folder contains too many files.");
           }
+          const fileUri = String(child.uri || "");
+          if (!fileUri.startsWith("content://")) {
+            throw domError("SecurityError", "The SAF provider returned an invalid file URI.");
+          }
+          if (visitedFileUris.has(fileUri)) {
+            throw domError("NotReadableError", "The SAF provider returned a repeated file URI.");
+          }
+          visitedFileUris.add(fileUri);
           files.push(makeSafBackedFile(child, relativePath, requestId));
         } else {
           throw domError("NotReadableError", "The SAF provider returned an unknown entry kind.");
