@@ -2522,7 +2522,32 @@ public class MainActivity extends Activity {
         }
         @JavascriptInterface public String listImagePackDirectoryForRequest(String capability, String documentUri, String requestId){
             if (!hasImagePackBridgeCapability(capability)) return imagePackBridgeDenied();
-            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.listDirectoryJson(documentUri,requestId);
+            if (imagePackDirectoryAccess == null) return "{\"ok\":false,\"name\":\"NotFoundError\"}";
+            if (documentUri != null && documentUri.startsWith("__WAYWARD_DIR_START__:")) {
+                return imagePackDirectoryAccess.startListDirectory(
+                        documentUri.substring("__WAYWARD_DIR_START__:".length()), requestId);
+            }
+            if (documentUri != null && documentUri.startsWith("__WAYWARD_DIR_ACK__:")) {
+                try {
+                    int batchIndex = Integer.parseInt(
+                            documentUri.substring("__WAYWARD_DIR_ACK__:".length()));
+                    if (batchIndex < 0) throw new NumberFormatException("negative batch index");
+                    return imagePackDirectoryAccess.acknowledgeDirectoryBatch(requestId, batchIndex)
+                            ? "{\"ok\":true}"
+                            : "{\"ok\":false,\"name\":\"AbortError\",\"message\":\"The SAF batch is no longer active.\"}";
+                } catch (NumberFormatException invalidBatch) {
+                    return "{\"ok\":false,\"name\":\"TypeError\",\"message\":\"The SAF batch index is invalid.\"}";
+                }
+            }
+            if (documentUri != null && documentUri.startsWith("__WAYWARD_DIR_CANCEL__:")) {
+                boolean cancelled = imagePackDirectoryAccess.cancelDirectoryList(requestId);
+                return "{\"ok\":true,\"cancelled\":" + cancelled + "}";
+            }
+            if (documentUri != null && documentUri.startsWith("__WAYWARD_DIR_RELEASE__:")) {
+                imagePackDirectoryAccess.releaseDirectoryTreeForRequest(requestId);
+                return "{\"ok\":true}";
+            }
+            return imagePackDirectoryAccess.listDirectoryJson(documentUri,requestId);
         }
         @JavascriptInterface public String readImagePackFileForRequest(String capability, String documentUri, String requestId){
             if (!hasImagePackBridgeCapability(capability)) return imagePackBridgeDenied();
