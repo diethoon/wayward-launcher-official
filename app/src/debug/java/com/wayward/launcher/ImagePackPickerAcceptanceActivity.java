@@ -246,7 +246,8 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
         @JavascriptInterface public void verifyPersistedAccess() {
             try {
                 JSONObject info = new JSONObject(access.getFolderInfoJson());
-                JSONObject file = new JSONObject(access.readFileJson("pixel.png"));
+                String pixelUri = findChildUri(info.getString("documentUri"), "pixel.png");
+                JSONObject file = new JSONObject(access.readFileJson(pixelUri, "acceptance-persisted-read"));
                 if (!info.optBoolean("ok") || !file.optBoolean("ok")) {
                     throw new IllegalStateException("Persisted filesystem access is unavailable.");
                 }
@@ -265,54 +266,67 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
 
         @JavascriptInterface public void verifyFilesystemOperations() {
             try {
-                requireOk(new JSONObject(access.createDirectoryJson("acceptance-crud")), "create folder");
+                JSONObject info = new JSONObject(access.getFolderInfoJson());
+                String rootUri = info.getString("documentUri");
+                JSONObject createdDirectory = new JSONObject(access.createDirectoryJson(
+                        rootUri, "acceptance-crud", "acceptance-create-directory"));
+                requireOk(createdDirectory, "create folder");
+                String directoryUri = createdDirectory.getString("uri");
+
+                JSONObject createdFile = new JSONObject(access.createFileJson(
+                        directoryUri, "replace.png", "image/png", "acceptance-create-file"));
+                requireOk(createdFile, "create file");
+                String fileUri = createdFile.getString("uri");
                 byte[] original = new byte[] {1, 2, 3, 4};
                 byte[] replacement = new byte[] {9, 8, 7, 6, 5, 4};
-                requireOk(new JSONObject(access.writeFileJson("acceptance-crud/replace.png", "image/png",
-                        Base64.encodeToString(original, Base64.NO_WRAP))), "create file");
-                requireBytes(original, new JSONObject(access.readFileJson("acceptance-crud/replace.png")), "read file");
-                requireOk(new JSONObject(access.writeFileJson("acceptance-crud/replace.png", "image/png",
-                        Base64.encodeToString(replacement, Base64.NO_WRAP))), "replace existing file");
-                requireBytes(replacement, new JSONObject(access.readFileJson("acceptance-crud/replace.png")), "read replaced file");
-                JSONObject children = new JSONObject(access.listDirectoryJson("acceptance-crud"));
+                requireOk(new JSONObject(access.writeFileJson(fileUri, "image/png",
+                        Base64.encodeToString(original, Base64.NO_WRAP), "acceptance-write-original")), "write file");
+                requireBytes(original, new JSONObject(access.readFileJson(fileUri, "acceptance-read-original")), "read file");
+                requireOk(new JSONObject(access.writeFileJson(fileUri, "image/png",
+                        Base64.encodeToString(replacement, Base64.NO_WRAP), "acceptance-write-replacement")), "replace existing file");
+                requireBytes(replacement, new JSONObject(access.readFileJson(fileUri, "acceptance-read-replacement")), "read replaced file");
+
+                JSONObject children = new JSONObject(access.listDirectoryJson(directoryUri, "acceptance-list-created"));
                 if (!children.optBoolean("ok") || !children.optJSONArray("entries").toString().contains("replace.png")) {
-                    throw new IllegalStateException("New file is missing from the selected-root listing.");
+                    throw new IllegalStateException("New file is missing from the selected directory URI listing.");
                 }
-                requireOk(new JSONObject(access.deleteEntryJson("acceptance-crud/replace.png")), "delete file");
-                requireOk(new JSONObject(access.deleteEntryJson("acceptance-crud")), "delete folder");
-
-                assertRejected(access.listDirectoryJson("../Documents"), "list sibling folder");
-                assertRejected(access.readFileJson("../Documents/private.txt"), "read sibling file");
-                assertRejected(access.writeFileJson("../Documents/private.txt", "text/plain",
-                        Base64.encodeToString(new byte[] {0}, Base64.NO_WRAP)), "write sibling file");
-                assertRejected(access.createDirectoryJson("../Documents/forbidden"), "create sibling folder");
-                assertRejected(access.deleteEntryJson("../Documents/private.txt"), "delete sibling file");
-
-                JSONObject rootEntries = new JSONObject(access.listDirectoryJson(""));
-                if (!rootEntries.optBoolean("ok")) throw new IllegalStateException("Selected-root listing failed.");
-                if (verifySymlinkFixture) {
-                    if (rootEntries.optJSONArray("entries").toString().contains("__wayward_escape")) {
-                        throw new IllegalStateException("Escaping symbolic link was exposed in listing.");
-                    }
-                    assertRejected(access.listDirectoryJson("__wayward_escape"), "list through symbolic link");
-                    assertRejected(access.readFileJson("__wayward_escape/outside.txt"), "read through symbolic link");
-                    assertRejected(access.writeFileJson("__wayward_escape/injected.txt", "text/plain",
-                            Base64.encodeToString(new byte[] {1}, Base64.NO_WRAP)), "write through symbolic link");
-                    Log.i(TAG, "PASS selected-root-boundary crud atomic-replace sibling-and-symlink-blocked");
-                } else {
-                    Log.i(TAG, "SKIP symlink-on-device fixture: shared-storage provider denied symlink creation; host JVM symlink test passed separately.");
-                    Log.i(TAG, "PASS selected-root-boundary crud atomic-replace sibling-blocked");
+                JSONObject resolved = new JSONObject(access.resolveEntryJson(rootUri, fileUri, "acceptance-resolve"));
+                if (!resolved.optBoolean("ok") || resolved.optJSONArray("path") == null
+                        || resolved.optJSONArray("path").length() != 2) {
+                    throw new IllegalStateException("SAF URI ancestry did not resolve the nested document.");
                 }
+                requireOk(new JSONObject(access.deleteEntryJson(fileUri, "acceptance-delete-file")), "delete file");
+                requireOk(new JSONObject(access.deleteEntryJson(directoryUri, "acceptance-delete-folder")), "delete folder");
+
+                Uri root = Uri.parse(rootUri);
+                Uri foreignTree = android.provider.DocumentsContract.buildTreeDocumentUri(
+                        root.getAuthority(), "wayward-unrelated-tree");
+                Uri foreignDocument = android.provider.DocumentsContract.buildDocumentUriUsingTree(
+                        foreignTree, "unrelated-document");
+                String outsideUri = foreignDocument.toString();
+                assertRejected(access.listDirectoryJson(outsideUri, "acceptance-list-outside"), "list outside tree");
+                assertRejected(access.readFileJson(outsideUri, "acceptance-read-outside"), "read outside tree");
+                assertRejected(access.writeFileJson(outsideUri, "text/plain",
+                        Base64.encodeToString(new byte[] {0}, Base64.NO_WRAP), "acceptance-write-outside"), "write outside tree");
+                assertRejected(access.createDirectoryJson(outsideUri, "forbidden", "acceptance-create-outside"),
+                        "create outside tree");
+                assertRejected(access.deleteEntryJson(outsideUri, "acceptance-delete-outside"), "delete outside tree");
+                Log.i(TAG, "PASS SAF document-uri CRUD, ancestry, and cross-tree access denied");
             } catch (Exception error) {
-                Log.e(TAG, "FAIL selected-root-boundary CRUD and symlink checks", error);
+                Log.e(TAG, "FAIL SAF document-uri CRUD and boundary checks", error);
             }
         }
 
         @JavascriptInterface public void verifyPermissionRevoked() {
             try {
+                Uri tree = Uri.parse(initialTreeUri);
+                String rootUri = revokedTestRootDocumentUri.isEmpty()
+                        ? android.provider.DocumentsContract.buildDocumentUriUsingTree(
+                                tree, android.provider.DocumentsContract.getTreeDocumentId(tree)).toString()
+                        : revokedTestRootDocumentUri;
                 JSONObject info = new JSONObject(access.getFolderInfoJson());
-                JSONObject listing = new JSONObject(access.listDirectoryJson(""));
-                JSONObject read = new JSONObject(access.readFileJson("pixel.png"));
+                JSONObject listing = new JSONObject(access.listDirectoryJson(rootUri, "acceptance-revoked-list"));
+                JSONObject read = new JSONObject(access.readFileJson(revokedTestFileUri, "acceptance-revoked-read"));
                 if (info.optBoolean("ok") || listing.optBoolean("ok") || read.optBoolean("ok")) {
                     throw new IllegalStateException("Filesystem operations remained available after permission revocation.");
                 }
@@ -320,6 +334,17 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
             } catch (Exception error) {
                 Log.e(TAG, "FAIL permission-revoked check", error);
             }
+        }
+
+        private String findChildUri(String parentUri, String name) throws Exception {
+            JSONObject listing = new JSONObject(access.listDirectoryJson(parentUri, "acceptance-find-" + name));
+            requireOk(listing, "list selected directory");
+            org.json.JSONArray entries = listing.getJSONArray("entries");
+            for (int i = 0; i < entries.length(); i++) {
+                JSONObject entry = entries.getJSONObject(i);
+                if (name.equals(entry.optString("name"))) return entry.getString("uri");
+            }
+            throw new IllegalStateException("SAF child document was not found: " + name);
         }
 
         private void requireOk(JSONObject result, String operation) {
