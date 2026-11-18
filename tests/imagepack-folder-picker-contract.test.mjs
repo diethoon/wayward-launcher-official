@@ -337,9 +337,9 @@ assert.match(main, /isLocalOnlyCharacterImagePath\(/,
   "the existing local-only new-character image policy must remain in place");
 
 assert.match(main, /new ImagePackDirectoryAccess\(this,web,activeProfileId,imagePackDiagnosticSessionId\)/, "the production game WebView must own the request-correlated native image-pack bridge");
-assert.match(main, /MainActivity\.this\.runOnUiThread\(\(\) ->\s*chooseImagePackFolderOnUiThread(requestId, capability, mode)\)\)/,
+assert.match(main, /MainActivity\.this\.runOnUiThread\(\(\) ->\s*chooseImagePackFolderOnUiThread\(requestId, capability, mode\)\)\)/,
   "the production JavascriptInterface must hand WebView URL access and Activity launch to the UI thread");
-assert.match(main, /private void chooseImagePackFolderOnUiThread(String requestId, String capability, String mode)/,
+assert.match(main, /private void chooseImagePackFolderOnUiThread\(String requestId, String capability, String mode\)/,
   "origin and capability checks must execute within the UI-thread bridge handler");
 assert.match(acceptance, /verifiedTestPageUrl/,
   "the debug SAF fixture must validate the last trusted WebViewClient URL when loadDataWithBaseURL and WebView.getUrl diverge");
@@ -347,7 +347,7 @@ assert.match(acceptance, /onPageStarted\([\s\S]*?verifiedTestPageUrl = ""/,
   "a new top-level navigation must clear the previously trusted debug fixture origin");
 assert.match(acceptance, /onPageFinished[\s\S]*?isSameOrigin\(url, TEST_ORIGIN\)[\s\S]*?verifiedTestPageUrl = url/,
   "the debug fixture may trust only an origin-validated page after it finishes loading");
-assert.match(acceptance, /runOnUiThread\(\(\) -> chooseImagePackFolderOnUiThread(requestId, capability, mode)\)\)/,
+assert.match(acceptance, /runOnUiThread\(\(\) -> chooseImagePackFolderOnUiThread\(requestId, capability, mode\)\)\)/,
   "the Android 15 debug acceptance bridge must use the same WebView thread contract");
 assert.match(main, /recordImagePackDiagnostic\(String requestId/, "JavaScript diagnostics must enter the durable journal through WMLHost");
 assert.match(main, /diagnostics=compactButton\("진단"/, "the launcher home screen must expose the diagnostics share action");
