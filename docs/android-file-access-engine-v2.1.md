@@ -21,6 +21,7 @@
 - Maximum files: 100,000.
 - Maximum total file and directory entries: 200,000.
 - Maximum traversal depth: 128.
+- The hard 100,000-file ceiling counts every encountered file before request-specific filtering; a caller's `maxFiles` is an additional limit on accepted files.
 - The limits are checked independently. A missing caller policy permits all files; `data-wayward-file-policy` is parsed only from the requesting input and is not shared between requests.
 - JavaScript yields every 256 processed entries.
 - Existing FileList `length`, `item(index)`, iterator and numeric indices, `webkitRelativePath`, `input` then `change` event order, Persistable URI Permission behavior, 32 MiB file limit, 64 KiB stream chunks, four concurrent streams, and stream `cancel()`/close behavior are retained.
