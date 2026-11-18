@@ -75,10 +75,17 @@ No occurrences were found in this exact source blob for:
 
 No game-origin folder picker request exists in this source. The Android `showDirectoryPicker` adapter is launcher-injected functionality, not a request emitted by this Wayward HTML. The source uses browser `File` objects for the two file inputs and Blob download anchors for exports.
 
-## Android integration implications
+## Android implementation mapping
 
-1. Keep WebView `onShowFileChooser` as the import route. Preserve single versus multiple selection and the exact JSON accept filters.
-2. Do not infer a folder picker request from the multi-select file input. It selects multiple JSON files only.
-3. Add a separate Blob-download-to-`ACTION_CREATE_DOCUMENT` route for the two actual exports. Preserve suggested filename, MIME type, and Blob bytes; report cancellation/failure without claiming the game selected a file.
-4. The injected SAF folder adapter is not part of this original game's request contract. If retained as a launcher capability, it must remain separate and use actual SAF document URIs for each entry; it must not fabricate path-based identities.
-5. The original game does not require a File System Access API polyfill. Any such adapter must be treated as a separate launcher extension, not claimed as original game behavior.
+1. WebView `onShowFileChooser` maps the single import to `MODE_OPEN` and the pack import to `MODE_OPEN_MULTIPLE`; it preserves the source accept tokens, MIME mapping, extension recheck and URI list.
+2. The game's Blob anchor exports are intercepted at document start. The exact Blob object is retained before the game's immediate object-URL revocation, transferred to native in bounded chunks, and saved through `ACTION_CREATE_DOCUMENT` with the original filename and MIME.
+3. Play-log cleanup is deferred: the original storage removal runs only after the native document write succeeds. Cancellation or write failure leaves the source play log intact.
+4. The injected SAF folder adapter is not part of this original game's request contract. It remains a separate launcher capability and now uses actual SAF document URIs for each directory/file handle; the former `__path` and path-based native resolution have been removed.
+5. Android SAF file reads, file creation, writes, directory creation, enumeration, deletion and handle resolution are backed by ContentResolver / DocumentsContract calls against the actual selected tree and child document URIs. Persisted read/write grants are rechecked on each handle permission query.
+
+## Verification boundaries
+
+- The source fixture in `tests/fixtures/wayward-file-picker-source-contract.json` records the exact source blob identity and the actual request/consumer snippets used by CI.
+- CI runs JavaScript syntax, source-contract tests, WebView chooser tests, SAF bridge contract tests, Debug and Release APK builds, and signed Release identity verification when signing secrets are available.
+- No Android emulator, physical-device, SAF UI, or PC/LAN runtime tests are performed under the active verification policy.
+- SAF file-handle read/write uses a 32 MiB per-document bridge cap; a larger operation returns an explicit quota error rather than success with truncated content.
