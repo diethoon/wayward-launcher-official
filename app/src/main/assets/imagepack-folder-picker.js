@@ -630,6 +630,9 @@
           await visit(String(child.uri), relativePath, depth + 1);
         } else if (child.kind === "file") {
           scannedFileCount++;
+          if (scannedFileCount > MAX_UPLOAD_FILES) {
+            throw domError("QuotaExceededError", "The selected folder contains too many files.");
+          }
           const fileUri = String(child.uri || "");
           if (!fileUri.startsWith("content://")) {
             throw domError("SecurityError", "The SAF provider returned an invalid file URI.");
