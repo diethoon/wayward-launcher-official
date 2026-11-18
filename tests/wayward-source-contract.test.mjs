@@ -60,6 +60,12 @@ assert.match(main, /installWaywardDownloadBridge\(origin\)/);
 assert.match(main, /WebDownloadHandler\.isRequestCode\(req\)/);
 assert.match(downloadBridge, /a\[download\]/);
 assert.match(downloadBridge, /href\.startsWith\("blob:"\)/);
+assert.match(downloadBridge, /URL\.createObjectURL = function\(blob\)/, "the exact Blob object is retained before the game's immediate URL revocation");
+assert.match(downloadBridge, /window\.__waywardBlobDownloadResult/, "native save completion is returned to the page");
+assert.match(downloadBridge, /deferNextRemovalId/, "play-log deletion is deferred until native save completion");
+assert.match(downloadBridge, /originalRemoveItem\.call\(deferred\.storage, deferred\.key\)/, "play logs are removed only after the selected document has been written successfully");
+assert.match(downloadBridge, /saved === true/, "cancelled or failed exports preserve the game's play-log storage");
+
 assert.match(downloadBridge, /blob\.type \|\| fallbackMime\(filename\)/);
 assert.match(downloadBridge, /host\.saveBlobDownload\(requestId, filename, mimeType, base64\(bytes\)\)/);
 assert.match(downloadNative, /Intent\.ACTION_CREATE_DOCUMENT/);
@@ -69,6 +75,11 @@ assert.match(downloadNative, /checkUriPermission\(uri/);
 assert.match(downloadNative, /openOutputStream\(uri, "w"\)/);
 assert.match(downloadNative, /output\.write\(request\.bytes\)/);
 assert.match(downloadNative, /resultCode != Activity\.RESULT_OK/);
+assert.match(downloadNative, /boolean requestSave\(/, "the bridge reports whether the native save request was accepted");
+assert.match(downloadNative, /complete\(request, false\)/, "cancelled and failed saves return a negative completion");
+assert.match(downloadNative, /complete\(request, true\)/, "only a completed content write returns success");
+assert.match(downloadNative, /window\.__waywardBlobDownloadResult/, "native completion resolves the originating game page request");
+
 
 assert.match(folderBridge, /__waywardSafDocumentUri/);
 assert.doesNotMatch(folderBridge, /__path|childPath|parentPath/);
