@@ -191,11 +191,6 @@ final class WebFileChooser extends WebChromeClient {
     private Intent buildPickerIntent(FileChooserParams params,
             WebFileChooserRequestPolicy.Kind kind, List<String> accepted,
             boolean captureEnabled) {
-            picker.addFlags(flags);
-            addTitle(picker, params.getTitle());
-            return picker;
-        }
-
         if (WebFileChooserRequestPolicy.isSave(kind)) {
             Intent picker = new Intent(Intent.ACTION_CREATE_DOCUMENT);
             picker.addCategory(Intent.CATEGORY_OPENABLE);
