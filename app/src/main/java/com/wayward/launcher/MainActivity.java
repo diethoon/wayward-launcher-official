@@ -2513,25 +2513,25 @@ public class MainActivity extends Activity {
             }
         }
         @JavascriptInterface public String listImagePackDirectoryForRequest(String documentUri, String requestId){
-            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.listDirectoryJson(documentUri,requestId);
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.listDirectoryJson(documentUri,requestId);
         }
         @JavascriptInterface public String readImagePackFileForRequest(String documentUri, String requestId){
-            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.readFileJson(documentUri,requestId);
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.readFileJson(documentUri,requestId);
         }
         @JavascriptInterface public String createImagePackFile(String parentUri,String name,String mime,String requestId){
-            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.createFileJson(parentUri,name,mime,requestId);
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.createFileJson(parentUri,name,mime,requestId);
         }
         @JavascriptInterface public String writeImagePackFile(String documentUri,String mime,String data,String requestId){
-            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.writeFileJson(documentUri,mime,data,requestId);
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.writeFileJson(documentUri,mime,data,requestId);
         }
         @JavascriptInterface public String createImagePackDirectory(String parentUri,String name,String requestId){
-            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.createDirectoryJson(parentUri,name,requestId);
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.createDirectoryJson(parentUri,name,requestId);
         }
         @JavascriptInterface public String deleteImagePackEntry(String documentUri,String requestId){
-            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.deleteEntryJson(documentUri,requestId);
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.deleteEntryJson(documentUri,requestId);
         }
         @JavascriptInterface public String resolveImagePackEntry(String parentUri,String targetUri,String requestId){
-            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.resolveEntryJson(parentUri,targetUri,requestId);
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.resolveEntryJson(parentUri,targetUri,requestId);
         }
         @JavascriptInterface public String getImagePackFolderInfo(){
             return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.getFolderInfoJson();
