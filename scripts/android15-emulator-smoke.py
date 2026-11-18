@@ -940,7 +940,7 @@ def validate_file_chooser_diagnostics(events: list[dict]) -> dict:
 def write_file_chooser_acceptance_evidence(events: list[dict]) -> None:
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     (ARTIFACTS / "imagepack-acceptance-events.ndjson").write_text(
-        "".join(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\\n"
+        "".join(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n"
                 for event in events),
         encoding="utf-8",
     )
@@ -953,7 +953,7 @@ def write_file_chooser_acceptance_evidence(events: list[dict]) -> None:
         ))
     ]
     (ARTIFACTS / "imagepack-acceptance-logcat.txt").write_text(
-        "\\n".join(relevant[-5000:]) + ("\\n" if relevant else ""),
+        "\n".join(relevant[-5000:]) + ("\n" if relevant else ""),
         encoding="utf-8",
     )
 
@@ -1749,7 +1749,7 @@ if __name__ == "__main__":
                 ))
             ]
             (ARTIFACTS / "imagepack-acceptance-logcat.txt").write_text(
-                "\\n".join(relevant[-5000:]) + ("\\n" if relevant else ""),
+                "\n".join(relevant[-5000:]) + ("\n" if relevant else ""),
                 encoding="utf-8",
             )
             failure_ui = dump_ui(LOCAL_XML, DEVICE_XML)
