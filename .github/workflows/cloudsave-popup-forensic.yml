@@ -19,7 +19,7 @@ jobs:
           const fs=require('fs'),path=require('path'),crypto=require('crypto');
           const roots=['app/src/main/java','app/src/main/assets'];
           const files=[];
-          function walk(d){if(!fs.existsSync(d))return;for(const e of fs.readdirSync(d,{withFileTypes:true})){const p=path.join(d,e.name);if(e.isDirectory())walk(p);else if(/\\.(java|kt|js|xml)$/.test(p))files.push(p)}}
+          function walk(d){if(!fs.existsSync(d))return;for(const e of fs.readdirSync(d,{withFileTypes:true})){const p=path.join(d,e.name);if(e.isDirectory())walk(p);else if(/[.](java|kt|js|xml)$/.test(p))files.push(p)}}
           roots.forEach(walk);
           const terms=['게임 연결','연결 확인','게임이 연결','연결되었습니다','game connected','game connection','isGameConnected','isGameConnected','isConnected','WMLHost','JavascriptInterface','GoogleDriveAuth','startGoogleDriveAuth','takePendingStateForNonce','confirm','AlertDialog','MaterialAlertDialog','connection'];
           const report={files:[],scan:{chunkSize:4096,overlap:1024}};
