@@ -129,6 +129,7 @@ let capturedId = "";
 let grantedWrite = false;
 let lastChangeTarget = null;
 let cancelNextPicker = false;
+let forceReadQuota = false;
 let windowObject;
 const host = {
   recordImagePackDiagnostic(requestId, stage, details) {
@@ -161,6 +162,7 @@ const host = {
   },
   readImagePackFileForRequest(capability, uri) {
     assert.equal(capability, "test-native-capability");
+    if (forceReadQuota) return JSON.stringify({ ok: false, name: "QuotaExceededError", message: "32 MiB bridge limit" });
     assert.equal(uri, scriptUri);
     return JSON.stringify({
       ok: true, uri, name: "faith-pack.js", mimeType: "application/javascript",
@@ -299,6 +301,9 @@ assert.equal(uploaded.size, packBytes.length);
 assert.equal(uploaded.type, "application/javascript");
 assert.equal(uploaded.lastModified, 13);
 assert.equal(await uploaded.text(), packSource);
+forceReadQuota = true;
+await assert.rejects(() => uploaded.text(), error => error.name === "QuotaExceededError");
+forceReadQuota = false;
 assert.equal(new TextDecoder().decode(await uploaded.arrayBuffer()), packSource);
 assert.equal(await uploaded.slice(0, 4).text(), "/* W");
 assert.equal((await uploaded.stream().getReader().read()).value.length > 0, true);
@@ -421,6 +426,14 @@ const lastCommitted = host.lastWrite.encoded;
 await abortedWrite.abort();
 assert.equal(host.lastWrite.encoded, lastCommitted, "abort discards staged bytes without replacing the existing document");
 await assert.rejects(() => abortedWrite.write("after abort"), error => error.name === "InvalidStateError");
+const blobWriter = await packHandle.createWritable();
+await blobWriter.write(new Blob(["blob-payload"], { type: "text/plain" }));
+await blobWriter.close();
+assert.equal(Buffer.from(host.lastWrite.encoded, "base64").toString("utf8"), "blob-payload");
+const arrayBufferWriter = await packHandle.createWritable();
+await arrayBufferWriter.write(Uint8Array.from([65, 66, 67]).buffer);
+await arrayBufferWriter.close();
+assert.deepEqual([...Buffer.from(host.lastWrite.encoded, "base64")], [65, 66, 67]);
 
 
 // Execute the exact original FAITH scanner function from the pinned HTML fixture.
@@ -442,6 +455,7 @@ assert.equal(await faith.scan(receivedFiles), 1, "original FAITH scanner must re
 assert.equal(faith.registrations[0].packId, "faith-fixture-pack");
 assert.equal(faith.registrations[0].cataloguePath, "image-packs/characters/faith-pack.js");
 assert.equal(input.files, receivedFiles, "input.files remains accessible after awaited File.text()");
+assert.equal(lastChangeTarget.files, receivedFiles, "event.target.files remains the same FileList after the original async scanner awaits");
 function scannerFile(name, path, source, read) { return { name, webkitRelativePath: path, text: read || (async () => source) }; }
 function sourcePack(id, character = id) { return "/* WAYWARD_FAITH_IMAGE_PACK */\n" + JSON.stringify({packId:id,wfImagePack:{character,basic:true,part:""},entryCount:1,generatedAt:"2026-11-19"}); }
 const multi = makeFaithScanner();
