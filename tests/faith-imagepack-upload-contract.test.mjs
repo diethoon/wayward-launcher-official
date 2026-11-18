@@ -499,4 +499,51 @@ assert.equal(await overlap.scan([scannerFile("second.js","Root/image-packs/secon
 releaseRead();
 assert.equal(await pendingFirst,1,"the first scan retains its File object snapshot after a subsequent selection starts.");
 
-console.log("Pinned FAITH scanner integration, async FileList lifetime and separate DirectoryHandle contracts passed.");
+// Execute the exact pinned wfPackFolderButton component and its original async
+// onChange handler against the adapter's FileList, not a hand-written substitute.
+{
+  const buttonScanner = makeFaithScanner();
+  const state = [];
+  let stateIndex = 0;
+  const jsx = (type, props) => ({ type, props: props || {} });
+  const buttonContext = {
+    Z: { useState(initial) { const index = stateIndex++; state[index] = initial; return [initial, value => { state[index] = value; }]; } },
+    u: { jsx, jsxs: jsx },
+    wfPackScanFolder: buttonScanner.scan,
+    Number, String
+  };
+  const button = vm.runInNewContext(
+    "(" + fixture.sourceFunctions.wfPackFolderButton.code + ")",
+    buttonContext
+  );
+  const element = button();
+  function findInput(node) {
+    if (!node || typeof node !== "object") return null;
+    if (node.type === "input" && node.props && node.props.type === "file") return node;
+    const children = node.props && node.props.children;
+    for (const child of Array.isArray(children) ? children : [children]) {
+      const found = findInput(child);
+      if (found) return found;
+    }
+    return null;
+  }
+  const fileInput = findInput(element);
+  assert.ok(fileInput, "the exact original FAITH button must render its hidden file input");
+  assert.equal(fileInput.props.webkitdirectory, "", "the original component requests a directory");
+  assert.equal(fileInput.props.multiple, true, "the original component requests multiple files");
+  const originalEventFiles = receivedFiles;
+  const originalInput = {
+    files: originalEventFiles,
+    value: "selected",
+    dispatchEvent() { return true; }
+  };
+  await fileInput.props.onChange({ target: originalInput });
+  assert.equal(buttonScanner.registrations[0].packId, "faith-fixture-pack",
+    "the original button handler must complete registration from the adapter's FileList");
+  assert.equal(originalInput.files, originalEventFiles,
+    "the original async handler must not lose its FileList after wfPackScanFolder awaits File.text()");
+  assert.equal(originalInput.value, "", "the original handler must reset the input for a later selection");
+  assert.equal(state[0], "이미지팩 1개를 등록했습니다.", "the original handler must surface the registration count");
+  assert.equal(state[1], false, "the original handler must clear its loading state");
+}
+console.log("Pinned FAITH button and scanner integration, async FileList lifetime and separate DirectoryHandle contracts passed.");
