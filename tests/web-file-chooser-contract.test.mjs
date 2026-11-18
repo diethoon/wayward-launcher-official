@@ -13,6 +13,9 @@ assert.match(picker, /isCaptureEnabled\(\)/, "capture preference must be inspect
 assert.match(picker, /getTitle\(\)/, "chooser title must be preserved");
 assert.match(picker, /getFilenameHint\(\)/, "save filename hint must be preserved");
 assert.match(picker, /createIntent\(\)/, "WebView's capture-capable chooser Intent must be preserved");
+assert.match(picker, /containsLiveCaptureIntent/, "capture requests fail explicitly unless the WebView Intent actually contains a live capture action");
+assert.match(picker, /findCaptureOutputUri/, "capture output URIs are retained when the picker returns no data URI");
+assert.match(picker, /FileChooserParams\.parseResult/, "ordinary file results are parsed through Android's documented result parser");
 assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT/, "ordinary files retain the document picker");
 assert.match(picker, /Intent\.ACTION_CREATE_DOCUMENT/, "save requests use create-document semantics");
 assert.doesNotMatch(picker, /ACTION_OPEN_DOCUMENT_TREE/, "generic WebView file chooser must not create a competing folder-picker route");
