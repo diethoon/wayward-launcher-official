@@ -135,7 +135,7 @@ const host = {
   chooseImagePackFolder(requestId, capability, mode, initialUri) {
     assert.equal(capability, "test-native-capability");
     assert.ok(mode === "read" || mode === "readwrite");
-    assert.equal(initialUri, "");
+    assert.equal(initialUri, mode === "readwrite" ? rootUri : "");
     chooseCount++;
     capturedId = requestId;
     setTimeout(() => windowObject.__waywardNativeImagePackPickerDispatch(requestId, {
@@ -331,6 +331,52 @@ assert.equal(packHandle.kind, "file");
 assert.equal(await (await packHandle.getFile()).text(), packSource);
 assert.deepEqual(await directoryHandle.resolve(characters), ["image-packs", "characters"]);
 assert.equal(await directoryHandle.queryPermission({ mode: "read" }), "granted");
+
+// The exact original scanner has already awaited File.text(); retain the current
+// FileList on the input, then replace it only when the next selection succeeds.
+const firstSelectionList = input.files;
+const eventCountBeforeSecondSelection = inputEvents.length;
+const secondClick = {
+  target: input, composedPath: () => [input],
+  preventDefault() {}, stopImmediatePropagation() {}
+};
+documentListeners.get("click")(secondClick);
+await new Promise((resolve, reject) => {
+  const deadline = Date.now() + 1500;
+  const poll = () => {
+    if (inputEvents.length >= eventCountBeforeSecondSelection + 2) resolve();
+    else if (Date.now() > deadline) reject(new Error("second webkitdirectory selection timed out"));
+    else setTimeout(poll, 5);
+  };
+  poll();
+});
+assert.equal(chooseCount, 2);
+assert.notEqual(input.files, firstSelectionList, "a successful subsequent selection replaces the current FileList");
+assert.equal(firstSelectionList.item(0).name, "faith-pack.js", "the prior FileList reference remains usable");
+
+// A permission query never opens UI. A write request must go through SAF and
+// only report granted after the same persisted tree is selected writable.
+assert.equal(await directoryHandle.queryPermission({ mode: "readwrite" }), "denied");
+assert.equal(await directoryHandle.requestPermission({ mode: "readwrite" }), "granted");
+assert.equal(await directoryHandle.queryPermission({ mode: "readwrite" }), "granted");
+const writable = await packHandle.createWritable({ keepExistingData: false });
+await writable.write("ABCDE");
+await writable.seek(1);
+await writable.write(new Uint8Array([90]));
+await writable.truncate(4);
+const oneByte = Uint8Array.from([33]);
+await writable.write({ type: "write", position: 3, data: new DataView(oneByte.buffer) });
+await writable.close();
+assert.equal(Buffer.from(host.lastWrite.encoded, "base64").toString("utf8"), "AZC!");
+assert.equal(host.lastWrite.mimeType, "application/javascript");
+await assert.rejects(() => writable.write("after close"), error => error.name === "InvalidStateError");
+const abortedWrite = await packHandle.createWritable();
+await abortedWrite.write("must not persist");
+const lastCommitted = host.lastWrite.encoded;
+await abortedWrite.abort();
+assert.equal(host.lastWrite.encoded, lastCommitted, "abort discards staged bytes without replacing the existing document");
+await assert.rejects(() => abortedWrite.write("after abort"), error => error.name === "InvalidStateError");
+
 
 // Execute the exact original FAITH scanner function from the pinned HTML fixture.
 function makeFaithScanner() {
