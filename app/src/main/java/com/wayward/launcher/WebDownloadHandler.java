@@ -6,7 +6,10 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Process;
 import android.util.Base64;
+import android.webkit.WebView;
 import android.widget.Toast;
+
+import org.json.JSONObject;
 
 import java.io.OutputStream;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -35,10 +38,12 @@ final class WebDownloadHandler {
     }
 
     private final Activity activity;
+    private final WebView webView;
     private Pending pending;
 
-    WebDownloadHandler(Activity activity) {
+    WebDownloadHandler(Activity activity, WebView webView) {
         this.activity = activity;
+        this.webView = webView;
     }
 
     static boolean isRequestCode(int requestCode) {
@@ -50,7 +55,7 @@ final class WebDownloadHandler {
                 current >= REQUEST_CODE_MAX ? REQUEST_CODE_MIN : current + 1);
     }
 
-    void requestSave(String requestId, String filename, String mimeType, String encodedBytes) {
+    boolean requestSave(String requestId, String filename, String mimeType, String encodedBytes) {
         final byte[] bytes;
         try {
             if (requestId == null || !requestId.matches("[A-Za-z0-9._:-]{1,128}")) {
@@ -69,38 +74,47 @@ final class WebDownloadHandler {
             DiagnosticsLogger.event(activity, "ERROR", "webview", "blob_download_rejected", null);
             activity.runOnUiThread(() -> Toast.makeText(activity,
                     "파일 저장 요청을 처리하지 못했습니다: " + safeMessage(error), Toast.LENGTH_LONG).show());
-            return;
+            return false;
         }
 
         final Pending request = new Pending(requestId, filename,
                 mimeType == null || mimeType.trim().isEmpty() ? "application/octet-stream" : mimeType.trim(),
                 bytes, nextRequestCode());
-        activity.runOnUiThread(() -> {
-            synchronized (WebDownloadHandler.this) {
-                if (pending != null) {
-                    DiagnosticsLogger.event(activity, "WARN", "webview", "blob_download_rejected_busy", null);
-                    Toast.makeText(activity, "다른 파일 저장이 진행 중입니다.", Toast.LENGTH_LONG).show();
-                    return;
-                }
-                pending = request;
+        synchronized (this) {
+            if (pending != null) {
+                DiagnosticsLogger.event(activity, "WARN", "webview", "blob_download_rejected_busy", null);
+                return false;
             }
-            Intent picker = new Intent(Intent.ACTION_CREATE_DOCUMENT);
-            picker.addCategory(Intent.CATEGORY_OPENABLE);
-            picker.setType(request.mimeType);
-            picker.putExtra(Intent.EXTRA_TITLE, request.filename);
-            picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                    | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-            try {
-                activity.startActivityForResult(picker, request.requestCode);
-                DiagnosticsLogger.event(activity, "INFO", "webview", "blob_download_picker_started", null);
-            } catch (Exception error) {
-                clear(request);
-                DiagnosticsLogger.event(activity, "ERROR", "webview", "blob_download_picker_launch_failed", null);
-                Toast.makeText(activity, "시스템 저장 선택기를 열지 못했습니다: " + safeMessage(error),
-                        Toast.LENGTH_LONG).show();
-            }
-        });
+            pending = request;
+        }
+        activity.runOnUiThread(() -> launchPicker(request));
+        return true;
+    }
+
+    private void launchPicker(Pending request) {
+        synchronized (this) {
+            if (pending != request) return;
+        }
+        if (activity.isFinishing()) {
+            complete(request, false);
+            return;
+        }
+        Intent picker = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        picker.addCategory(Intent.CATEGORY_OPENABLE);
+        picker.setType(request.mimeType);
+        picker.putExtra(Intent.EXTRA_TITLE, request.filename);
+        picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try {
+            activity.startActivityForResult(picker, request.requestCode);
+            DiagnosticsLogger.event(activity, "INFO", "webview", "blob_download_picker_started", null);
+        } catch (Exception error) {
+            DiagnosticsLogger.event(activity, "ERROR", "webview", "blob_download_picker_launch_failed", null);
+            Toast.makeText(activity, "시스템 저장 선택기를 열지 못했습니다: " + safeMessage(error),
+                    Toast.LENGTH_LONG).show();
+            complete(request, false);
+        }
     }
 
     void handleActivityResult(int requestCode, int resultCode, Intent data) {
@@ -111,23 +125,23 @@ final class WebDownloadHandler {
                 DiagnosticsLogger.event(activity, "WARN", "webview", "blob_download_stale_result", null);
                 return;
             }
-            pending = null;
         }
         if (resultCode != Activity.RESULT_OK) {
             DiagnosticsLogger.event(activity, "WARN", "webview", "blob_download_cancelled", null);
             Toast.makeText(activity, "파일 저장이 취소되었습니다.", Toast.LENGTH_SHORT).show();
+            complete(request, false);
             return;
         }
         Uri uri = data == null ? null : data.getData();
         if (uri == null || !"content".equalsIgnoreCase(uri.getScheme())
                 || uri.getAuthority() == null || uri.getAuthority().trim().isEmpty()) {
-            fail("Android가 유효한 저장 URI를 반환하지 않았습니다.");
+            fail(request, "Android가 유효한 저장 URI를 반환하지 않았습니다.");
             return;
         }
         int grant = activity.checkUriPermission(uri, Process.myPid(), Process.myUid(),
                 Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
         if (grant != PackageManager.PERMISSION_GRANTED) {
-            fail("선택한 저장 위치에 쓰기 권한이 없습니다.");
+            fail(request, "선택한 저장 위치에 쓰기 권한이 없습니다.");
             return;
         }
         try (OutputStream output = activity.getContentResolver().openOutputStream(uri, "w")) {
@@ -136,26 +150,41 @@ final class WebDownloadHandler {
             output.flush();
             DiagnosticsLogger.event(activity, "INFO", "webview", "blob_download_saved", null);
             Toast.makeText(activity, request.filename + " 저장 완료", Toast.LENGTH_LONG).show();
+            complete(request, true);
         } catch (Exception error) {
             DiagnosticsLogger.event(activity, "ERROR", "webview", "blob_download_write_failed", null);
-            fail("파일을 저장하지 못했습니다: " + safeMessage(error));
+            fail(request, "파일을 저장하지 못했습니다: " + safeMessage(error));
         }
     }
 
     void cancelPending() {
+        final Pending request;
         synchronized (this) {
-            if (pending == null) return;
+            request = pending;
+        }
+        if (request != null) {
+            DiagnosticsLogger.event(activity, "WARN", "webview", "blob_download_cancelled_activity_destroyed", null);
+            complete(request, false);
+        }
+    }
+
+    private void fail(Pending request, String message) {
+        Toast.makeText(activity, message, Toast.LENGTH_LONG).show();
+        complete(request, false);
+    }
+
+    private void complete(Pending request, boolean saved) {
+        synchronized (this) {
+            if (pending != request) return;
             pending = null;
         }
-        DiagnosticsLogger.event(activity, "WARN", "webview", "blob_download_cancelled_activity_destroyed", null);
-    }
-
-    private synchronized void clear(Pending request) {
-        if (pending == request) pending = null;
-    }
-
-    private void fail(String message) {
-        Toast.makeText(activity, message, Toast.LENGTH_LONG).show();
+        if (webView == null || activity.isFinishing()) return;
+        String script = "if(typeof window.__waywardBlobDownloadResult==='function')"
+                + "window.__waywardBlobDownloadResult(" + JSONObject.quote(request.requestId)
+                + "," + (saved ? "true" : "false") + ")";
+        activity.runOnUiThread(() -> {
+            if (!activity.isFinishing()) webView.evaluateJavascript(script, null);
+        });
     }
 
     private static String safeMessage(Throwable error) {

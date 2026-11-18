@@ -4,6 +4,43 @@
   const host = window.WMLHost;
   if (!host || typeof host.saveBlobDownload !== "function") return;
   let sequence = 0;
+  const blobByUrl = new Map();
+  let deferNextRemovalId = null;
+  let deferredRemoval = null;
+  const originalRemoveItem = Storage.prototype.removeItem;
+
+  try {
+    const createObjectURL = URL.createObjectURL.bind(URL);
+    const revokeObjectURL = URL.revokeObjectURL.bind(URL);
+    URL.createObjectURL = function(blob) {
+      const url = createObjectURL(blob);
+      if (blob instanceof Blob) blobByUrl.set(url, blob);
+      return url;
+    };
+    URL.revokeObjectURL = function(url) {
+      blobByUrl.delete(String(url));
+      return revokeObjectURL(url);
+    };
+  } catch (_) {}
+
+  Storage.prototype.removeItem = function(key) {
+    if (deferNextRemovalId && this === window.localStorage) {
+      deferredRemoval = { id: deferNextRemovalId, storage: this, key: String(key) };
+      deferNextRemovalId = null;
+      return;
+    }
+    return originalRemoveItem.call(this, key);
+  };
+
+  window.__waywardBlobDownloadResult = function(requestId, saved) {
+    if (!deferredRemoval || deferredRemoval.id !== String(requestId)) return;
+    const deferred = deferredRemoval;
+    deferredRemoval = null;
+    if (saved === true) originalRemoveItem.call(deferred.storage, deferred.key);
+    diagnose("blob_download_deferred_log_cleanup", requestId, {
+      saved: saved === true, storageKeyDeferred: true
+    });
+  };
 
   function diagnose(stage, requestId, details) {
     try {
@@ -40,19 +77,38 @@
     event.stopImmediatePropagation();
     const requestId = "blob-download-" + Date.now().toString(36) + "-" + (++sequence);
     const filename = String(anchor.download || anchor.getAttribute("download") || "download");
-    diagnose("blob_download_click_intercepted", requestId, { filename, hrefScheme: "blob" });
+    const isPlayLogExport = filename.startsWith("play-log-");
+    if (isPlayLogExport) {
+      deferNextRemovalId = requestId;
+      Promise.resolve().then(() => {
+        if (deferNextRemovalId === requestId) deferNextRemovalId = null;
+      });
+    }
+    const retainedBlob = blobByUrl.get(href) || null;
+    diagnose("blob_download_click_intercepted", requestId, {
+      filename, hrefScheme: "blob", isPlayLogExport, retainedBlob: !!retainedBlob
+    });
     try {
-      const response = await fetch(href);
-      if (!response.ok) throw new Error("Blob download data could not be read.");
-      const blob = await response.blob();
+      let blob = retainedBlob;
+      if (!blob) {
+        const response = await fetch(href);
+        if (!response.ok) throw new Error("Blob download data could not be read.");
+        blob = await response.blob();
+      }
       if (blob.size > 32 * 1024 * 1024) throw new Error("Export exceeds the 32 MiB Android bridge limit.");
       const bytes = new Uint8Array(await blob.arrayBuffer());
       const mimeType = blob.type || fallbackMime(filename);
-      host.saveBlobDownload(requestId, filename, mimeType, base64(bytes));
+      const accepted = host.saveBlobDownload(requestId, filename, mimeType, base64(bytes));
+      if (accepted !== true) {
+        window.__waywardBlobDownloadResult(requestId, false);
+        diagnose("blob_download_native_request_rejected", requestId, { filename, mimeType });
+        return;
+      }
       diagnose("blob_download_native_request_sent", requestId, {
         filename, mimeType, byteLength: bytes.length
       });
     } catch (error) {
+      window.__waywardBlobDownloadResult(requestId, false);
       diagnose("blob_download_bridge_failed", requestId, {
         filename, errorName: error && error.name || "Error",
         errorMessage: String(error && error.message || error)
