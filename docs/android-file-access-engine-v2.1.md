@@ -1,10 +1,15 @@
 # Android SAF File Access Engine v2.1
 
-- SAF ContentResolver queries and Cursor iteration run on a bounded two-thread executor.
-- Each task owns a CancellationSignal, Future, request ID, and per-batch acknowledgement latch.
-- Native output is bounded to 32 entries per batch and waits up to 30 seconds for WebView acknowledgement; only one batch is in flight.
-- JavaScript validates batch order, applies a 35-second receive timeout, and sends cancellation through the existing capability-gated bridge.
-- Root tree URIs are isolated by picker request and released in a finally block.
-- Bulk traversal uses an async iterator; no full directory result array or cloned/sorted array is created. FileList retains its required File objects.
-- Existing policy defaults, independent limits, 256-item yielding, FileList shape/events, persistable permissions, 32 MiB cap, 64 KiB chunks, and four concurrent streams remain.
-- Tests simulate protocol ordering, empty directories, provider errors, concurrent request isolation, and cancellation. Real DocumentsProvider/SAF performance and WebView-destroy integration tests remain unverified.
+## Native execution and cancellation
+
+- \`startListDirectory()\` performs request-ID and SAF-tree URI validation only; it does not query the provider.
+- \`ContentResolver.query(..., CancellationSignal)\` and all Cursor iteration execute on a bounded two-thread executor.
+- Each \`DirectoryTask\` owns its request ID, \`CancellationSignal\`, \`Future\`, active Cursor reference, and per-batch acknowledgement latch.
+- Cancellation calls \`CancellationSignal.cancel()\`, interrupts the Future, releases any waiting acknowledgement, and closes an already-open Cursor. If a provider ignores cancellation while blocked inside its own query implementation, Android cannot guarantee immediate interruption; once the query returns, the cancelled task closes/discards its Cursor and does not emit more entries.
+- WebView destruction calls \`cancelPending()\`/\`cancelAllDirectoryLists()\`, cancels all active tasks, clears request-scoped tree references, and shuts down the executor.
+
+## Bounded delivery and memory
+
+- Native output is limited to 32 entries per batch. Exactly one batch is in flight; the native worker waits up to 30 seconds for the matching WebView acknowledgement before reading more Cursor rows.
+- JavaScript validates request ID and monotonically increasing batch index, consumes entries through an async iterator, and acknowledges only after the current batch has been consumed. The JS receive timeout is 35 seconds.
+- Completion, provider error, cֻǱ˞
