@@ -55,7 +55,10 @@ assert.match(picker, /validateAcceptedFile/);
 assert.match(picker, /acceptedMimeTypes/);
 assert.match(picker, /getFilenameHint\(\)/);
 
-assert.match(main, /saveBlobDownload\(String requestId,String filename,String mimeType,String base64Bytes\)/);
+assert.match(main, /beginBlobDownload\(String requestId,String filename,String mimeType,long expectedBytes\)/);
+assert.match(main, /appendBlobDownloadChunk\(String requestId,String base64Bytes\)/);
+assert.match(main, /finishBlobDownload\(String requestId\)/);
+assert.match(main, /abortBlobDownload\(String requestId\)/);
 assert.match(main, /installWaywardDownloadBridge\(origin\)/);
 assert.match(main, /WebDownloadHandler\.isRequestCode\(req\)/);
 assert.match(downloadBridge, /a\[download\]/);
@@ -65,21 +68,25 @@ assert.match(downloadBridge, /window\.__waywardBlobDownloadResult/, "native save
 assert.match(downloadBridge, /deferNextRemovalId/, "play-log deletion is deferred until native save completion");
 assert.match(downloadBridge, /originalRemoveItem\.call\(deferred\.storage, deferred\.key\)/, "play logs are removed only after the selected document has been written successfully");
 assert.match(downloadBridge, /saved === true/, "cancelled or failed exports preserve the game's play-log storage");
-
 assert.match(downloadBridge, /blob\.type \|\| fallbackMime\(filename\)/);
-assert.match(downloadBridge, /host\.saveBlobDownload\(requestId, filename, mimeType, base64\(bytes\)\)/);
+assert.match(downloadBridge, /host\.beginBlobDownload\(requestId, filename, mimeType, blob\.size\)/);
+assert.match(downloadBridge, /host\.appendBlobDownloadChunk\(requestId, base64\(bytes\)\)/);
+assert.match(downloadBridge, /host\.finishBlobDownload\(requestId\)/);
+assert.match(downloadBridge, /blob\.slice\(offset, offset \+ chunkSize\)/, "Blob bytes are transferred in bounded chunks");
 assert.match(downloadNative, /Intent\.ACTION_CREATE_DOCUMENT/);
 assert.match(downloadNative, /Intent\.EXTRA_TITLE, request\.filename/);
 assert.match(downloadNative, /picker\.setType\(request\.mimeType\)/);
 assert.match(downloadNative, /checkUriPermission\(uri/);
 assert.match(downloadNative, /openOutputStream\(uri, "w"\)/);
-assert.match(downloadNative, /output\.write\(request\.bytes\)/);
+assert.match(downloadNative, /FileInputStream\(request\.temporaryFile\)/);
 assert.match(downloadNative, /resultCode != Activity\.RESULT_OK/);
-assert.match(downloadNative, /boolean requestSave\(/, "the bridge reports whether the native save request was accepted");
+assert.match(downloadNative, /boolean beginDownload\(/);
+assert.match(downloadNative, /boolean appendChunk\(/);
+assert.match(downloadNative, /boolean finishDownload\(/);
+assert.match(downloadNative, /copied != request\.expectedBytes/, "short or incomplete exports cannot be reported as saved");
 assert.match(downloadNative, /complete\(request, false\)/, "cancelled and failed saves return a negative completion");
 assert.match(downloadNative, /complete\(request, true\)/, "only a completed content write returns success");
 assert.match(downloadNative, /window\.__waywardBlobDownloadResult/, "native completion resolves the originating game page request");
-
 
 assert.match(folderBridge, /__waywardSafDocumentUri/);
 assert.doesNotMatch(folderBridge, /__path|childPath|parentPath/);
