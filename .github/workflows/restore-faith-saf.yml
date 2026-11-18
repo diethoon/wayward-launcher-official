@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - work/android-faith-finalize-20261119
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -26,7 +29,9 @@ jobs:
             const { execFileSync } = require("child_process");
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const branch = context.ref.replace("refs/heads/", "");
+            const branch = context.eventName === "pull_request"
+              ? context.payload.pull_request.head.ref
+              : context.ref.replace("refs/heads/", "");
             const head = await github.rest.git.getRef({ owner, repo, ref: "heads/" + branch });
             const parent = head.data.object.sha;
             const parts = ["part00", "part01"].map(name =>
@@ -46,13 +51,13 @@ jobs:
             ], { encoding: "utf8" });
             workflow = workflow.replace(
               "      - name: Enable KVM for Android emulator\n        run:",
-              "      - name: Enable KVM for Android emulator\n        if: github.ref != 'refs/heads/work/android-faith-finalize-20261119'\n        run:", 1);
+              "      - name: Enable KVM for Android emulator\n        if: github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119'\n        run:", 1);
             workflow = workflow.replace(
               "        if: github.ref != 'refs/heads/fix/android-qr-pairing-20261116'",
-              "        if: github.ref != 'refs/heads/fix/android-qr-pairing-20261116' && github.ref != 'refs/heads/work/android-faith-finalize-20261119'", 1);
+              "        if: github.ref != 'refs/heads/fix/android-qr-pairing-20261116' && github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119'", 1);
             workflow = workflow.replace(
               "      - name: Upload Android 15 UI diagnostics\n        if: always()",
-              "      - name: Upload Android 15 UI diagnostics\n        if: always() && github.ref != 'refs/heads/work/android-faith-finalize-20261119'", 1);
+              "      - name: Upload Android 15 UI diagnostics\n        if: always() && github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119'", 1);
             fs.writeFileSync(".github/workflows/android-validation.yml", workflow);
             const files = [
               "HANDOFF.md",
