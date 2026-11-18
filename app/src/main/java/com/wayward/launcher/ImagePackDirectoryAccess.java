@@ -415,7 +415,7 @@ final class ImagePackDirectoryAccess {
             if (bytes.length > MAX_FILE_BYTES) {
                 return failure("QuotaExceededError", "The image file exceeds the 32 MiB bridge limit.").toString();
             }
-            try (OutputStream output = activity.getContentResolver().openOutputStream(fileUri, "wt")) {
+            try (OutputStream output = activity.getContentResolver().openOutputStream(fileUri, "w")) {
                 if (output == null) throw new IllegalStateException("Document provider returned no output stream.");
                 output.write(bytes);
                 output.flush();
