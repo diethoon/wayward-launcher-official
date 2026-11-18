@@ -1,74 +1,36 @@
 {
   "sourceRepository": "diethoon/wayward",
   "sourceBranch": "main",
-  "sourcePath": "Wayward_WML_ko.html",
-  "sourceBlobSha": "d198eacfc127c55dc44bd5d1b8e29ff2bb7d08e6",
-  "sourceSha256": "e159fb2002d31559b1ac1936cf6b48cdbbdc4858bfbb0b67e2d7284ca2195d1d",
-  "byteSize": 4373978,
-  "characterCount": 3506143,
-  "lineCount": 492,
-  "fileInputs": [
-    {
-      "id": "save-data-import",
-      "line": 144,
-      "type": "file",
-      "accept": "application/json,.json",
-      "multiple": false,
-      "capture": false,
-      "onChange": "onChange:async H=>{var G;const ie=(G=H.target.files)==null?void 0:G[0];if(H.target.value=\"\",!!ie)try{const se=await ie.text();if(!l(se)){p(\"해당 파일을 저장 데이터로 불러올 수 없습니다.\");return}p(null),o==null||o()}catch(se){p(`파일을 읽지 못했습니다: ${se.message}`)}}"
-    },
-    {
-      "id": "image-pack-json-import",
-      "line": 466,
-      "type": "file",
-      "accept": ".json,application/json",
-      "multiple": true,
-      "capture": false,
-      "onChange": "onChange:k=>void g(k.target.files)"
-    }
-  ],
-  "importFunctions": [
-    {
-      "name": "Oit",
-      "line": 466,
-      "source": "async function Oit(e,t){let o;try{o=JSON.parse(await e.text())}catch{return{ok:!1,reason:`${e.name}은(는) pack.json이 아닙니다.`}}const n=pne(o);return typeof n==\"string\"?{ok:!1,reason:`${e.name}: ${n}.`}:await _ne(n)?gne(n):{ok:!1,reason:`${n.name}의 pack.json은 찾았지만 이미지는 찾지 못했습니다. 팩 폴더는 ${t}이(가) 있는 폴더 안의 packs/${n.folder}이어야 합니다.`}}"
-    },
-    {
-      "name": "pack-import-handler",
-      "line": 466,
-      "source": "const g=async k=>{if(!k||k.length===0)return;a(!0);const x=[];for(const S of Array.from(k)){const I=await Oit(S,c);x.push(I.ok?{ok:!0,text:o8(I)}:{ok:!1,text:I.reason})}s(x),await p(),a(!1),h.current&&(h.current.value=\"\")}"
-    }
-  ],
-  "stateImport": {
-    "line": 144,
-    "source": "const ie=(G=H.target.files)==null?void 0:G[0];if(H.target.value=\"\",!!ie)try{const se=await ie.text();if(!l(se)){p(\"해당 파일을 저장 데이터로 불러올 수 없습니다.\");return}p(null),o==null||o()}catch(se){p(`파일을 읽지 못했습니다: ${se.message}`)}"
+  "sourcePath": "Wayward_Faith_v3.0.0.html",
+  "sourceBlobSha": "ac6b44ccb75584383ad2875f4f36a55138c228cf",
+  "sourceIdentityVerified": true,
+  "sourceIdentityNote": "Exact GitHub Blob SHA queried and matched; no WML source identity or snippets are accepted as FAITH evidence.",
+  "imagePackFolderInput": {
+    "type": "file",
+    "webkitdirectory": true,
+    "multiple": true,
+    "changeHandler": "a",
+    "buttonFunction": "wfPackFolderButton",
+    "scanFunction": "wfPackScanFolder"
   },
-  "downloads": [
-    {
-      "name": "save-data-json-export",
-      "line": 142,
-      "source": "function ntt(e,t){if(typeof window>\"u\")return;const o=new Blob([t],{type:\"application/json\"}),n=URL.createObjectURL(o),s=document.createElement(\"a\");s.href=n,s.download=e,document.body.appendChild(s),s.click(),document.body.removeChild(s),setTimeout(()=>URL.revokeObjectURL(n),1e3)}",
-      "mime": "application/json",
-      "filename": "exportSaveToFile argument"
-    },
-    {
-      "name": "play-log-export",
-      "line": 143,
-      "source": "function vtt(e){const t=LD(),o=t.map(l=>JSON.stringify(l)).join(` `),n=new Blob([o],{type:\"application/jsonl\"}),s=URL.createObjectURL(n),a=`play-log-${new Date().toISOString().replace(/[:.]/g,\"-\").slice(0,19)}.jsonl`,i=document.createElement(\"a\");return i.href=s,i.download=a,document.body.appendChild(i),i.click(),document.body.removeChild(i),URL.revokeObjectURL(s),Lte(),{count:t.length,filename:a}}",
-      "mime": "application/jsonl",
-      "filename": "play-log-<ISO timestamp>.jsonl"
-    }
-  ],
-  "absentApis": [
-    "showOpenFilePicker",
-    "showSaveFilePicker",
-    "showDirectoryPicker",
-    "getFileHandle",
-    "getDirectoryHandle",
-    "createWritable",
-    "webkitdirectory",
-    "capture",
-    "FileReader"
-  ],
-  "evidence": "Extracted from the exact Git blob named above; the full source was fetched by blob SHA and hashed as UTF-8."
+  "scannerContract": {
+    "fileCollection": "FileList-compatible",
+    "requiredCollectionMembers": ["length", "item(index)"],
+    "requiredFileMembers": ["name", "text()", "webkitRelativePath"],
+    "relativePathMustPreserve": ["selected-folder-relative hierarchy", "image-packs/"],
+    "javascriptExtension": ".js",
+    "imagePackMarker": "/* WAYWARD_FAITH_IMAGE_PACK */",
+    "mustRemainUnmodified": ["wfPackFolderButton", "wfPackScanFolder"]
+  },
+  "separateLauncherApi": {
+    "api": "window.showDirectoryPicker",
+    "result": "DirectoryHandle-compatible Promise result",
+    "mustNotBeConflatedWith": "webkitdirectory FileList upload"
+  },
+  "historicalWmlBaseline": {
+    "deprecated": true,
+    "sourcePath": "Wayward_WML_ko.html",
+    "sourceBlobSha": "d198eacfc127c55dc44bd5d1b8e29ff2bb7d08e6",
+    "reason": "Historical WML contract is not the FAITH 3.0.0 acceptance baseline."
+  }
 }
