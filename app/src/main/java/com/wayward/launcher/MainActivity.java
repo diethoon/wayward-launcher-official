@@ -1298,7 +1298,7 @@ public class MainActivity extends Activity {
                 new JSONObject());
         logGameLifecycle("INFO","game_webview_created",activeProfileId,activeGameLaunchRequestId,
                 "generation_"+webViewGeneration);
-        webDownloadHandler=new WebDownloadHandler(this);
+        webDownloadHandler=new WebDownloadHandler(this,web);
         web.addJavascriptInterface(new HostBridge(),"WMLHost");
         ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "", "javascript_interface_registered",
                 "info", null);
@@ -2453,9 +2453,9 @@ public class MainActivity extends Activity {
             ImagePackDiagnostics.javascriptEvent(MainActivity.this, imagePackDiagnosticSessionId,
                     requestId, stage, detailsJson);
         }
-        @JavascriptInterface public void saveBlobDownload(String requestId,String filename,String mimeType,String base64Bytes){
+        @JavascriptInterface public boolean saveBlobDownload(String requestId,String filename,String mimeType,String base64Bytes){
             WebDownloadHandler handler=webDownloadHandler;
-            if(handler!=null)handler.requestSave(requestId,filename,mimeType,base64Bytes);
+            return handler!=null && handler.requestSave(requestId,filename,mimeType,base64Bytes);
         }
         @JavascriptInterface public void chooseImagePackFolder(String requestId, String capability, String mode, String initialUri){
             // JavascriptInterface methods run on WebView's private background thread.
