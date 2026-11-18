@@ -161,11 +161,11 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
     }
 
     private final class TestWmlHost {
-        @JavascriptInterface public void chooseImagePackFolder(String requestId, String capability) {
+        @JavascriptInterface public void chooseImagePackFolder(String requestId, String capability, String mode) {
             // Mirror production: do not call WebView methods on the JavascriptInterface thread.
-            runOnUiThread(() -> chooseImagePackFolderOnUiThread(requestId, capability));
+            runOnUiThread(() -> chooseImagePackFolderOnUiThread(requestId, capability, mode));
         }
-        private void chooseImagePackFolderOnUiThread(String requestId, String capability) {
+        private void chooseImagePackFolderOnUiThread(String requestId, String capability, String mode) {
             try {
                 boolean trustedOrigin = webView != null
                         && ImagePackFolderPickerScript.isSameOrigin(verifiedTestPageUrl, TEST_ORIGIN);
@@ -183,7 +183,7 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
                     return;
                 }
                 Log.i(TAG, "PASS folder bridge request accepted on UI thread");
-                access.openFolderPicker(requestId);
+                access.openFolderPicker(requestId, mode);
             } catch (Exception error) {
                 Log.e(TAG, "FAIL folder bridge UI dispatch", error);
                 access.rejectRequest(requestId, "NotAllowedError",
