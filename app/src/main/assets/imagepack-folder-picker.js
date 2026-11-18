@@ -1,9 +1,7 @@
 (() => {
   "use strict";
-  // Keep the WebView/Chromium implementation when it already provides the standard API.
-  // The native SAF bridge below is only a compatibility fallback for WebView builds
-  // that do not implement File System Access directory picking.
-  if (typeof window.showDirectoryPicker === "function") return;
+  // Android WebView has no native SAF-backed showDirectoryPicker contract.
+  // Route this session API to the Android system picker for every request.
   const host = window.WMLHost;
   const nativeCapability = "__WAYWARD_FOLDER_PICKER_CAPABILITY__";
   if (!host || typeof host.chooseImagePackFolder !== "function" || !nativeCapability) return;
