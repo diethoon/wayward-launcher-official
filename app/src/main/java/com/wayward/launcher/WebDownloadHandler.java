@@ -11,29 +11,39 @@ import android.widget.Toast;
 
 import org.json.JSONObject;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/** Saves the game's Blob-backed anchor downloads through Android's system document picker. */
+/** Streams the game's Blob-backed anchor downloads to Android's system document picker. */
 final class WebDownloadHandler {
     private static final int REQUEST_CODE_MIN = 42000;
     private static final int REQUEST_CODE_MAX = 49999;
-    private static final int MAX_DOWNLOAD_BYTES = 32 * 1024 * 1024;
+    private static final long MAX_DOWNLOAD_BYTES = 512L * 1024L * 1024L;
     private static final AtomicInteger NEXT_REQUEST_CODE = new AtomicInteger(REQUEST_CODE_MIN);
 
     private static final class Pending {
         final String requestId;
         final String filename;
         final String mimeType;
-        final byte[] bytes;
+        final long expectedBytes;
         final int requestCode;
+        final File temporaryFile;
+        FileOutputStream stream;
+        long writtenBytes;
 
-        Pending(String requestId, String filename, String mimeType, byte[] bytes, int requestCode) {
+        Pending(String requestId, String filename, String mimeType, long expectedBytes,
+                int requestCode, File temporaryFile, FileOutputStream stream) {
             this.requestId = requestId;
             this.filename = filename;
             this.mimeType = mimeType;
-            this.bytes = bytes;
+            this.expectedBytes = expectedBytes;
             this.requestCode = requestCode;
+            this.temporaryFile = temporaryFile;
+            this.stream = stream;
         }
     }
 
@@ -55,40 +65,73 @@ final class WebDownloadHandler {
                 current >= REQUEST_CODE_MAX ? REQUEST_CODE_MIN : current + 1);
     }
 
-    boolean requestSave(String requestId, String filename, String mimeType, String encodedBytes) {
-        final byte[] bytes;
+    synchronized boolean beginDownload(String requestId, String filename, String mimeType, long expectedBytes) {
+        if (pending != null) return false;
+        if (requestId == null || !requestId.matches("[A-Za-z0-9._:-]{1,128}")) return false;
+        if (filename == null || filename.trim().isEmpty() || filename.length() > 255
+                || filename.indexOf('/') >= 0 || filename.indexOf('\\') >= 0
+                || filename.indexOf('\0') >= 0 || ".".equals(filename) || "..".equals(filename)) return false;
+        if (expectedBytes < 0 || expectedBytes > MAX_DOWNLOAD_BYTES) return false;
+        File directory = new File(activity.getCacheDir(), "wayward-exports");
+        if (!directory.isDirectory() && !directory.mkdirs()) return false;
+        File temporaryFile;
+        FileOutputStream stream;
         try {
-            if (requestId == null || !requestId.matches("[A-Za-z0-9._:-]{1,128}")) {
-                throw new IllegalArgumentException("Invalid download request identifier.");
-            }
-            if (filename == null || filename.trim().isEmpty() || filename.length() > 255
-                    || filename.indexOf('/') >= 0 || filename.indexOf('\\') >= 0
-                    || filename.indexOf('\0') >= 0 || ".".equals(filename) || "..".equals(filename)) {
-                throw new IllegalArgumentException("Invalid suggested download filename.");
-            }
-            bytes = Base64.decode(encodedBytes == null ? "" : encodedBytes, Base64.DEFAULT);
-            if (bytes.length > MAX_DOWNLOAD_BYTES) {
-                throw new IllegalArgumentException("The exported file exceeds the 32 MiB Android bridge limit.");
-            }
+            temporaryFile = File.createTempFile("export-", ".part", directory);
+            stream = new FileOutputStream(temporaryFile, false);
         } catch (Exception error) {
-            DiagnosticsLogger.event(activity, "ERROR", "webview", "blob_download_rejected", null);
-            activity.runOnUiThread(() -> Toast.makeText(activity,
-                    "파일 저장 요청을 처리하지 못했습니다: " + safeMessage(error), Toast.LENGTH_LONG).show());
+            DiagnosticsLogger.event(activity, "ERROR", "webview", "blob_download_temp_create_failed", null);
             return false;
         }
-
-        final Pending request = new Pending(requestId, filename,
+        pending = new Pending(requestId, filename,
                 mimeType == null || mimeType.trim().isEmpty() ? "application/octet-stream" : mimeType.trim(),
-                bytes, nextRequestCode());
+                expectedBytes, nextRequestCode(), temporaryFile, stream);
+        DiagnosticsLogger.event(activity, "INFO", "webview", "blob_download_stream_started", null);
+        return true;
+    }
+
+    synchronized boolean appendChunk(String requestId, String encodedBytes) {
+        if (pending == null || !pending.requestId.equals(requestId) || pending.stream == null) return false;
+        try {
+            byte[] bytes = Base64.decode(encodedBytes == null ? "" : encodedBytes, Base64.DEFAULT);
+            if (pending.writtenBytes + bytes.length > pending.expectedBytes
+                    || pending.writtenBytes + bytes.length > MAX_DOWNLOAD_BYTES) return false;
+            pending.stream.write(bytes);
+            pending.writtenBytes += bytes.length;
+            return true;
+        } catch (Exception error) {
+            DiagnosticsLogger.event(activity, "ERROR", "webview", "blob_download_chunk_failed", null);
+            return false;
+        }
+    }
+
+    boolean finishDownload(String requestId) {
+        final Pending request;
         synchronized (this) {
-            if (pending != null) {
-                DiagnosticsLogger.event(activity, "WARN", "webview", "blob_download_rejected_busy", null);
+            if (pending == null || !pending.requestId.equals(requestId)
+                    || pending.writtenBytes != pending.expectedBytes || pending.stream == null) return false;
+            request = pending;
+            try {
+                request.stream.flush();
+                request.stream.close();
+                request.stream = null;
+            } catch (Exception error) {
+                cleanupLocked(request);
+                pending = null;
+                DiagnosticsLogger.event(activity, "ERROR", "webview", "blob_download_stream_close_failed", null);
                 return false;
             }
-            pending = request;
         }
         activity.runOnUiThread(() -> launchPicker(request));
         return true;
+    }
+
+    synchronized void abortDownload(String requestId) {
+        if (pending == null || !pending.requestId.equals(requestId)) return;
+        Pending request = pending;
+        pending = null;
+        cleanupLocked(request);
+        DiagnosticsLogger.event(activity, "WARN", "webview", "blob_download_stream_aborted", null);
     }
 
     private void launchPicker(Pending request) {
@@ -144,10 +187,18 @@ final class WebDownloadHandler {
             fail(request, "선택한 저장 위치에 쓰기 권한이 없습니다.");
             return;
         }
-        try (OutputStream output = activity.getContentResolver().openOutputStream(uri, "w")) {
+        try (InputStream input = new FileInputStream(request.temporaryFile);
+             OutputStream output = activity.getContentResolver().openOutputStream(uri, "w")) {
             if (output == null) throw new IllegalStateException("저장 URI를 쓸 수 없습니다.");
-            output.write(request.bytes);
+            byte[] buffer = new byte[32 * 1024];
+            long copied = 0;
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                output.write(buffer, 0, count);
+                copied += count;
+            }
             output.flush();
+            if (copied != request.expectedBytes) throw new IllegalStateException("Export byte count mismatch.");
             DiagnosticsLogger.event(activity, "INFO", "webview", "blob_download_saved", null);
             Toast.makeText(activity, request.filename + " 저장 완료", Toast.LENGTH_LONG).show();
             complete(request, true);
@@ -159,9 +210,7 @@ final class WebDownloadHandler {
 
     void cancelPending() {
         final Pending request;
-        synchronized (this) {
-            request = pending;
-        }
+        synchronized (this) { request = pending; }
         if (request != null) {
             DiagnosticsLogger.event(activity, "WARN", "webview", "blob_download_cancelled_activity_destroyed", null);
             complete(request, false);
@@ -177,6 +226,7 @@ final class WebDownloadHandler {
         synchronized (this) {
             if (pending != request) return;
             pending = null;
+            cleanupLocked(request);
         }
         if (webView == null || activity.isFinishing()) return;
         String script = "if(typeof window.__waywardBlobDownloadResult==='function')"
@@ -185,6 +235,16 @@ final class WebDownloadHandler {
         activity.runOnUiThread(() -> {
             if (!activity.isFinishing()) webView.evaluateJavascript(script, null);
         });
+    }
+
+    private void cleanupLocked(Pending request) {
+        if (request.stream != null) {
+            try { request.stream.close(); } catch (Exception ignored) {}
+            request.stream = null;
+        }
+        if (request.temporaryFile.exists() && !request.temporaryFile.delete()) {
+            DiagnosticsLogger.event(activity, "WARN", "webview", "blob_download_temp_cleanup_failed", null);
+        }
     }
 
     private static String safeMessage(Throwable error) {

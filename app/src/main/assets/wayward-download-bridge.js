@@ -2,7 +2,9 @@
   "use strict";
   if (window.__waywardBlobDownloadBridgeInstalled) return;
   const host = window.WMLHost;
-  if (!host || typeof host.saveBlobDownload !== "function") return;
+  if (!host || typeof host.beginBlobDownload !== "function" ||
+      typeof host.appendBlobDownloadChunk !== "function" ||
+      typeof host.finishBlobDownload !== "function") return;
   let sequence = 0;
   const blobByUrl = new Map();
   let deferNextRemovalId = null;
@@ -95,19 +97,24 @@
         if (!response.ok) throw new Error("Blob download data could not be read.");
         blob = await response.blob();
       }
-      if (blob.size > 32 * 1024 * 1024) throw new Error("Export exceeds the 32 MiB Android bridge limit.");
-      const bytes = new Uint8Array(await blob.arrayBuffer());
       const mimeType = blob.type || fallbackMime(filename);
-      const accepted = host.saveBlobDownload(requestId, filename, mimeType, base64(bytes));
-      if (accepted !== true) {
-        window.__waywardBlobDownloadResult(requestId, false);
-        diagnose("blob_download_native_request_rejected", requestId, { filename, mimeType });
-        return;
+      const accepted = host.beginBlobDownload(requestId, filename, mimeType, blob.size);
+      if (accepted !== true) throw new Error("Native save request was rejected.");
+      const chunkSize = 256 * 1024;
+      for (let offset = 0; offset < blob.size; offset += chunkSize) {
+        const bytes = new Uint8Array(await blob.slice(offset, offset + chunkSize).arrayBuffer());
+        if (host.appendBlobDownloadChunk(requestId, base64(bytes)) !== true) {
+          throw new Error("Native save stream rejected a data chunk.");
+        }
+      }
+      if (host.finishBlobDownload(requestId) !== true) {
+        throw new Error("Native save stream could not be finalized.");
       }
       diagnose("blob_download_native_request_sent", requestId, {
-        filename, mimeType, byteLength: bytes.length
+        filename, mimeType, byteLength: blob.size, chunkSize
       });
     } catch (error) {
+      try { host.abortBlobDownload(requestId); } catch (_) {}
       window.__waywardBlobDownloadResult(requestId, false);
       diagnose("blob_download_bridge_failed", requestId, {
         filename, errorName: error && error.name || "Error",
