@@ -22,7 +22,7 @@ assert.equal(source.fileInputs.length, 2);
 const single = source.fileInputs.find(item => item.id === "save-data-import");
 assert.deepEqual({ type: single.type, accept: single.accept, multiple: single.multiple, capture: single.capture },
   { type: "file", accept: "application/json,.json", multiple: false, capture: false });
-assert.match(single.onChange, /G\\[0\\]/);
+assert.match(single.onChange, /G\[0\]/);
 assert.match(single.onChange, /\.text\(\)/);
 
 const multiple = source.fileInputs.find(item => item.id === "image-pack-json-import");
