@@ -139,10 +139,10 @@ const host = {
     assert.ok(mode === "read" || mode === "readwrite");
     assert.equal(initialUri, mode === "readwrite" ? rootUri : "");
     chooseCount++;
-    if (mode === "readwrite") grantedWrite = true;
     capturedId = requestId;
     const cancelled = cancelNextPicker;
     cancelNextPicker = false;
+    if (mode === "readwrite" && !cancelled) grantedWrite = true;
     setTimeout(() => windowObject.__waywardNativeImagePackPickerDispatch(requestId, cancelled ? {
       ok: false, name: "AbortError", message: "User cancelled the SAF picker."
     } : {
