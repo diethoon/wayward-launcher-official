@@ -41,7 +41,7 @@ assert.match(asset, /class SafBackedFile extends Blob/,
   "lazy files must keep Blob identity and File prototype compatibility");
 assert.match(asset, /async text\(\)/,
   "File.text() must read SAF content lazily");
-assert.match(asset, /webkitRelativePath:\s*metadata\.webkitRelativePath/,
+assert.match(asset, /webkitRelativePath:\s*\{\s*value:\s*metadata\.webkitRelativePath/,
   "each file must expose its relative path");
 assert.match(asset, /function makeFileList\(files\)/,
   "the web adapter must construct a FileList-compatible collection");
