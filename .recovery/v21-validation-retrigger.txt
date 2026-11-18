@@ -1,0 +1,1 @@
+Retrigger PR validation against the isolated base where emulator and UI diagnostics steps are hard-disabled.
