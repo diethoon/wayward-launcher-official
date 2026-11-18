@@ -3,8 +3,6 @@ on:
   push:
     branches:
       - recovery/android-file-engine-v2-original-20261119
-    paths:
-      - .recovery/ASSEMBLE_NOW
 permissions:
   contents: write
 jobs:
