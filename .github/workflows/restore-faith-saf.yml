@@ -34,6 +34,8 @@ jobs:
               : context.ref.replace("refs/heads/", "");
             const head = await github.rest.git.getRef({ owner, repo, ref: "heads/" + branch });
             const parent = head.data.object.sha;
+            const repairPaths = ["part00", "part01"].flatMap(dir =>
+              fs.readdirSync(".repair/" + dir).map(file => ".repair/" + dir + "/" + file));
             const parts = ["part00", "part01"].map(name =>
               fs.readdirSync(".repair/" + name).sort().map(file =>
                 fs.readFileSync(".repair/" + name + "/" + file)));
@@ -75,10 +77,8 @@ jobs:
               });
               entries.push({ path: file, mode: "100644", type: "blob", sha: blob.data.sha });
             }
-            for (const dir of ["part00", "part01"]) {
-              for (const file of fs.readdirSync(".repair/" + dir)) {
-                entries.push({ path: ".repair/" + dir + "/" + file, mode: "100644", type: "blob", sha: null });
-              }
+            for (const file of repairPaths) {
+              entries.push({ path: file, mode: "100644", type: "blob", sha: null });
             }
             entries.push({ path: ".github/workflows/restore-faith-saf.yml", mode: "100644", type: "blob", sha: null });
             const commitInfo = await github.rest.git.getCommit({ owner, repo, commit_sha: parent });
