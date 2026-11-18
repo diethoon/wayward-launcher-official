@@ -400,7 +400,7 @@ assert.equal(faith.registrations[0].packId, "faith-fixture-pack");
 assert.equal(faith.registrations[0].cataloguePath, "image-packs/characters/faith-pack.js");
 assert.equal(input.files, receivedFiles, "input.files remains accessible after awaited File.text()");
 function scannerFile(name, path, source, read) { return { name, webkitRelativePath: path, text: read || (async () => source) }; }
-function sourcePack(id) { return "/* WAYWARD_FAITH_IMAGE_PACK */\\n" + JSON.stringify({packId:id,wfImagePack:{character:id,basic:true,part:""},entryCount:1,generatedAt:"2026-11-19"}); }
+function sourcePack(id) { return "/* WAYWARD_FAITH_IMAGE_PACK */\n" + JSON.stringify({packId:id,wfImagePack:{character:id,basic:true,part:""},entryCount:1,generatedAt:"2026-11-19"}); }
 const multi = makeFaithScanner();
 assert.equal(await multi.scan([
  scannerFile("한글.js","Root/image-packs/deep/한글 폴더/one.js",sourcePack("one")),
