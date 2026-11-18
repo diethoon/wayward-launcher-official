@@ -3,6 +3,11 @@ package com.wayward.launcher;
 import android.app.Activity;
 import android.content.ClipData;
 import android.content.ContentResolver;
+import android.content.pm.PackageManager;
+import android.database.Cursor;
+import android.os.ParcelFileDescriptor;
+import android.os.Process;
+import android.provider.OpenableColumns;
 import android.content.Intent;
 import android.content.res.AssetFileDescriptor;
 import android.net.Uri;
@@ -40,18 +45,20 @@ final class WebFileChooser extends WebChromeClient {
         final int requestCode;
         final int mode;
         final WebFileChooserRequestPolicy.Kind kind;
+        final List<String> acceptedTypes;
         final List<String> acceptedMimeTypes;
         final String pickerAction;
 
         PendingRequest(ValueCallback<Uri[]> callback, String requestId, int requestCode,
                 int mode, WebFileChooserRequestPolicy.Kind kind,
-                List<String> acceptedMimeTypes, String pickerAction) {
+                List<String> acceptedTypes, List<String> acceptedMimeTypes, String pickerAction) {
             this.callback = callback;
             this.requestId = requestId;
             this.requestCode = requestCode;
             this.mode = mode;
             this.kind = kind;
-            this.acceptedMimeTypes = acceptedMimeTypes;
+            this.acceptedTypes = new ArrayList<>(acceptedTypes);
+            this.acceptedMimeTypes = new ArrayList<>(acceptedMimeTypes);
             this.pickerAction = pickerAction;
         }
     }
@@ -116,14 +123,15 @@ final class WebFileChooser extends WebChromeClient {
         }
 
         final int mode;
-        final int permissionMode;
         final WebFileChooserRequestPolicy.Kind kind;
+        final List<String> acceptedTypes;
         final List<String> accepted;
         final boolean captureEnabled;
         try {
             mode = params.getMode();
             kind = WebFileChooserRequestPolicy.classify(mode);
-            accepted = acceptedMimeTypes(params.getAcceptTypes());
+            acceptedTypes = WebFileChooserRequestPolicy.parseAcceptTypes(params.getAcceptTypes());
+            accepted = acceptedMimeTypes(acceptedTypes);
             captureEnabled = params.isCaptureEnabled();
         } catch (Exception error) {
             ImagePackDiagnostics.error(activity, diagnosticSessionId, requestId,
@@ -154,7 +162,7 @@ final class WebFileChooser extends WebChromeClient {
 
         int requestCode = nextRequestCode();
         PendingRequest request = new PendingRequest(filePathCallback, requestId, requestCode,
-                mode, kind, accepted, picker.getAction());
+                mode, kind, acceptedTypes, accepted, picker.getAction());
         JSONObject details = ImagePackDiagnostics.pageDetails(
                 webView == null ? null : webView.getUrl(), true);
         try {
@@ -196,10 +204,9 @@ final class WebFileChooser extends WebChromeClient {
             picker.addCategory(Intent.CATEGORY_OPENABLE);
             applyMimeTypes(picker, accepted);
             String filenameHint = params.getFilenameHint();
-            String title = filenameHint == null || filenameHint.trim().isEmpty()
-                    ? (params.getTitle() == null ? null : params.getTitle().toString())
-                    : filenameHint;
-            addTitle(picker, title);
+            // FileChooserParams.getTitle() is chooser UI text, not a filename.
+            // ACTION_CREATE_DOCUMENT.EXTRA_TITLE is exclusively the suggested filename.
+            addTitle(picker, filenameHint);
             picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
                     | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                     | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
@@ -212,7 +219,11 @@ final class WebFileChooser extends WebChromeClient {
             if (picker == null || picker.getAction() == null) {
                 throw new IllegalArgumentException("WebView did not provide a capture-capable chooser Intent.");
             }
-            picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            picker.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,
+                    WebFileChooserRequestPolicy.allowsMultipleFiles(kind));
+            if (accepted != null && !accepted.isEmpty()) applyMimeTypes(picker, accepted);
+            picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
             return picker;
         }
 
@@ -247,23 +258,16 @@ final class WebFileChooser extends WebChromeClient {
         }
     }
 
-    private static List<String> acceptedMimeTypes(String[] acceptTypes) {
+    private static List<String> acceptedMimeTypes(List<String> acceptedTypes) {
         List<String> result = new ArrayList<>();
-        if (acceptTypes == null) return result;
-        for (String accepted : acceptTypes) {
-            if (accepted == null) continue;
-            for (String raw : accepted.split("[,;\\s]+")) {
-                String value = raw.trim().toLowerCase(Locale.ROOT);
-                if (value.isEmpty()) continue;
-                if (value.startsWith(".")) {
-                    String extension = value.substring(1);
-                    String mime = "zip".equals(extension) ? "application/zip"
-                            : MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension);
-                    if (mime != null && !result.contains(mime)) result.add(mime);
-                } else if (value.matches("[a-z0-9!#$&^_.+-]+/(?:[a-z0-9!#$&^_.+-]+|\\*)")
-                        && !result.contains(value)) {
-                    result.add(value);
-                }
+        for (String value : acceptedTypes) {
+            if (value.startsWith(".")) {
+                String extension = value.substring(1);
+                String mime = "zip".equals(extension) ? "application/zip"
+                        : MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension);
+                if (mime != null && !result.contains(mime)) result.add(mime);
+            } else if (!result.contains(value)) {
+                result.add(value);
             }
         }
         return result;
@@ -369,13 +373,12 @@ final class WebFileChooser extends WebChromeClient {
                 throw new IllegalArgumentException("The picker returned a non-content URI.");
             }
             if (WebFileChooserRequestPolicy.isSave(request.kind)) {
-                if ((data.getFlags() & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) == 0) {
-                    throw new PermissionDeniedException("save_uri_write_grant_missing");
-                }
+                validateWritableUri(uri);
             } else {
                 validateReadableUri(uri);
-                validateAcceptedMimeType(uri, request.acceptedMimeTypes);
             }
+            validateAcceptedFile(uri, request.acceptedTypes);
+            persistReturnedPermission(data, uri);
         }
         return selected.toArray(new Uri[0]);
     }
@@ -398,18 +401,47 @@ final class WebFileChooser extends WebChromeClient {
         }
     }
 
-    private void validateAcceptedMimeType(Uri uri, List<String> accepted) throws Exception {
-        if (accepted == null || accepted.isEmpty() || accepted.contains("*/*")) return;
-        String actual = activity.getContentResolver().getType(uri);
-        if (actual == null || actual.trim().isEmpty()) return;
-        for (String expected : accepted) {
-            if (expected.equalsIgnoreCase(actual)) return;
-            int slash = expected.indexOf('/');
-            if (slash > 0 && expected.endsWith("/*")
-                    && actual.regionMatches(true, 0, expected.substring(0, slash + 1), 0,
-                            slash + 1)) return;
+    private void validateWritableUri(Uri uri) throws Exception {
+        int permission = activity.checkUriPermission(uri, Process.myPid(), Process.myUid(),
+                Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        if (permission != PackageManager.PERMISSION_GRANTED) {
+            throw new PermissionDeniedException("save_uri_write_grant_missing");
         }
-        throw new IllegalArgumentException("Selected file MIME type does not match the request.");
+        try (ParcelFileDescriptor descriptor = activity.getContentResolver().openFileDescriptor(uri, "rw")) {
+            if (descriptor == null) throw new PermissionDeniedException("save_uri_not_writable");
+        } catch (SecurityException error) {
+            throw new PermissionDeniedException("save_uri_write_permission_denied");
+        }
+    }
+
+    private void validateAcceptedFile(Uri uri, List<String> acceptedTypes) throws Exception {
+        if (acceptedTypes == null || acceptedTypes.isEmpty()) return;
+        String actualMime = activity.getContentResolver().getType(uri);
+        String displayName = null;
+        try (Cursor cursor = activity.getContentResolver().query(uri,
+                new String[] { OpenableColumns.DISPLAY_NAME }, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (index >= 0) displayName = cursor.getString(index);
+            }
+        }
+        if (!WebFileChooserRequestPolicy.acceptsFile(acceptedTypes, actualMime, displayName)) {
+            throw new IllegalArgumentException("Selected file does not match the original accept filter.");
+        }
+    }
+
+    private void persistReturnedPermission(Intent data, Uri uri) {
+        int flags = data.getFlags();
+        if ((flags & Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION) == 0) return;
+        int grants = flags & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        if (grants == 0) return;
+        try {
+            activity.getContentResolver().takePersistableUriPermission(uri, grants);
+        } catch (SecurityException error) {
+            ImagePackDiagnostics.event(activity, diagnosticSessionId, "",
+                    "web_file_chooser_persistable_grant_unavailable", "warn",
+                    ImagePackDiagnostics.details("uriAuthority", uri.getAuthority(), "grantFlags", grants));
+        }
     }
 
     private static final class PermissionDeniedException extends Exception {

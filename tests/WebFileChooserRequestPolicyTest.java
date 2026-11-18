@@ -1,6 +1,10 @@
 package com.wayward.launcher;
 
-/** Dependency-free tests for WebView file/folder request-mode semantics. */
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
+/** Dependency-free tests for original chooser request and result semantics. */
 public final class WebFileChooserRequestPolicyTest {
     private static void expect(boolean actual, boolean expected, String label) {
         if (actual != expected) throw new AssertionError(label + ": expected " + expected + " but was " + actual);
@@ -8,6 +12,11 @@ public final class WebFileChooserRequestPolicyTest {
     private static void expectKind(WebFileChooserRequestPolicy.Kind actual,
             WebFileChooserRequestPolicy.Kind expected, String label) {
         if (actual != expected) throw new AssertionError(label + ": expected " + expected + " but was " + actual);
+    }
+    private static void expectTokens(List<String> actual, String... expected) {
+        if (!actual.equals(Arrays.asList(expected))) {
+            throw new AssertionError("accept tokens: expected " + Arrays.toString(expected) + " but was " + actual);
+        }
     }
     public static void main(String[] args) {
         expectKind(WebFileChooserRequestPolicy.classify(0), WebFileChooserRequestPolicy.Kind.OPEN_SINGLE, "MODE_OPEN");
@@ -19,6 +28,24 @@ public final class WebFileChooserRequestPolicyTest {
         expect(WebFileChooserRequestPolicy.allowsMultipleFiles(WebFileChooserRequestPolicy.Kind.OPEN_MULTIPLE), true, "multiple files");
         expect(WebFileChooserRequestPolicy.allowsMultipleFiles(WebFileChooserRequestPolicy.Kind.OPEN_SINGLE), false, "single file");
         expect(WebFileChooserRequestPolicy.allowsMultipleFiles(WebFileChooserRequestPolicy.Kind.SAVE), false, "save is not multiple files");
-        System.out.println("WebView file chooser request policy tests passed.");
+
+        List<String> filters = WebFileChooserRequestPolicy.parseAcceptTypes(
+                new String[] { "image/*,.PNG,.unknown", "application/pdf,.png" });
+        expectTokens(filters, "image/*", ".png", ".unknown", "application/pdf");
+        expect(WebFileChooserRequestPolicy.acceptsFile(filters, "image/jpeg", "photo.jpg"), true,
+                "MIME wildcard is ORed with extension filters");
+        expect(WebFileChooserRequestPolicy.acceptsFile(filters, "application/octet-stream", "payload.unknown"), true,
+                "unmapped extension remains enforceable by returned display name");
+        expect(WebFileChooserRequestPolicy.acceptsFile(filters, "text/plain", "notes.txt"), false,
+                "unmatched MIME and extension are rejected");
+        expect(WebFileChooserRequestPolicy.acceptsFile(Collections.emptyList(), "text/plain", "notes.txt"), true,
+                "empty accept list means unrestricted selection");
+        expect(WebFileChooserRequestPolicy.acceptsFile(Arrays.asList(".tar.gz"), null, "backup.tar.gz"), true,
+                "compound extension is matched as a suffix");
+        boolean invalidRejected = false;
+        try { WebFileChooserRequestPolicy.parseAcceptTypes(new String[] { "not-a-filter" }); }
+        catch (IllegalArgumentException expected) { invalidRejected = true; }
+        expect(invalidRejected, true, "invalid non-empty accept tokens fail explicitly");
+        System.out.println("WebFileChooserRequestPolicyTest passed");
     }
 }
