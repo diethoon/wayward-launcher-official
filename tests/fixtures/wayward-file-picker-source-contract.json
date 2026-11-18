@@ -76,7 +76,7 @@
     "ordinaryFileInputsUnchanged": true,
     "sameOriginFrames": "document-start script is installed for every frame matching the active game origin; runtime fallback remains origin-checked",
     "writableStream": "Bounded FileSystemWritableFileStream-like sink exposing write(), seek(), truncate(), close(), abort(); supports string, Blob, ArrayBuffer, TypedArray/DataView and standard write/seek/truncate command objects. 32 MiB in-memory staging; not a native WritableStream subclass.",
-    "permissionSemantics": "queryPermission() inspects persisted SAF grants only. requestPermission({mode:'readwrite'}) starts a user-mediated SAF selection and grants write access only if the same tree is reselected with a persisted write grant; cancellation resolves denied."
+    "permissionSemantics": "queryPermission() only inspects persisted SAF grants. requestPermission() starts a user-mediated SAF selection when the requested grant is absent and reports granted only if the same tree is reselected with the required persisted grant; cancellation resolves denied."
   },
   "sourceFunctions": {
     "wfPackFolderButton": {

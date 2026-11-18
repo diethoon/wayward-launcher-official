@@ -523,3 +523,25 @@ assert.doesNotMatch(pairing, /Log\.[idw]\(TAG,.*raw|Log\.[idw]\(TAG,.*imageUri/,
   "image QR payloads and selected image URIs must never be logged");
 assert.match(build, /play-services-mlkit-barcode-scanning:18\.3\.1/,
   "the supported ML Kit image barcode API must be included without replacing the camera scanner");
+
+
+assert.match(access, /private void restorePersistedTree\\(\\)/,
+  "Activity reconstruction must restore the saved tree only from persisted SAF grants");
+assert.match(access, /candidate\\.equals\\(permission\\.getUri\\(\\)\\) && permission\\.isReadPermission\\(\\)/,
+  "restoration must match the exact persisted URI and require read permission");
+assert.match(access, /preferences\\.edit\\(\\)\\.remove\\(preferenceKey\\)\\.remove\\(writablePreferenceKey\\)/,
+  "revoked or expired grants must clear stale saved URI metadata");
+assert.match(access, /takePersistableUriPermission\\(selected, grants\\)/,
+  "the selected URI must persist the exact user-returned grants");
+assert.match(access, /requireTree\\(\\)[\\s\\S]{0,900}getPersistedUriPermissions\\(\\)/,
+  "every operation must revalidate the current persisted tree permission");
+assert.match(bridge, /async queryPermission\\(options\\)[\\s\\S]{0,500}getImagePackFolderInfo/,
+  "queryPermission must inspect native persisted permission state without opening SAF UI");
+assert.match(bridge, /async requestPermission\\(options\\)[\\s\\S]{0,900}nativeRequest\\(mode, uri\\)/,
+  "requestPermission must use a user-mediated SAF request instead of aliasing queryPermission");
+assert.match(bridge, /async seek\\s*\\(/,
+  "the bounded writable sink must expose seek()");
+assert.match(bridge, /async truncate\\s*\\(/,
+  "the bounded writable sink must expose truncate()");
+assert.match(bridge, /async abort\\s*\\(/,
+  "the bounded writable sink must expose abort()");

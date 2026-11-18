@@ -66,6 +66,6 @@ The original handler reads `event.target.files` before its first await. The scan
 
 The exact scanner is evaluated in the automated integration test with only parser/state side effects stubbed. The adapter-produced FileList is passed to it, and registration, nested paths, multiple packs, ignored paths, invalid markers, empty files, read failures, duplicate IDs, Unicode/special names and overlapping async snapshots are checked.
 
-`queryPermission()` only inspects persisted SAF grants. A read-write `requestPermission()` opens a user-mediated SAF selection and reports granted only if the same tree is reselected with a persisted write grant; cancellation resolves denied. The bounded writable sink exposes `write()`, `seek()`, `truncate()`, `close()` and `abort()` but is not a native WritableStream subclass.
+`queryPermission()` only inspects persisted SAF grants. A missing read or read-write `requestPermission()` grant opens a user-mediated SAF selection and reports granted only if the same tree is reselected with a persisted write grant; cancellation resolves denied. The bounded writable sink exposes `write()`, `seek()`, `truncate()`, `close()` and `abort()` but is not a native WritableStream subclass.
 
 The SAF read bridge is not end-to-end streaming: it buffers each complete file, Base64-encodes it, and decodes it in JavaScript. `File.stream()` chunks consumption only after decoding. The 32 MiB per-file cap remains an explicit memory-safety boundary.
