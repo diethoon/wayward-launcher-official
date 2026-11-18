@@ -73,6 +73,7 @@ jobs:
           node --check app/src/main/assets/imagegen-proxy.js
           node --check app/src/main/assets/imagegen-studio-bridge.js
           node --check app/src/main/assets/imagepack-folder-picker.js
+          node --check app/src/main/assets/wayward-download-bridge.js
 
       - name: Test official launcher scope
         run: |
@@ -105,6 +106,7 @@ jobs:
       - name: Test WebView file and folder chooser request policy
         run: |
           node tests/web-file-chooser-contract.test.mjs
+          node tests/wayward-source-contract.test.mjs
           test_dir="$RUNNER_TEMP/web-file-chooser-policy-test"
           mkdir -p "$test_dir"
           javac -d "$test_dir" app/src/main/java/com/wayward/launcher/WebFileChooserRequestPolicy.java tests/WebFileChooserRequestPolicyTest.java
