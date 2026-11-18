@@ -17,7 +17,7 @@ The original UI is emitted by \`wfPackFolderButton()\` and contains:
 <input type="file" webkitdirectory multiple onChange={a} />
 \`\`\`
 
-The unchanged \`wfPackScanFolder()\` iterates \`Array.from(fileList)\`, normalizes backslashes in \`file.webkitRelativePath\`, looks for the \`image-packs/\` path segment, filters for \`.js\`, calls \`file.text()\`, and checks the exact marker \`/* WAYWARD_FAITH_IMAGE_PACK */\`. It then validates and registers the discovered image packs.
+The unchanged \`wfPackScanFolder()\` iterates \`Array.from(fileList)\`, normalizes backslashes in \`file.webkitRelativePath\`, looks for the \`image-packs/\` path segment, filters for \`.js\`, calls \`file.text()\`, and checks the exact marker \`/* WAYWARD_FAITH_IMAGE_PACK */\`. It then validates and registers the discovered image packs. A DirectoryHandle is not a FileList, and a SAF Tree URI is not a FileList; neither can replace the upload collection.
 
 ## Implemented Android mapping
 
