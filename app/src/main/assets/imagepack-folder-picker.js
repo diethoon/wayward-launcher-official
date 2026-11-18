@@ -88,7 +88,7 @@
           bridgeAvailable: typeof host.chooseImagePackFolder === "function",
           isTopFrame: topFrame
         });
-        host.chooseImagePackFolder(id, nativeCapability);
+        host.chooseImagePackFolder(id, nativeCapability, mode);
         diagnose("wmlhost_choose_folder_call_returned", id, { durationMs: Date.now() - startedAt });
       } catch (error) {
         pending.delete(id);
