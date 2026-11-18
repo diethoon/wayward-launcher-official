@@ -656,7 +656,7 @@ final class ImagePackDirectoryAccess {
     private void validateEntryName(String name) {
         if (name == null || name.trim().isEmpty() || name.length() > 255
                 || ".".equals(name) || "..".equals(name) || name.indexOf('/') >= 0
-                || name.indexOf('\\\\') >= 0 || name.indexOf('\\0') >= 0) {
+                || name.indexOf('\\') >= 0 || name.indexOf('\0') >= 0) {
             throw new IllegalArgumentException("A single valid SAF entry name is required.");
         }
     }
