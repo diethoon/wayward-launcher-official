@@ -90,20 +90,20 @@ assert.match(downloadNative, /window\.__waywardBlobDownloadResult/, "native comp
 
 assert.match(folderBridge, /__waywardSafDocumentUri/);
 assert.doesNotMatch(folderBridge, /__path|childPath|parentPath/);
-assert.match(folderBridge, /createImagePackFile\\(nativeCapability,/);
-assert.match(folderBridge, /resolveImagePackEntry\\(nativeCapability,/);
+assert.match(folderBridge, /createImagePackFile\(nativeCapability,/);
+assert.match(folderBridge, /resolveImagePackEntry\(nativeCapability,/);
 assert.match(folderBridge, /queryHandlePermission/);
-assert.match(main, /hasImagePackBridgeCapability\\(String capability\\)/);
-assert.match(main, /matchesCapability\\(\\s*imagePackFolderPickerCapability, capability\\)/);
-assert.match(main, /listImagePackDirectoryForRequest\\(String capability, String documentUri, String requestId\\)/);
-assert.match(main, /readImagePackFileForRequest\\(String capability, String documentUri, String requestId\\)/);
-assert.match(main, /createImagePackFile\\(String capability, String parentUri,String name,String mime,String requestId\\)/);
-assert.match(main, /writeImagePackFile\\(String capability, String documentUri,String mime,String data,String requestId\\)/);
-assert.match(main, /createImagePackDirectory\\(String capability, String parentUri,String name,String requestId\\)/);
-assert.match(main, /deleteImagePackEntry\\(String capability, String documentUri,String requestId\\)/);
-assert.match(main, /resolveImagePackEntry\\(String capability, String parentUri,String targetUri,String requestId\\)/);
-assert.match(main, /getImagePackFolderInfo\\(String capability\\)/);
-assert.match(main, /if \\(!hasImagePackBridgeCapability\\(capability\\)\\) return imagePackBridgeDenied\\(\\)/,
+assert.match(main, /hasImagePackBridgeCapability\(String capability\)/);
+assert.match(main, /matchesCapability\(\s*imagePackFolderPickerCapability, capability\)/);
+assert.match(main, /listImagePackDirectoryForRequest\(String capability, String documentUri, String requestId\)/);
+assert.match(main, /readImagePackFileForRequest\(String capability, String documentUri, String requestId\)/);
+assert.match(main, /createImagePackFile\(String capability, String parentUri,String name,String mime,String requestId\)/);
+assert.match(main, /writeImagePackFile\(String capability, String documentUri,String mime,String data,String requestId\)/);
+assert.match(main, /createImagePackDirectory\(String capability, String parentUri,String name,String requestId\)/);
+assert.match(main, /deleteImagePackEntry\(String capability, String documentUri,String requestId\)/);
+assert.match(main, /resolveImagePackEntry\(String capability, String parentUri,String targetUri,String requestId\)/);
+assert.match(main, /getImagePackFolderInfo\(String capability\)/);
+assert.match(main, /if \(!hasImagePackBridgeCapability\(capability\)\) return imagePackBridgeDenied\(\)/,
   "all SAF document methods reject calls without the per-WebView capability");
 assert.match(folderNative, /requireDocumentUri\(/);
 assert.match(folderNative, /DocumentsContract\.getDocumentId\(directoryUri\)/);

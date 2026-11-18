@@ -2453,7 +2453,7 @@ public class MainActivity extends Activity {
                     imagePackFolderPickerCapability, capability);
         }
         private String imagePackBridgeDenied() {
-            return "{\\"ok\\":false,\\"name\\":\\"SecurityError\\",\\"message\\":\\"The SAF bridge capability is invalid.\\"}";
+            return "{\"ok\":false,\"name\":\"SecurityError\",\"message\":\"The SAF bridge capability is invalid.\"}";
         }
         @JavascriptInterface public String version(){return "1.0.0";}
         @JavascriptInterface public void recordImagePackDiagnostic(String requestId, String stage, String detailsJson){
@@ -2521,35 +2521,35 @@ public class MainActivity extends Activity {
         }
         @JavascriptInterface public String listImagePackDirectoryForRequest(String capability, String documentUri, String requestId){
             if (!hasImagePackBridgeCapability(capability)) return imagePackBridgeDenied();
-            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.listDirectoryJson(documentUri,requestId);
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.listDirectoryJson(documentUri,requestId);
         }
         @JavascriptInterface public String readImagePackFileForRequest(String capability, String documentUri, String requestId){
             if (!hasImagePackBridgeCapability(capability)) return imagePackBridgeDenied();
-            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.readFileJson(documentUri,requestId);
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.readFileJson(documentUri,requestId);
         }
         @JavascriptInterface public String createImagePackFile(String capability, String parentUri,String name,String mime,String requestId){
             if (!hasImagePackBridgeCapability(capability)) return imagePackBridgeDenied();
-            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.createFileJson(parentUri,name,mime,requestId);
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.createFileJson(parentUri,name,mime,requestId);
         }
         @JavascriptInterface public String writeImagePackFile(String capability, String documentUri,String mime,String data,String requestId){
             if (!hasImagePackBridgeCapability(capability)) return imagePackBridgeDenied();
-            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.writeFileJson(documentUri,mime,data,requestId);
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.writeFileJson(documentUri,mime,data,requestId);
         }
         @JavascriptInterface public String createImagePackDirectory(String capability, String parentUri,String name,String requestId){
             if (!hasImagePackBridgeCapability(capability)) return imagePackBridgeDenied();
-            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.createDirectoryJson(parentUri,name,requestId);
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.createDirectoryJson(parentUri,name,requestId);
         }
         @JavascriptInterface public String deleteImagePackEntry(String capability, String documentUri,String requestId){
             if (!hasImagePackBridgeCapability(capability)) return imagePackBridgeDenied();
-            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.deleteEntryJson(documentUri,requestId);
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.deleteEntryJson(documentUri,requestId);
         }
         @JavascriptInterface public String resolveImagePackEntry(String capability, String parentUri,String targetUri,String requestId){
             if (!hasImagePackBridgeCapability(capability)) return imagePackBridgeDenied();
-            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.resolveEntryJson(parentUri,targetUri,requestId);
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.resolveEntryJson(parentUri,targetUri,requestId);
         }
         @JavascriptInterface public String getImagePackFolderInfo(String capability){
             if (!hasImagePackBridgeCapability(capability)) return imagePackBridgeDenied();
-            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.getFolderInfoJson();
+            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.getFolderInfoJson();
         }
         @JavascriptInterface public String listModIds(){
             try{JSONObject r=new JSONObject();JSONArray a=new JSONArray();for(String id:allModIds())a.put(id);r.put("ok",true);r.put("ids",a);return r.toString();}
