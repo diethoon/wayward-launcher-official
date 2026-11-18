@@ -34,11 +34,14 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
         webView = new WebView(this);
         webView.getSettings().setJavaScriptEnabled(true);
         webView.getSettings().setDomStorageEnabled(true);
-        access = new ImagePackDirectoryAccess(this, webView, PROFILE);
         String initialUri = getIntent().getStringExtra("initial_uri");
         if (initialUri != null && !initialUri.isEmpty()) {
-            access.setInitialUriForTesting(Uri.parse(initialUri));
+            // Seed the same persisted-URI preference consumed by the production constructor.
+            getSharedPreferences("wayward_launcher", MODE_PRIVATE).edit()
+                    .putString("image_pack_tree_uri_" + PROFILE, Uri.parse(initialUri).toString())
+                    .commit();
         }
+        access = new ImagePackDirectoryAccess(this, webView, PROFILE);
         if (verifyRevoked) revokePersistedTreeGrantForTesting();
         webView.addJavascriptInterface(new TestWmlHost(), "WMLHost");
         webView.addJavascriptInterface(new AcceptanceBridge(), "AcceptanceBridge");
