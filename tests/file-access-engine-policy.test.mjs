@@ -53,6 +53,8 @@ assert.equal(api.matches("root/a.tmp", "a.tmp", requestB), true, "request policy
 assert.equal(api.limits.maxFiles, 100000);
 assert.equal(api.limits.maxEntries, 200000);
 assert.equal(api.limits.yieldInterval, 256);
+assert.match(bridge, /scannedFileCount\+\+;\s*if \(scannedFileCount > MAX_UPLOAD_FILES\)/,
+  "the hard 100k file ceiling applies before request-specific filtering");
 let eligibleCount = 0;
 const syntheticStart = performance.now();
 for (let index = 0; index < 51985; index++) {
