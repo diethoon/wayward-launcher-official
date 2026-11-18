@@ -189,6 +189,8 @@ assert.match(access, /DocumentsContract\.buildDocumentUriUsingTree/,
 assert.match(bridge, /__waywardSafDocumentUri/, "each handle stores its actual SAF document URI");
 assert.doesNotMatch(bridge, /__path|childPath|parentPath/, "no synthetic path is used as a document identity");
 assert.match(bridge, /createImagePackFile/, "file creation is addressed by the actual parent document URI");
+assert.match(bridge, /queryHandlePermission/, "handle permission queries recheck the persisted native SAF grant rather than trusting cached JS state");
+assert.match(bridge, /info\.uri !== permissions\.treeUri/, "a stale or replaced SAF tree grant is reported as denied");
 assert.match(bridge, /resolveImagePackEntry/, "directory resolve uses native SAF URI ancestry");
 assert.match(access, /requireDocumentUri\(/, "native methods validate document URIs against the selected tree");
 assert.match(access, /DocumentsContract\.getDocumentId\(directoryUri\)/, "directory listing starts from the actual document URI");

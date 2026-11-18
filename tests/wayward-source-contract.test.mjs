@@ -74,6 +74,7 @@ assert.match(folderBridge, /__waywardSafDocumentUri/);
 assert.doesNotMatch(folderBridge, /__path|childPath|parentPath/);
 assert.match(folderBridge, /createImagePackFile/);
 assert.match(folderBridge, /resolveImagePackEntry/);
+assert.match(folderBridge, /queryHandlePermission/);
 assert.match(folderNative, /requireDocumentUri\(/);
 assert.match(folderNative, /DocumentsContract\.getDocumentId\(directoryUri\)/);
 assert.match(folderNative, /DocumentsContract\.buildChildDocumentsUriUsingTree/);
