@@ -1,0 +1,24 @@
+Wayward Android Launcher — v2.0 Original Recovery Manifest
+==========================================================
+Repository: diethoon/wayward-launcher-official
+Recovered local branch: work/android-file-engine-v2-20261119
+Recovered local HEAD: 13e14c11766c4e43476b680ac1d845a2297f6b82
+Base commit: a9f1684c7f53fead204f13015814ec293eaeb30b
+Snapshot: snap_sb8iLzqGm9zFIiL8PJIPizHZtGJZ
+
+Original source files (SHA-256):
+41e54271031f2497c7974fdeff0772c82885bee5a00ce61f83e495db060a8c4e  45444  app/src/main/assets/imagepack-folder-picker.js
+464c1a122b9d89177fb06a46e8b30ca1df3b55095ce62e677d2e34747b339ed6  53123  app/src/main/java/com/wayward/launcher/ImagePackDirectoryAccess.java
+5777b8339548afdc22502d702ba00512dbe5a373ebd858674d8c34b879aab9fc  14902  .github/workflows/android-validation.yml
+9089a62ad05126f6b8899be3f0eb8cb4c7652916285060c4c741fff9512cb550  4997   tests/file-access-engine-policy.test.mjs
+a1cc134b4a717dc415eb225a5efbaa18849da672dd8ec3daf53a079ea558a443  3440   docs/android-file-access-engine-v2.md
+
+Recovered APKs:
+Debug: 10809409 bytes
+SHA-256: 81fe595d457124c935feb08a08c29ea47ce0d1a82494d817237e1d09c18c64f5
+Release unsigned: 9155149 bytes
+SHA-256: 56d61382773c699a4895f9f0352f295dad59deda416f677aa6805e587337c45e
+
+The local v2.0 working tree was verified clean before source transfer.
+The original v2.0 tree differs from base only in the five files listed above.
+The APKs are preserved separately from the Git source tree.
