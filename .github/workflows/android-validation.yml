@@ -235,7 +235,7 @@ jobs:
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        run: gradle --no-daemon --stacktrace clean assembleDebug assembleRelease
+        run: gradle --no-daemon --stacktrace clean testDebugUnitTest assembleDebug assembleRelease
 
       - name: Verify signed Release APK identity
         if: env.RELEASE_SIGNING_CONFIGURED == 'true'
