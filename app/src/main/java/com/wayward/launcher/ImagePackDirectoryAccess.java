@@ -62,14 +62,15 @@ final class ImagePackDirectoryAccess {
         initialUriForTesting = uri;
     }
 
-    void openFolderPicker(String requestId) {
-        if (requestId == null || !requestId.matches("[A-Za-z0-9._:-]{1,128}")) {
+    void openFolderPicker(String requestId, String mode) {
+        if (requestId == null || !requestId.matches("[A-Za-z0-9._:-]{1,128}")
+                || !("read".equals(mode) || "readwrite".equals(mode))) {
             diagnostic("native_folder_picker_request_rejected", "", "error", details("result", "invalid_request_id"));
             return;
         }
         diagnostic("native_folder_picker_entered", requestId, "info",
                 details("apiLevel", Build.VERSION.SDK_INT, "provider", "saf_tree",
-                        "requestSource", "showDirectoryPicker"));
+                        "requestSource", "showDirectoryPicker", "mode", mode));
         activity.runOnUiThread(() -> {
             if (pendingRequestId != null) {
                 if (pendingRequestId.equals(requestId)) {
@@ -86,12 +87,13 @@ final class ImagePackDirectoryAccess {
             pendingRequestId = requestId;
             diagnostic("native_folder_picker_ui_start", requestId, "info",
                     details("permissionBefore", "saf_tree_grant_pending",
-                            "requestSource", "showDirectoryPicker", "requestState", "PENDING"));
+                            "requestSource", "showDirectoryPicker", "mode", mode, "requestState", "PENDING"));
             Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-            picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            int requestedFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION
                     | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-                    | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+                    | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION;
+            if ("readwrite".equals(mode)) requestedFlags |= Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
+            picker.addFlags(requestedFlags);
 
             Uri initialUri = resolveInitialPickerUri();
             picker.putExtra(DocumentsContract.EXTRA_INITIAL_URI, initialUri);
