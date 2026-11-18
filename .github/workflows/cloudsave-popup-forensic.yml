@@ -1,0 +1,44 @@
+name: CloudSave popup source forensic
+on:
+  push:
+    branches:
+      - main
+permissions:
+  contents: read
+  actions: write
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/android-file-engine-v2-20261119
+      - name: Scan launcher bridge and connection paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('fs'),path=require('path'),crypto=require('crypto');
+          const roots=['app/src/main/java','app/src/main/assets'];
+          const files=[];
+          function walk(d){if(!fs.existsSync(d))return;for(const e of fs.readdirSync(d,{withFileTypes:true})){const p=path.join(d,e.name);if(e.isDirectory())walk(p);else if(/\\.(java|kt|js|xml)$/.test(p))files.push(p)}}
+          roots.forEach(walk);
+          const terms=['게임 연결','연결 확인','게임이 연결','연결되었습니다','game connected','game connection','isGameConnected','isConnected','WMLHost','JavascriptInterface','GoogleDriveAuth','startGoogleDriveAuth','takePendingStateForNonce','confirm','AlertDialog','MaterialAlertDialog','connection'];
+          const report={files:[],scan:{chunkSize:4096,overlap:1024}};
+          for(const file of files){
+            const fd=fs.openSync(file,'r'),buf=Buffer.alloc(4096),whole=crypto.createHash('sha256'),chunks=[],hits={};let offset=0,carry=Buffer.alloc(0);
+            for(const t of terms)hits[t]=[];
+            while(true){const n=fs.readSync(fd,buf,0,4096,null);if(!n)break;const c=Buffer.from(buf.subarray(0,n));whole.update(c);chunks.push({offset,length:n,sha256:crypto.createHash('sha256').update(c).digest('hex')});const scan=Buffer.concat([carry,c]),base=offset-carry.length;for(const t of terms){const q=Buffer.from(t);let i=-1;while((i=scan.indexOf(q,i+1))!==-1){const at=base+i;if(at>=offset-carry.length&&hits[t].length<30&&!hits[t].includes(at))hits[t].push(at)}}carry=scan.subarray(Math.max(0,scan.length-1024));offset+=n}
+            fs.closeSync(fd);
+            const contexts={};
+            for(const [term,arr] of Object.entries(hits)){contexts[term]=arr.slice(0,4).map(at=>{const start=Math.max(0,at-900),len=Math.min(2800,offset-start),b=Buffer.alloc(len),f=fs.openSync(file,'r');const n=fs.readSync(f,b,0,len,start);fs.closeSync(f);return {offset:at,start,bytes:n,text:b.subarray(0,n).toString('utf8')}})}
+            report.files.push({path:file,bytes:offset,sha256:whole.digest('hex'),chunks,terms:hits,contexts});
+          }
+          fs.mkdirSync('forensic-output',{recursive:true});fs.writeFileSync('forensic-output/report.json',JSON.stringify(report,null,2));
+          console.log(JSON.stringify(report.files.map(f=>({path:f.path,bytes:f.bytes,sha256:f.sha256,chunks:f.chunks.length,hitTerms:Object.keys(f.terms).filter(t=>f.terms[t].length)})),null,2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-cloudsave-popup-forensic
+          path: forensic-output/report.json
+          retention-days: 7
