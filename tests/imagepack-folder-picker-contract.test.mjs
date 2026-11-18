@@ -109,8 +109,8 @@ assert.match(smoke, /application\/json/, "the file-input acceptance test must us
 assert.match(picker, /CATEGORY_OPENABLE/, "ordinary file picker must remain OPENABLE");
 assert.match(picker, /Intent\.EXTRA_ALLOW_MULTIPLE/, "ZIP multi-select must remain supported");
 assert.match(picker, /getClipData\(\)/, "ZIP selections must preserve ClipData support");
-assert.match(picker, /WebFileChooserRequestPolicy\.isFolder\(kind\)/,
-  "only explicit WebView folder mode may use a tree picker");
+assert.doesNotMatch(picker, /ACTION_OPEN_DOCUMENT_TREE|collectFolderResult|isFolder\(/,
+  "generic WebView file chooser must not provide a competing folder picker path");
 assert.match(picker, /WebFileChooserRequestPolicy\.allowsMultipleFiles\(kind\)/,
   "multiple-file mode must remain file-only");
 assert.doesNotMatch(picker, /kind\s*==\s*WebFileChooserRequestPolicy\.Kind\.OPEN_MULTIPLE[\s\S]{0,300}ACTION_OPEN_DOCUMENT_TREE/,
@@ -118,8 +118,8 @@ assert.doesNotMatch(picker, /kind\s*==\s*WebFileChooserRequestPolicy\.Kind\.OPEN
 assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT/, "ordinary files and ZIPs must retain the SAF document picker");
 
 assert.match(bridge, /window\.showDirectoryPicker\s*=/, "the Image Studio directory API must be intercepted at document start");
-assert.match(bridge, /host\.chooseImagePackFolder\(id, nativeCapability\)/,
-  "the folder action must call the capability-guarded native launcher bridge");
+assert.match(bridge, /host\.chooseImagePackFolder\(id, nativeCapability, mode\)/,
+  "the original File System Access read/readwrite mode must cross the native bridge unchanged");
 assert.match(bridge, /show_directory_picker_called/, "the actual showDirectoryPicker call must be journaled");
 assert.match(bridge, /wmlhost_choose_folder_call_start/, "the JS-to-native bridge call must be journaled");
 assert.match(bridge, /setTimeout\([\s\S]*?120000/, "a lost native callback must not leave the game Promise pending forever");
@@ -145,6 +145,8 @@ assert.doesNotMatch(access, /ImagePackFileSystemAccess|fileSystemAccess|Environm
   "image-pack selection must not instantiate or fall back to a Wayward-owned filesystem browser");
 assert.match(access, /new Intent\(Intent\.ACTION_OPEN_DOCUMENT_TREE\)/,
   "every supported Android version must use the system SAF tree picker");
+assert.match(access, /"readwrite"\.equals\(mode\)[\s\S]{0,120}FLAG_GRANT_WRITE_URI_PERMISSION/,
+  "the Android system request must preserve the caller's read versus readwrite permission mode");
 assert.match(access, /Intent\.FLAG_GRANT_PERSISTABLE_URI_PERMISSION/,
   "the system tree request must ask for a persistable grant");
 assert.match(access, /takePersistableUriPermission\(selected, grants\)/,
