@@ -20,6 +20,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [ -f app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml ]; then
+            echo "Original WWL icon resources are already restored; nothing to do."
+            exit 0
+          fi
           git fetch origin apk-official-1.0.0-r3
           apk="$RUNNER_TEMP/Wayward-Launcher-1.0.0-Debug.apk"
           git show FETCH_HEAD:Wayward-Launcher-1.0.0-Debug.apk > "$apk"
