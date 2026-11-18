@@ -523,9 +523,7 @@ assert.doesNotMatch(pairing, /Log\.[idw]\(TAG,.*raw|Log\.[idw]\(TAG,.*imageUri/,
   "image QR payloads and selected image URIs must never be logged");
 assert.match(build, /play-services-mlkit-barcode-scanning:18\.3\.1/,
   "the supported ML Kit image barcode API must be included without replacing the camera scanner");
-
- 
-assert.ok(access.includes("private void restorePersistedTree()"),
+\n\nassert.ok(access.includes("private void restorePersistedTree()"),
   "Activity reconstruction must restore the saved tree only from persisted SAF grants");
 assert.ok(access.includes("candidate.equals(permission.getUri()) && permission.isReadPermission()"),
   "restoration must match the exact persisted URI and require read permission");
