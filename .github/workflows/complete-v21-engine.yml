@@ -17,7 +17,6 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - uses: android-actions/setup-android@v3
       - name: Apply v2.1 source changes
         run: |
           set -euo pipefail
@@ -108,7 +107,13 @@ jobs:
           - Existing policy defaults, independent limits, 256-item yielding, FileList shape/events, persistable permissions, 32 MiB cap, 64 KiB chunks, and four concurrent streams remain.
           - Tests simulate protocol ordering, empty directories, provider errors, concurrent request isolation, and cancellation. Real DocumentsProvider/SAF performance and WebView-destroy integration tests remain unverified.
           EOF
-          sdkmanager "platforms;android-35" >/dev/null
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          if [ ! -f "$ANDROID_HOME/platforms/android-35/android.jar" ]; then
+            SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort | tail -1)"
+            yes | "$SDKMANAGER" --licenses >/dev/null
+            "$SDKMANAGER" "platforms;android-35" >/dev/null
+          fi
           node --check app/src/main/assets/imagepack-folder-picker.js
           for f in tests/*.mjs; do node "$f"; done
           for f in tests/*.py; do PYTHONDONTWRITEBYTECODE=1 python3 "$f"; done
