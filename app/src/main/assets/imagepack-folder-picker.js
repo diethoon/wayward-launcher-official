@@ -1,7 +1,5 @@
 (() => {
   "use strict";
-  // Android WebView has no native SAF-backed showDirectoryPicker contract.
-  // Route this session API to the Android system picker for every request.
   const host = window.WMLHost;
   const nativeCapability = "__WAYWARD_FOLDER_PICKER_CAPABILITY__";
   if (!host || typeof host.chooseImagePackFolder !== "function" || !nativeCapability) return;
@@ -32,16 +30,16 @@
   function parseResult(raw) {
     let result;
     try { result = typeof raw === "string" ? JSON.parse(raw) : raw; }
-    catch (_) { throw domError("NotReadableError", "The native image-pack bridge returned invalid data."); }
+    catch (_) { throw domError("NotReadableError", "The native SAF bridge returned invalid data."); }
     if (!result || result.ok !== true) {
       throw domError(result && result.name || "NotReadableError",
-        result && result.message || "The image-pack operation failed.");
+        result && result.message || "The native SAF operation failed.");
     }
     return result;
   }
 
-  function nativeRequest(mode, initialUri) {
-    const id = "imagepack-" + Date.now().toString(36) + "-" +
+  function nativeRequest(mode, initialDocumentUri) {
+    const id = "saf-" + Date.now().toString(36) + "-" +
       (++nextId) + "-" + Math.floor(Math.random() * 1000000000);
     const startedAt = Date.now();
     const frameOrigin = String(location.origin || "");
@@ -54,8 +52,8 @@
       while (parent !== parent.parent) { frameDepth++; parent = parent.parent; }
     } catch (_) {}
     diagnose("show_directory_picker_called", id, {
-      origin: frameOrigin, frameOrigin, topOrigin, pagePath: String(location.pathname || ""), frameDepth,
-      isTopFrame: topFrame, mode: mode || "readwrite"
+      origin: frameOrigin, frameOrigin, topOrigin, pagePath: String(location.pathname || ""),
+      frameDepth, isTopFrame: topFrame, mode
     });
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -63,7 +61,7 @@
         diagnose("show_directory_picker_timeout", id, {
           timedOut: true, durationMs: Date.now() - startedAt, isTopFrame: topFrame
         });
-        reject(domError("AbortError", "Image-pack folder selection timed out."));
+        reject(domError("AbortError", "SAF folder selection timed out."));
       }, 120000);
       pending.set(id, {
         resolve(value) {
@@ -82,19 +80,15 @@
         }
       });
       try {
-        diagnose("wmlhost_choose_folder_call_start", id, {
-          bridgeAvailable: typeof host.chooseImagePackFolder === "function",
-          isTopFrame: topFrame
-        });
-        host.chooseImagePackFolder(id, nativeCapability, mode, initialUri || "");
+        diagnose("wmlhost_choose_folder_call_start", id, { bridgeAvailable: true, isTopFrame: topFrame });
+        host.chooseImagePackFolder(id, nativeCapability, mode, initialDocumentUri || "");
         diagnose("wmlhost_choose_folder_call_returned", id, { durationMs: Date.now() - startedAt });
       } catch (error) {
         pending.delete(id);
         clearTimeout(timeout);
         diagnose("wmlhost_choose_folder_call_failed", id, {
           errorName: error && error.name || "Error",
-          errorMessage: String(error && error.message || error),
-          stack: String(error && error.stack || "")
+          errorMessage: String(error && error.message || error)
         });
         reject(domError("NotAllowedError", String(error && error.message || error)));
       }
@@ -112,7 +106,7 @@
         result.requestId = String(id);
         request.resolve(result);
       } else request.reject(domError(result && result.name || "AbortError",
-        result && result.message || "Image-pack folder selection was cancelled."));
+        result && result.message || "SAF folder selection was cancelled."));
       return true;
     }
   });
@@ -148,113 +142,134 @@
     const name = String(value || "");
     if (!name || name === "." || name === ".." || name.indexOf("/") >= 0 ||
         name.indexOf("\\") >= 0 || name.indexOf("\0") >= 0) {
-      throw domError("TypeError", "A single relative file or folder name is required.");
+      throw domError("TypeError", "A single valid file or directory name is required.");
     }
     return name;
+  }
+
+  function handleUri(handle) {
+    const uri = handle && handle.__waywardSafDocumentUri;
+    if (typeof uri !== "string" || !uri.startsWith("content://")) {
+      throw domError("NotFoundError", "This handle has no valid SAF document URI.");
+    }
+    return uri;
   }
 
   function nativeJson(method, requestId, ...args) {
     try {
       let raw;
-      if (method === "listImagePackDirectory" || method === "readImagePackFile") {
-        const requestMethod = method === "listImagePackDirectory"
-          ? "listImagePackDirectoryForRequest" : "readImagePackFileForRequest";
-        if (typeof host[requestMethod] === "function") raw = host[requestMethod](args[0], requestId || "");
-        else raw = host[method](...args);
-      } else {
-        if (typeof host[method] !== "function") {
-          throw domError("NotSupportedError", "The native image-pack operation is unavailable.");
-        }
-        raw = host[method](...args);
+      switch (method) {
+        case "listImagePackDirectory":
+          raw = host.listImagePackDirectoryForRequest(args[0], requestId || "");
+          break;
+        case "readImagePackFile":
+          raw = host.readImagePackFileForRequest(args[0], requestId || "");
+          break;
+        case "createImagePackFile":
+          raw = host.createImagePackFile(args[0], args[1], args[2], requestId || "");
+          break;
+        case "writeImagePackFile":
+          raw = host.writeImagePackFile(args[0], args[1], args[2], requestId || "");
+          break;
+        case "createImagePackDirectory":
+          raw = host.createImagePackDirectory(args[0], args[1], requestId || "");
+          break;
+        case "deleteImagePackEntry":
+          raw = host.deleteImagePackEntry(args[0], requestId || "");
+          break;
+        case "resolveImagePackEntry":
+          raw = host.resolveImagePackEntry(args[0], args[1], requestId || "");
+          break;
+        default:
+          throw domError("NotSupportedError", "The native SAF operation is unavailable.");
       }
       const result = parseResult(raw);
       diagnose("native_" + method + "_success", requestId, {
-        method, ok: true, entryCount: result.entries ? result.entries.length : undefined,
+        method, uriBased: true,
+        entryCount: result.entries ? result.entries.length : undefined,
         fileSize: typeof result.size === "number" ? result.size : undefined
       });
       return result;
     } catch (error) {
       diagnose("native_" + method + "_failure", requestId, {
-        method, errorName: error && error.name || "Error",
-        errorMessage: String(error && error.message || error),
-        stack: String(error && error.stack || "")
+        method, uriBased: true, errorName: error && error.name || "Error",
+        errorMessage: String(error && error.message || error)
       });
       throw error;
     }
   }
 
-  function listEntries(path, requestId) {
-    diagnose("directory_entries_native_call", requestId, { method: "listImagePackDirectory" });
-    const entries = nativeJson("listImagePackDirectory", requestId, path).entries || [];
+  function listEntries(directoryUri, requestId) {
+    diagnose("directory_entries_native_call", requestId, { method: "listImagePackDirectory", uriBased: true });
+    const entries = nativeJson("listImagePackDirectory", requestId, directoryUri).entries || [];
     diagnose("directory_entries_returned", requestId, { entryCount: entries.length });
     return entries;
   }
 
-  function makeDirectory(path, name, permissions) {
+  function makeDirectory(uri, name, permissions) {
     const handle = {
       kind: "directory",
       name,
       async isSameEntry(other) {
         return !!other && other.kind === "directory" &&
-          rootByHandle.get(other) === rootByHandle.get(handle) && other.__path === path;
+          rootByHandle.get(other) === rootByHandle.get(handle) &&
+          other.__waywardSafDocumentUri === uri;
       },
       async queryPermission(options) {
-        return (!options || options.mode !== "readwrite" || permissions.writable)
-          ? "granted" : "denied";
+        const mode = options && options.mode !== undefined ? options.mode : "read";
+        if (mode !== "read" && mode !== "readwrite") throw new TypeError("Invalid permission mode.");
+        return mode === "readwrite" && !permissions.writable ? "denied" : "granted";
       },
       async requestPermission(options) {
         return this.queryPermission(options);
       },
-      async getDirectoryHandle(name, options) {
+      async getDirectoryHandle(child, options) {
         diagnose("directory_handle_get_directory_started", permissions.requestId, { method: "getDirectoryHandle" });
-        name = childName(name);
-        const childPath = path ? path + "/" + name : name;
-        const entry = listEntries(path, permissions.requestId).find(item => item.name === name);
+        child = childName(child);
+        const entry = listEntries(uri, permissions.requestId).find(item => item.name === child);
         if (!entry) {
-          if (!options || options.create !== true) {
-            throw domError("NotFoundError", "Directory not found: " + name);
-          }
-          if (!permissions.writable) throw domError("NotAllowedError", "The selected tree is read-only.");
-          nativeJson("createImagePackDirectory", permissions.requestId, childPath);
-          return makeDirectory(childPath, name, permissions);
+          if (!options || options.create !== true) throw domError("NotFoundError", "Directory not found: " + child);
+          if (!permissions.writable) throw domError("NotAllowedError", "The selected SAF tree is read-only.");
+          const created = nativeJson("createImagePackDirectory", permissions.requestId, uri, child);
+          return makeDirectory(created.uri, child, permissions);
         }
         if (entry.kind !== "directory") throw domError("TypeMismatchError", "The selected entry is not a directory.");
-        return makeDirectory(childPath, name, permissions);
+        return makeDirectory(entry.uri, child, permissions);
       },
-      async getFileHandle(name, options) {
-        diagnose("directory_handle_get_file_handle_started", permissions.requestId, { method: "getFileHandle" });
-        name = childName(name);
-        const childPath = path ? path + "/" + name : name;
-        const entry = listEntries(path, permissions.requestId).find(item => item.name === name);
+      async getFileHandle(child, options) {
+        diagnose("directory_handle_get_file_started", permissions.requestId, { method: "getFileHandle" });
+        child = childName(child);
+        const entry = listEntries(uri, permissions.requestId).find(item => item.name === child);
         if (!entry) {
-          if (!options || options.create !== true) throw domError("NotFoundError", "File not found: " + name);
-          if (!permissions.writable) throw domError("NotAllowedError", "The selected tree is read-only.");
-          nativeJson("writeImagePackFile", permissions.requestId, childPath, "application/octet-stream", "");
-        } else if (entry.kind !== "file") {
-          throw domError("TypeMismatchError", "The selected entry is not a file.");
+          if (!options || options.create !== true) throw domError("NotFoundError", "File not found: " + child);
+          if (!permissions.writable) throw domError("NotAllowedError", "The selected SAF tree is read-only.");
+          const created = nativeJson("createImagePackFile", permissions.requestId,
+            uri, child, "application/octet-stream");
+          return makeFile(created.uri, child, { mimeType: "application/octet-stream" }, permissions);
         }
-        diagnose("directory_handle_get_file_handle_succeeded", permissions.requestId, {
-          method: "getFileHandle", result: entry ? "existing_file" : "created_file"
-        });
-        return makeFile(childPath, name, entry || {}, permissions);
+        if (entry.kind !== "file") throw domError("TypeMismatchError", "The selected entry is not a file.");
+        return makeFile(entry.uri, child, entry, permissions);
       },
-      async removeEntry(name) {
-        name = childName(name);
-        if (!permissions.writable) throw domError("NotAllowedError", "The selected tree is read-only.");
-        nativeJson("deleteImagePackEntry", permissions.requestId, path ? path + "/" + name : name);
+      async removeEntry(child, options) {
+        child = childName(child);
+        if (!permissions.writable) throw domError("NotAllowedError", "The selected SAF tree is read-only.");
+        const entry = listEntries(uri, permissions.requestId).find(item => item.name === child);
+        if (!entry) throw domError("NotFoundError", "Entry not found: " + child);
+        if (entry.kind === "directory" && (!options || options.recursive !== true) &&
+            listEntries(entry.uri, permissions.requestId).length > 0) {
+          throw domError("InvalidModificationError", "A non-empty directory requires recursive removal.");
+        }
+        nativeJson("deleteImagePackEntry", permissions.requestId, entry.uri);
       },
       async *entries() {
-        diagnose("directory_handle_entries_started", permissions.requestId, {});
+        diagnose("directory_handle_entries_started", permissions.requestId, { uriBased: true });
         try {
-          const children = listEntries(path, permissions.requestId);
-          diagnose("directory_handle_entries_succeeded", permissions.requestId, {
-            entryCount: children.length
-          });
+          const children = listEntries(uri, permissions.requestId);
+          diagnose("directory_handle_entries_succeeded", permissions.requestId, { entryCount: children.length });
           for (const entry of children) {
-            const childPath = path ? path + "/" + entry.name : entry.name;
             const child = entry.kind === "directory"
-              ? makeDirectory(childPath, entry.name, permissions)
-              : makeFile(childPath, entry.name, entry, permissions);
+              ? makeDirectory(entry.uri, entry.name, permissions)
+              : makeFile(entry.uri, entry.name, entry, permissions);
             yield [entry.name, child];
           }
         } catch (error) {
@@ -272,60 +287,53 @@
       },
       async resolve(other) {
         if (!other || rootByHandle.get(other) !== rootByHandle.get(handle)) return null;
-        const target = String(other.__path || "");
-        if (target === path) return [];
-        const prefix = path ? path + "/" : "";
-        if (!target.startsWith(prefix)) return null;
-        return target.slice(prefix.length).split("/");
+        const result = nativeJson("resolveImagePackEntry", permissions.requestId,
+          uri, handleUri(other));
+        return Array.isArray(result.path) ? result.path : null;
       }
     };
-    Object.defineProperty(handle, "__path", { value: path });
-    if (!path && permissions.uri) {
-      Object.defineProperty(handle, "__waywardSafUri", { value: permissions.uri });
-    }
+    Object.defineProperty(handle, "__waywardSafDocumentUri", { value: uri });
     rootByHandle.set(handle, permissions.root);
     return handle;
   }
 
-  function makeFile(path, name, metadata, permissions) {
+  function makeFile(uri, name, metadata, permissions) {
     const handle = {
       kind: "file",
       name,
       async isSameEntry(other) {
         return !!other && other.kind === "file" &&
-          rootByHandle.get(other) === rootByHandle.get(handle) && other.__path === path;
+          rootByHandle.get(other) === rootByHandle.get(handle) &&
+          other.__waywardSafDocumentUri === uri;
       },
       async queryPermission(options) {
-        return (!options || options.mode !== "readwrite" || permissions.writable)
-          ? "granted" : "denied";
+        const mode = options && options.mode !== undefined ? options.mode : "read";
+        if (mode !== "read" && mode !== "readwrite") throw new TypeError("Invalid permission mode.");
+        return mode === "readwrite" && !permissions.writable ? "denied" : "granted";
       },
       async requestPermission(options) {
         return this.queryPermission(options);
       },
       async getFile() {
-        diagnose("file_handle_get_file_started", permissions.requestId, { method: "getFile" });
-        try {
-          const payload = nativeJson("readImagePackFile", permissions.requestId, path);
-          const binary = atob(payload.data || "");
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-          const file = new File([bytes], name, {
-            type: payload.mimeType || metadata.mimeType || "application/octet-stream",
-            lastModified: Number(payload.lastModified || metadata.lastModified || 0)
-          });
-          diagnose("file_handle_get_file_succeeded", permissions.requestId, { fileSize: payload.size || 0 });
-          return file;
-        } catch (error) {
-          diagnose("file_handle_get_file_failed", permissions.requestId, {
-            errorName: error && error.name || "Error",
-            stack: String(error && error.stack || "")
-          });
-          throw error;
-        }
+        diagnose("file_handle_get_file_started", permissions.requestId, { uriBased: true });
+        const payload = nativeJson("readImagePackFile", permissions.requestId, uri);
+        const binary = atob(payload.data || "");
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+        const file = new File([bytes], name, {
+          type: payload.mimeType || metadata.mimeType || "application/octet-stream",
+          lastModified: Number(payload.lastModified || metadata.lastModified || 0)
+        });
+        diagnose("file_handle_get_file_succeeded", permissions.requestId, { fileSize: payload.size || 0 });
+        return file;
       },
-      async createWritable() {
-        if (!permissions.writable) throw domError("NotAllowedError", "The selected tree is read-only.");
+      async createWritable(options) {
+        if (!permissions.writable) throw domError("NotAllowedError", "The selected SAF tree is read-only.");
         let buffer = new Uint8Array(0);
+        if (options && options.keepExistingData === true) {
+          const existing = await this.getFile();
+          buffer = new Uint8Array(await existing.arrayBuffer());
+        }
         let position = 0;
         let closed = false;
         return {
@@ -354,9 +362,7 @@
             else if (value instanceof ArrayBuffer) bytes = new Uint8Array(value);
             else if (ArrayBuffer.isView(value)) {
               bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-            } else {
-              throw new TypeError("Unsupported image-pack writable data.");
-            }
+            } else throw new TypeError("Unsupported SAF writable data.");
             const required = position + bytes.length;
             if (required > 32 * 1024 * 1024) throw domError("QuotaExceededError", "The image file exceeds 32 MiB.");
             const next = new Uint8Array(Math.max(buffer.length, required));
@@ -371,7 +377,7 @@
             for (let offset = 0; offset < buffer.length; offset += 0x8000) {
               binary += String.fromCharCode(...buffer.subarray(offset, offset + 0x8000));
             }
-            nativeJson("writeImagePackFile", permissions.requestId, path,
+            nativeJson("writeImagePackFile", permissions.requestId, uri,
               metadata.mimeType || "application/octet-stream", btoa(binary));
             closed = true;
           },
@@ -382,7 +388,7 @@
         };
       }
     };
-    Object.defineProperty(handle, "__path", { value: path });
+    Object.defineProperty(handle, "__waywardSafDocumentUri", { value: uri });
     rootByHandle.set(handle, permissions.root);
     return handle;
   }
@@ -394,33 +400,35 @@
     if (options.id !== undefined && options.id !== null && String(options.id).length > 0) {
       throw domError("NotSupportedError", "Android SAF cannot preserve the File System Access picker id.");
     }
-    let initialUri = "";
+    let initialDocumentUri = "";
     if (options.startIn !== undefined && options.startIn !== null) {
-      initialUri = String(options.startIn.__waywardSafUri || "");
-      if (!initialUri) {
-        throw domError("NotSupportedError", "Android SAF can only honor startIn when it is a previously selected Wayward SAF directory handle.");
+      if (typeof options.startIn === "string" || !options.startIn.__waywardSafDocumentUri ||
+          options.startIn.kind !== "directory") {
+        throw domError("NotSupportedError", "Android SAF can only honor startIn from a previously selected SAF directory handle.");
       }
+      initialDocumentUri = handleUri(options.startIn);
     }
-    const selection = await nativeRequest(mode, initialUri);
+    const selection = await nativeRequest(mode, initialDocumentUri);
     if (mode === "readwrite" && selection.writable !== true) {
       throw domError("NotAllowedError", "Android did not grant write access to the selected folder.");
     }
+    if (!selection.documentUri || !selection.uri) {
+      throw domError("NotReadableError", "Android did not return the selected SAF tree and root document URIs.");
+    }
     const permissions = {
-      root: {}, writable: selection.writable === true,
-      uri: selection.uri || "", requestId: selection.requestId || ""
+      root: selection.uri, treeUri: selection.uri,
+      writable: selection.writable === true, requestId: selection.requestId || ""
     };
     diagnose("directory_handle_created", permissions.requestId, {
-      directoryHandle: true, handleKind: "directory", writable: permissions.writable
+      directoryHandle: true, handleKind: "directory", writable: permissions.writable,
+      documentUriPresent: true
     });
-    return makeDirectory("", selection.name || "Image packs", permissions);
+    return makeDirectory(selection.documentUri, selection.name || "Image packs", permissions);
   };
 
   try {
     Object.defineProperty(window, "showDirectoryPicker", {
-      configurable: true,
-      enumerable: true,
-      writable: true,
-      value: showDirectoryPicker
+      configurable: true, enumerable: true, writable: true, value: showDirectoryPicker
     });
   } catch (error) {
     try { window.showDirectoryPicker = showDirectoryPicker; }
@@ -439,12 +447,15 @@
   window.__waywardNativeImagePackPickerInstalled = true;
   diagnose("imagepack_adapter_installed", "", {
     installed: true, bridgeAvailable: true, origin: String(location.origin || ""),
-    isTopFrame: window === window.top
+    isTopFrame: window === window.top, storageIdentity: "content-uri"
   });
 
   window.__waywardReadPersistedImagePackRoot = function() {
     const info = nativeJson("getImagePackFolderInfo", "");
-    const permissions = { root: {}, writable: info.writable === true, uri: info.uri || "", requestId: "" };
-    return makeDirectory("", info.name || "Image packs", permissions);
+    if (!info.documentUri || !info.uri) throw domError("NotFoundError", "No persisted SAF root is available.");
+    const permissions = {
+      root: info.uri, treeUri: info.uri, writable: info.writable === true, requestId: ""
+    };
+    return makeDirectory(info.documentUri, info.name || "Image packs", permissions);
   };
 })();
