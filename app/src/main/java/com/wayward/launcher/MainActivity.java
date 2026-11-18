@@ -2453,9 +2453,21 @@ public class MainActivity extends Activity {
             ImagePackDiagnostics.javascriptEvent(MainActivity.this, imagePackDiagnosticSessionId,
                     requestId, stage, detailsJson);
         }
-        @JavascriptInterface public boolean saveBlobDownload(String requestId,String filename,String mimeType,String base64Bytes){
+        @JavascriptInterface public boolean beginBlobDownload(String requestId,String filename,String mimeType,long expectedBytes){
             WebDownloadHandler handler=webDownloadHandler;
-            return handler!=null && handler.requestSave(requestId,filename,mimeType,base64Bytes);
+            return handler!=null && handler.beginDownload(requestId,filename,mimeType,expectedBytes);
+        }
+        @JavascriptInterface public boolean appendBlobDownloadChunk(String requestId,String base64Bytes){
+            WebDownloadHandler handler=webDownloadHandler;
+            return handler!=null && handler.appendChunk(requestId,base64Bytes);
+        }
+        @JavascriptInterface public boolean finishBlobDownload(String requestId){
+            WebDownloadHandler handler=webDownloadHandler;
+            return handler!=null && handler.finishDownload(requestId);
+        }
+        @JavascriptInterface public void abortBlobDownload(String requestId){
+            WebDownloadHandler handler=webDownloadHandler;
+            if(handler!=null)handler.abortDownload(requestId);
         }
         @JavascriptInterface public void chooseImagePackFolder(String requestId, String capability, String mode, String initialUri){
             // JavascriptInterface methods run on WebView's private background thread.
