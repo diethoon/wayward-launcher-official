@@ -304,18 +304,18 @@ with jp.open("r", encoding="utf-8") as src, jt.open("w", encoding="utf-8", newli
             try {
                 boolean accepted = acknowledgeDirectoryBatch(requestId,
                         Integer.parseInt(documentUri.substring(DIRECTORY_ACK_PREFIX.length())));
-                return accepted ? "{\\\\"ok\\\\":true}" : failure("AbortError", "The SAF batch is no longer active.").toString();
+                return accepted ? "{\\"ok\\":true}" : failure("AbortError", "The SAF batch is no longer active.").toString();
             } catch (Exception error) {
                 return failure("TypeError", "The SAF batch acknowledgement is invalid.").toString();
             }
         }
         if (documentUri != null && documentUri.equals(DIRECTORY_CANCEL_PREFIX)) {
             cancelDirectoryList(requestId);
-            return "{\\\\"ok\\\\":true}";
+            return "{\\"ok\\":true}";
         }
         if (documentUri != null && documentUri.equals(DIRECTORY_RELEASE_PREFIX)) {
             releaseDirectoryTree(rootDirectoryRequestId(requestId));
-            return "{\\\\"ok\\\\":true}";
+            return "{\\"ok\\":true}";
         }
 """)
             methods_done = True
