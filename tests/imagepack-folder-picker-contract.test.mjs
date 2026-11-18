@@ -146,6 +146,9 @@ assert.doesNotMatch(access, /ImagePackFileSystemAccess|fileSystemAccess|Environm
 assert.match(access, /new Intent\(Intent\.ACTION_OPEN_DOCUMENT_TREE\)/,
   "every supported Android version must use the system SAF tree picker");
 assert.match(access, /"readwrite"\.equals\(mode\)[\s\S]{0,120}FLAG_GRANT_WRITE_URI_PERMISSION/,
+  "the session read/readwrite mode must be forwarded to the system permission flags");
+assert.doesNotMatch(access, /EXTRA_INITIAL_URI/, "the launcher must not override Android DocumentsUI start location");
+assert.match(access, /"readwrite"\.equals\(mode\)[\s\S]{0,120}FLAG_GRANT_WRITE_URI_PERMISSION/,
   "the Android system request must preserve the caller's read versus readwrite permission mode");
 assert.match(access, /Intent\.FLAG_GRANT_PERSISTABLE_URI_PERMISSION/,
   "the system tree request must ask for a persistable grant");
@@ -157,8 +160,8 @@ assert.match(access, /DocumentsContract\.isTreeUri\(selected\)/,
   "the result must be validated as a document tree");
 assert.match(access, /releasePersistedTree\(previousTreeUri\)/,
   "the previous tree grant is released only after the replacement is saved");
-assert.match(access, /EXTRA_INITIAL_URI/,
-  "the system picker reopens the last saved tree or Download");
+assert.doesNotMatch(access, /EXTRA_INITIAL_URI|resolveInitialPickerUri|pickerInitialSource/,
+  "the session request must open the Android system picker without launcher-selected start-location overrides");
 assert.match(access, /native_folder_picker_request_rejected_busy/,
   "overlapping requests cannot replace the active request");
 assert.match(access, /native_saf_picker_uri_missing/,
