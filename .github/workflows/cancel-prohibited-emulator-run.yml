@@ -1,0 +1,23 @@
+name: Cancel prohibited emulator validation run
+on:
+  pull_request_target:
+    branches:
+      - work/v21-validation-safe-base-20261119
+    types: [opened, reopened]
+permissions:
+  actions: write
+  contents: read
+jobs:
+  cancel-previous:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const runId = 44390660913;
+            await github.rest.actions.cancelWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId
+            });
+            core.notice("Cancelled the earlier validation run before emulator execution.");
