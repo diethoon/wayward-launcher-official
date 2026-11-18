@@ -261,13 +261,14 @@ const hostStore = client.indexOf("RemoteHostStore.saveConnection(context, host)"
 assert.ok(signatureCheck >= 0 && identityCheck > signatureCheck && hostStore > identityCheck,
   'Host signature and identity checks must complete before storing Host data');
 
-assert.ok(instrumented.includes("publicIpv4ExternalBootstrapQrFetchesAndValidatesTheHostSignedManifest") &&
-  connection.includes("isPrivateLanIpv4(uri.getHost())") &&
-  connection.includes("normalizeExternalBaseUrl(trimmed)") &&
-  instrumented.includes("publicIpv4ExternalTestQrRequiresActiveWaywardOwnedTcpMappingAndSignedEndpoint") &&
-  instrumented.includes("100.64.0.1") && instrumented.includes("198.18.0.1") &&
-  instrumented.includes("missingMapping") && instrumented.includes("endpointCandidates(parsed)"),
-  'Android instrumentation must exercise the external QR contract, reserved/CGNAT filtering and endpoint deduplication');
+assert.ok(instrumented.includes("remoteHostRejectsNonPrivateOrCleartextQrUrls") &&
+  connection.includes("!isPrivateLanIpv4(uri.getHost())") &&
+  client.includes("return new String[] {host.baseUrl}"),
+  'Android must reject non-LAN QR endpoints and retain one direct LAN endpoint only');
+assert.doesNotMatch(connection, /externalBaseUrl|externalTestEndpoint|normalizeExternalBaseUrl|isGloballyRoutableIpv4|portMapping/,
+  'external endpoint parsing and public IPv4 validation code must be absent');
+assert.doesNotMatch(client, /externalBaseUrl/,
+  'the client must not contain an external endpoint fallback');
 
 assert.match(pairingActivity, /BitmapFactory\.Options[\s\S]*?inJustDecodeBounds = true[\s\S]*?inSampleSize = sampleSize/,
   'the developer QR importer must inspect dimensions and downsample before allocating the bitmap');

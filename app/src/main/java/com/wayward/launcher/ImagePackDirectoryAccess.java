@@ -209,8 +209,8 @@ final class ImagePackDirectoryAccess {
                     break;
                 }
             }
-            if (persisted == null) {
-                throw new SecurityException("The provider did not retain the selected tree grant.");
+            if (persisted == null || (writeRequired && !persisted.isWritePermission())) {
+                throw new SecurityException("The provider did not retain the required selected tree permissions.");
             }
             diagnostic("native_saf_persisted_permission_verified", pendingRequestId, "info",
                     details("persistedRead", persisted.isReadPermission(),
