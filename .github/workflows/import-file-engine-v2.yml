@@ -1,0 +1,64 @@
+# Loaded from the base side of this isolated recovery PR.
+name: Import Android file-engine v2 source
+on:
+  pull_request:
+    branches: [recovery/android-v2-importer-base-20261119]
+    paths:
+      - .github/workflows/import-file-engine-v2.yml
+permissions:
+  contents: write
+jobs:
+  import-source:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout recovery branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: true
+      - name: Fetch and verify the isolated source files
+        env:
+          SOURCE_BASE: https://sb-6ymgnrahggu0.vercel.run
+        run: |
+          set -euo pipefail
+          files=(
+            app/src/main/assets/imagepack-folder-picker.js
+            app/src/main/java/com/wayward/launcher/ImagePackDirectoryAccess.java
+            .github/workflows/android-validation.yml
+            tests/file-access-engine-policy.test.mjs
+            docs/android-file-access-engine-v2.md
+          )
+          for path in "${files[@]}"; do
+            mkdir -p "$(dirname "$path")"
+            curl --fail --silent --show-error --location "$SOURCE_BASE/$path" -o "$path"
+          done
+          sha256sum -c <<'SHA256'
+41e54271031f2497c7974fdeff0772c82885bee5a00ce61f83e495db060a8c4e  app/src/main/assets/imagepack-folder-picker.js
+464c1a122b9d89177fb06a46e8b30ca1df3b55095ce62e677d2e34747b339ed6  app/src/main/java/com/wayward/launcher/ImagePackDirectoryAccess.java
+5777b8339548afdc22502d702ba00512dbe5a373ebd858674d8c34b879aab9fc  .github/workflows/android-validation.yml
+9089a62ad05126f6b8899be3f0eb8cb4c7652916285060c4c741fff9512cb550  tests/file-access-engine-policy.test.mjs
+a1cc134b4a717dc415eb225a5efbaa18849da672dd8ec3daf53a079ea558a443  docs/android-file-access-engine-v2.md
+SHA256
+      - name: Run deterministic checks
+        run: |
+          set -euo pipefail
+          node --check app/src/main/assets/imagepack-folder-picker.js
+          for f in tests/*.mjs tests/*.cjs; do node "$f"; done
+          for f in tests/*.py; do PYTHONDONTWRITEBYTECODE=1 python3 "$f"; done
+          git diff --check
+      - name: Commit imported source and remove temporary importer
+        env:
+          GITHUB_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/import-file-engine-v2.yml
+          git add app/src/main/assets/imagepack-folder-picker.js
+          git add app/src/main/java/com/wayward/launcher/ImagePackDirectoryAccess.java
+          git add .github/workflows/android-validation.yml
+          git add tests/file-access-engine-policy.test.mjs
+          git add docs/android-file-access-engine-v2.md
+          git commit -m "recovery(android): import verified SAF file-engine v2"
+          git push origin "HEAD:$GITHUB_HEAD_REF"
