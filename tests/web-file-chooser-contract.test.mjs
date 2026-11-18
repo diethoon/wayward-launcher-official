@@ -17,6 +17,9 @@ assert.match(picker, /containsLiveCaptureIntent/, "capture requests fail explici
 assert.match(picker, /findCaptureOutputUri/, "capture output URIs are retained when the picker returns no data URI");
 assert.match(picker, /FileChooserParams\.parseResult/, "ordinary file results are parsed through Android's documented result parser");
 assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT/, "ordinary files retain the document picker");
+assert.match(picker, /Intent source = params\.createIntent\(\)/, "ordinary file requests begin with the original WebView Intent");
+assert.match(picker, /new Intent\(source\)/, "unknown source Intent extras are retained during SAF action mapping");
+assert.match(picker, /picker\.setAction\(Intent\.ACTION_OPEN_DOCUMENT\)/, "the source request is mapped to persistable SAF open semantics");
 assert.match(picker, /Intent\.ACTION_CREATE_DOCUMENT/, "save requests use create-document semantics");
 assert.doesNotMatch(picker, /ACTION_OPEN_DOCUMENT_TREE/, "generic WebView file chooser must not create a competing folder-picker route");
 assert.match(picker, /Intent\.EXTRA_ALLOW_MULTIPLE/, "multiple file requests preserve multi-select");

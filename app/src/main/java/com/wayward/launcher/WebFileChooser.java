@@ -231,12 +231,26 @@ final class WebFileChooser extends WebChromeClient {
             return picker;
         }
 
-        // Ordinary files keep ACTION_OPEN_DOCUMENT and its persistable grant behavior.
-        Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        // Start from WebView's original request Intent so unmodeled options survive.
+        // ACTION_OPEN_DOCUMENT is required here for a persistable SAF URI grant.
+        Intent source = params.createIntent();
+        if (source == null || source.getAction() == null) {
+            throw new IllegalArgumentException("WebView did not provide a file chooser Intent.");
+        }
+        String sourceAction = source.getAction();
+        if (!Intent.ACTION_GET_CONTENT.equals(sourceAction)
+                && !Intent.ACTION_OPEN_DOCUMENT.equals(sourceAction)) {
+            throw new UnsupportedOperationException("Unsupported WebView file chooser action.");
+        }
+        Intent picker = new Intent(source);
+        picker.setAction(Intent.ACTION_OPEN_DOCUMENT);
         picker.addCategory(Intent.CATEGORY_OPENABLE);
         applyMimeTypes(picker, accepted);
         picker.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,
                 WebFileChooserRequestPolicy.allowsMultipleFiles(kind));
+        if (params.getTitle() != null && !picker.hasExtra(Intent.EXTRA_TITLE)) {
+            addTitle(picker, params.getTitle());
+        }
         picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
                 | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         return picker;
