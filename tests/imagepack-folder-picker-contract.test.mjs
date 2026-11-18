@@ -406,7 +406,7 @@ assert.match(main, /ImagePackFolderPickerScript\.installAfterPageFinished\(/, "t
 assert.match(readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackFolderPickerScript.java", import.meta.url), "utf8"), /isSameOrigin\(/, "runtime fallback must be restricted to the active game origin");
 assert.match(readFileSync(new URL("../app/src/main/java/com/wayward/launcher/ImagePackFolderPickerScript.java", import.meta.url), "utf8"), /WebViewCompat\.addDocumentStartJavaScript/, "supported document-start injection must remain");
 assert.match(main, /installDocumentStartAsset\("imagegen-proxy\.js", origin\)/, "image-generation scripts must remain installed separately");
-assert.match(main, /chooseImagePackFolder(String requestId, String capability, String mode)/,
+assert.match(main, /chooseImagePackFolder\(String requestId, String capability, String mode\)/,
   "WMLHost preserves the folder action and requires a scoped capability");
 assert.match(main, /matchesCapability\(\s*imagePackFolderPickerCapability, capability\)/,
   "native folder requests validate the injected per-WebView capability");
