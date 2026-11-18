@@ -225,19 +225,7 @@
 
   function mimeType(value) {
     const type = String(value || "").trim().toLowerCase();
-    return /^[a-z0-9!#  function listEntries(directoryUri, requestId) {
-    diagnose("directory_entries_native_call", requestId, { method: "listImagePackDirectory", uriBased: true });
-    const entries = nativeJson("listImagePackDirectory", requestId, directoryUri).entries || [];
-    diagnose("directory_entries_returned", requestId, { entryCount: entries.length });
-    return entries;
-  }
-^_.+-]+\/[a-z0-9!#  function listEntries(directoryUri, requestId) {
-    diagnose("directory_entries_native_call", requestId, { method: "listImagePackDirectory", uriBased: true });
-    const entries = nativeJson("listImagePackDirectory", requestId, directoryUri).entries || [];
-    diagnose("directory_entries_returned", requestId, { entryCount: entries.length });
-    return entries;
-  }
-^_.+-]+$/.test(type) ? type : "";
+    return /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(type) ? type : "";
   }
 
   function makeSafBackedFile(entry, relativePath, requestId) {
