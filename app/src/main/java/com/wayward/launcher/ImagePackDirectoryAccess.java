@@ -88,15 +88,7 @@ final class ImagePackDirectoryAccess {
             Uri initial = null;
             if (initialUri != null && !initialUri.isEmpty()) {
                 try {
-                    initial = Uri.parse(initialUri);
-                    if (!"content".equalsIgnoreCase(initial.getScheme())
-                            || !DocumentsContract.isTreeUri(initial)) {
-                        throw new SecurityException("startIn is not a SAF tree URI.");
-                    }
-                    requireTree();
-                    if (!initial.equals(treeUri)) {
-                        throw new SecurityException("startIn is outside the currently persisted SAF tree.");
-                    }
+                    initial = requireDocumentUri(initialUri, true);
                 } catch (Exception error) {
                     deliver(requestId, failure("NotAllowedError", "The requested startIn directory is unavailable."));
                     return;
@@ -253,6 +245,8 @@ final class ImagePackDirectoryAccess {
             result.put("ok", true);
             result.put("name", displayName);
             result.put("uri", selected.toString());
+            result.put("documentUri", DocumentsContract.buildDocumentUriUsingTree(
+                    selected, DocumentsContract.getTreeDocumentId(selected)).toString());
             result.put("writable", writable);
             result.put("state", "SUCCESS");
             Log.i(TAG, "picker_result result=success persistedRead=true persistedWrite=" + writable);
@@ -288,31 +282,35 @@ final class ImagePackDirectoryAccess {
     String getFolderInfoJson() {
         try {
             requireTree();
+            Uri rootDocumentUri = DocumentsContract.buildDocumentUriUsingTree(
+                    treeUri, DocumentsContract.getTreeDocumentId(treeUri));
+            Node root = queryDocument(rootDocumentUri);
             JSONObject result = new JSONObject();
             result.put("ok", true);
-            result.put("name", rootName());
+            result.put("name", root.name);
             result.put("uri", treeUri.toString());
+            result.put("documentUri", rootDocumentUri.toString());
             result.put("writable", writable);
             result.put("state", "SUCCESS");
             return result.toString();
         } catch (Exception error) {
-            return failure("NotFoundError", "No saved image-pack folder is available.").toString();
+            return failure(error instanceof SecurityException ? "SecurityError" : "NotFoundError",
+                    "No saved image-pack folder is available.").toString();
         }
     }
 
-    String listDirectoryJson(String path) {
-        return listDirectoryJson(path, "");
-    }
-
-    String listDirectoryJson(String path, String requestId) {
-        diagnostic("native_directory_list_started", requestId, "info", details("method", "listImagePackDirectory"));
+    String listDirectoryJson(String documentUri, String requestId) {
+        diagnostic("native_directory_list_started", requestId, "info",
+                details("method", "listImagePackDirectory", "uriBased", true));
         try {
-            String documentId = resolveDirectory(path);
+            Uri directoryUri = requireDocumentUri(documentUri, true);
+            String documentId = DocumentsContract.getDocumentId(directoryUri);
             JSONArray entries = new JSONArray();
             for (Node node : queryChildren(documentId)) {
                 JSONObject item = new JSONObject();
                 item.put("name", node.name);
                 item.put("kind", node.directory ? "directory" : "file");
+                item.put("uri", DocumentsContract.buildDocumentUriUsingTree(treeUri, node.documentId).toString());
                 item.put("size", node.size);
                 item.put("mimeType", node.mimeType);
                 item.put("lastModified", node.lastModified);
@@ -320,30 +318,30 @@ final class ImagePackDirectoryAccess {
             }
             JSONObject result = new JSONObject();
             result.put("ok", true);
+            result.put("uri", directoryUri.toString());
             result.put("entries", entries);
-            diagnostic("native_directory_list_succeeded", requestId, "info", details("entryCount", entries.length()));
+            diagnostic("native_directory_list_succeeded", requestId, "info",
+                    details("entryCount", entries.length(), "uriBased", true));
             return result.toString();
         } catch (Exception error) {
             ImagePackDiagnostics.error(activity, diagnosticSessionId, requestId,
                     "native_directory_list_failed", error);
             return failure(error instanceof SecurityException ? "SecurityError" : "NotFoundError",
-                    "The selected image-pack directory could not be listed.").toString();
+                    "The selected SAF directory URI could not be listed.").toString();
         }
     }
 
-    String readFileJson(String path) {
-        return readFileJson(path, "");
-    }
-
-    String readFileJson(String path, String requestId) {
-        diagnostic("native_file_read_started", requestId, "info", details("method", "readImagePackFile"));
+    String readFileJson(String documentUri, String requestId) {
+        diagnostic("native_file_read_started", requestId, "info",
+                details("method", "readImagePackFile", "uriBased", true));
         try {
-            Node node = resolveFile(path);
+            Uri fileUri = requireDocumentUri(documentUri, false);
+            Node node = queryDocument(fileUri);
+            if (node.directory) throw new IllegalArgumentException("A directory URI cannot be read as a file.");
             if (node.size > MAX_FILE_BYTES) {
                 return failure("QuotaExceededError", "The image file exceeds the 32 MiB bridge limit.").toString();
             }
-            Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, node.documentId);
-            try (InputStream input = activity.getContentResolver().openInputStream(documentUri);
+            try (InputStream input = activity.getContentResolver().openInputStream(fileUri);
                  ByteArrayOutputStream output = new ByteArrayOutputStream()) {
                 if (input == null) throw new IllegalStateException("File stream unavailable.");
                 byte[] buffer = new byte[16 * 1024];
@@ -356,102 +354,161 @@ final class ImagePackDirectoryAccess {
                 }
                 JSONObject result = new JSONObject();
                 result.put("ok", true);
+                result.put("uri", fileUri.toString());
                 result.put("name", node.name);
                 result.put("mimeType", node.mimeType == null ? "application/octet-stream" : node.mimeType);
                 result.put("lastModified", node.lastModified);
                 result.put("size", output.size());
                 result.put("data", Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP));
-                diagnostic("native_file_read_succeeded", requestId, "info", details("fileSize", output.size()));
+                diagnostic("native_file_read_succeeded", requestId, "info",
+                        details("fileSize", output.size(), "uriBased", true));
                 return result.toString();
             }
         } catch (Exception error) {
             ImagePackDiagnostics.error(activity, diagnosticSessionId, requestId,
                     "native_file_read_failed", error);
             return failure(error instanceof SecurityException ? "SecurityError" : "NotFoundError",
-                    "The selected image-pack file could not be read.").toString();
+                    "The selected SAF document URI could not be read.").toString();
         }
     }
 
-    String writeFileJson(String path, String mimeType, String encodedBytes) {
+    String createFileJson(String parentUri, String name, String mimeType, String requestId) {
         try {
             requireWritePermission();
-            String[] parts = splitPath(path);
-            if (parts.length == 0) throw new IllegalArgumentException("A file name is required.");
-            String name = parts[parts.length - 1];
-            String parentId = resolveDirectory(join(parts, parts.length - 1));
+            Uri parent = requireDocumentUri(parentUri, true);
+            validateEntryName(name);
+            String parentId = DocumentsContract.getDocumentId(parent);
             Node existing = findChild(parentId, name);
-            if (existing != null && existing.directory) {
-                throw new IllegalArgumentException("A directory already uses this name.");
+            if (existing != null) {
+                if (existing.directory) throw new IllegalArgumentException("A directory already uses this name.");
+                JSONObject result = new JSONObject();
+                result.put("ok", true);
+                result.put("uri", DocumentsContract.buildDocumentUriUsingTree(treeUri, existing.documentId).toString());
+                result.put("created", false);
+                return result.toString();
             }
+            String mime = mimeType == null || mimeType.trim().isEmpty()
+                    ? "application/octet-stream" : mimeType.trim();
+            Uri created = DocumentsContract.createDocument(activity.getContentResolver(), parent, mime, name);
+            if (created == null) throw new IllegalStateException("Document provider refused file creation.");
+            requireDocumentUri(created.toString(), false);
+            JSONObject result = new JSONObject();
+            result.put("ok", true);
+            result.put("uri", created.toString());
+            result.put("created", true);
+            return result.toString();
+        } catch (Exception error) {
+            ImagePackDiagnostics.error(activity, diagnosticSessionId, requestId,
+                    "native_file_create_failed", error);
+            return failure(error instanceof SecurityException ? "SecurityError" : "NotAllowedError",
+                    "The SAF file could not be created.").toString();
+        }
+    }
+
+    String writeFileJson(String documentUri, String mimeType, String encodedBytes, String requestId) {
+        try {
+            requireWritePermission();
+            Uri fileUri = requireDocumentUri(documentUri, false);
+            Node node = queryDocument(fileUri);
+            if (node.directory) throw new IllegalArgumentException("A directory cannot be written as a file.");
             byte[] bytes = Base64.decode(encodedBytes == null ? "" : encodedBytes, Base64.DEFAULT);
             if (bytes.length > MAX_FILE_BYTES) {
                 return failure("QuotaExceededError", "The image file exceeds the 32 MiB bridge limit.").toString();
             }
-            String mime = mimeType == null || mimeType.trim().isEmpty()
-                    ? "application/octet-stream" : mimeType.trim();
-            Uri parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, parentId);
-            Uri documentUri = existing == null
-                    ? DocumentsContract.createDocument(activity.getContentResolver(), parentUri, mime, name)
-                    : DocumentsContract.buildDocumentUriUsingTree(treeUri, existing.documentId);
-            if (documentUri == null) throw new IllegalStateException("Document provider refused file creation.");
-            try (OutputStream output = activity.getContentResolver().openOutputStream(documentUri, "w")) {
+            try (OutputStream output = activity.getContentResolver().openOutputStream(fileUri, "wt")) {
                 if (output == null) throw new IllegalStateException("Document provider returned no output stream.");
                 output.write(bytes);
                 output.flush();
             }
             JSONObject result = new JSONObject();
             result.put("ok", true);
-            result.put("name", name);
+            result.put("uri", fileUri.toString());
+            result.put("name", node.name);
+            result.put("size", bytes.length);
             return result.toString();
         } catch (Exception error) {
+            ImagePackDiagnostics.error(activity, diagnosticSessionId, requestId,
+                    "native_file_write_failed", error);
             return failure(error instanceof SecurityException ? "SecurityError" : "NotAllowedError",
-                    "The image-pack file could not be written.").toString();
+                    "The SAF document could not be written.").toString();
         }
     }
 
-    String createDirectoryJson(String path) {
+    String createDirectoryJson(String parentUri, String name, String requestId) {
         try {
             requireWritePermission();
-            String[] parts = splitPath(path);
-            if (parts.length == 0) throw new IllegalArgumentException("A directory name is required.");
-            String name = parts[parts.length - 1];
-            String parentId = resolveDirectory(join(parts, parts.length - 1));
+            Uri parent = requireDocumentUri(parentUri, true);
+            validateEntryName(name);
+            String parentId = DocumentsContract.getDocumentId(parent);
             Node existing = findChild(parentId, name);
             if (existing != null) {
                 if (!existing.directory) throw new IllegalArgumentException("A file already uses this name.");
-            } else {
-                Uri parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, parentId);
-                Uri created = DocumentsContract.createDocument(activity.getContentResolver(), parentUri,
-                        DocumentsContract.Document.MIME_TYPE_DIR, name);
-                if (created == null) throw new IllegalStateException("Document provider refused directory creation.");
+                JSONObject result = new JSONObject();
+                result.put("ok", true);
+                result.put("uri", DocumentsContract.buildDocumentUriUsingTree(treeUri, existing.documentId).toString());
+                result.put("created", false);
+                return result.toString();
             }
+            Uri created = DocumentsContract.createDocument(activity.getContentResolver(), parent,
+                    DocumentsContract.Document.MIME_TYPE_DIR, name);
+            if (created == null) throw new IllegalStateException("Document provider refused directory creation.");
+            requireDocumentUri(created.toString(), true);
             JSONObject result = new JSONObject();
             result.put("ok", true);
+            result.put("uri", created.toString());
+            result.put("created", true);
             return result.toString();
         } catch (Exception error) {
+            ImagePackDiagnostics.error(activity, diagnosticSessionId, requestId,
+                    "native_directory_create_failed", error);
             return failure(error instanceof SecurityException ? "SecurityError" : "NotAllowedError",
-                    "The image-pack directory could not be created.").toString();
+                    "The SAF directory could not be created.").toString();
         }
     }
 
-    String deleteEntryJson(String path) {
+    String deleteEntryJson(String documentUri, String requestId) {
         try {
             requireWritePermission();
-            String[] parts = splitPath(path);
-            if (parts.length == 0) throw new IllegalArgumentException("The selected root cannot be deleted.");
-            String parentId = resolveDirectory(join(parts, parts.length - 1));
-            Node node = findChild(parentId, parts[parts.length - 1]);
-            if (node == null) throw new IllegalArgumentException("Entry not found.");
-            Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, node.documentId);
-            if (!DocumentsContract.deleteDocument(activity.getContentResolver(), documentUri)) {
+            Uri entryUri = requireDocumentUri(documentUri, false, true);
+            if (DocumentsContract.getDocumentId(entryUri)
+                    .equals(DocumentsContract.getTreeDocumentId(treeUri))) {
+                throw new SecurityException("The selected SAF root cannot be deleted.");
+            }
+            if (!DocumentsContract.deleteDocument(activity.getContentResolver(), entryUri)) {
                 throw new IllegalStateException("Document provider refused deletion.");
             }
             JSONObject result = new JSONObject();
             result.put("ok", true);
+            result.put("uri", entryUri.toString());
             return result.toString();
         } catch (Exception error) {
+            ImagePackDiagnostics.error(activity, diagnosticSessionId, requestId,
+                    "native_entry_delete_failed", error);
             return failure(error instanceof SecurityException ? "SecurityError" : "NotAllowedError",
-                    "The image-pack entry could not be removed.").toString();
+                    "The SAF entry could not be removed.").toString();
+        }
+    }
+
+    String resolveEntryJson(String parentUri, String targetUri, String requestId) {
+        try {
+            Uri parent = requireDocumentUri(parentUri, true);
+            Uri target = requireDocumentUri(targetUri, false, true);
+            List<String> relative = new ArrayList<>();
+            boolean found = findRelativeDocument(DocumentsContract.getDocumentId(parent),
+                    DocumentsContract.getDocumentId(target), relative, new java.util.HashSet<>(), 0);
+            JSONObject result = new JSONObject();
+            result.put("ok", true);
+            if (found) {
+                JSONArray path = new JSONArray();
+                for (String part : relative) path.put(part);
+                result.put("path", path);
+            } else result.put("path", JSONObject.NULL);
+            return result.toString();
+        } catch (Exception error) {
+            ImagePackDiagnostics.error(activity, diagnosticSessionId, requestId,
+                    "native_entry_resolve_failed", error);
+            return failure(error instanceof SecurityException ? "SecurityError" : "NotFoundError",
+                    "The SAF entry relationship could not be resolved.").toString();
         }
     }
 
@@ -544,25 +601,79 @@ final class ImagePackDirectoryAccess {
         return "Image packs";
     }
 
-    private String resolveDirectory(String path) throws Exception {
-        requireTree();
-        String documentId = DocumentsContract.getTreeDocumentId(treeUri);
-        for (String component : splitPath(path)) {
-            Node child = findChild(documentId, component);
-            if (child == null || !child.directory) throw new IllegalArgumentException("Directory not found.");
-            documentId = child.documentId;
-        }
-        return documentId;
+    private Uri requireDocumentUri(String value, boolean requireDirectory) throws Exception {
+        return requireDocumentUri(value, requireDirectory, false);
     }
 
-    private Node resolveFile(String path) throws Exception {
+    private Uri requireDocumentUri(String value, boolean requireDirectory, boolean eitherKind) throws Exception {
         requireTree();
-        String[] parts = splitPath(path);
-        if (parts.length == 0) throw new IllegalArgumentException("A file name is required.");
-        String parentId = resolveDirectory(join(parts, parts.length - 1));
-        Node node = findChild(parentId, parts[parts.length - 1]);
-        if (node == null || node.directory) throw new IllegalArgumentException("File not found.");
-        return node;
+        if (value == null || value.length() > 8192) throw new IllegalArgumentException("Missing SAF document URI.");
+        Uri candidate = Uri.parse(value);
+        if (!"content".equalsIgnoreCase(candidate.getScheme())
+                || candidate.getAuthority() == null
+                || !candidate.getAuthority().equals(treeUri.getAuthority())
+                || !DocumentsContract.isDocumentUri(activity, candidate)
+                || !DocumentsContract.getTreeDocumentId(candidate).equals(
+                        DocumentsContract.getTreeDocumentId(treeUri))) {
+            throw new SecurityException("The document URI is outside the selected SAF tree.");
+        }
+        Node node = queryDocument(candidate);
+        if (!eitherKind && node.directory != requireDirectory) {
+            throw new IllegalArgumentException(requireDirectory
+                    ? "The selected SAF document is not a directory."
+                    : "The selected SAF document is not a file.");
+        }
+        return DocumentsContract.buildDocumentUriUsingTree(treeUri, node.documentId);
+    }
+
+    private Node queryDocument(Uri documentUri) throws Exception {
+        String documentId = DocumentsContract.getDocumentId(documentUri);
+        String[] projection = {
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE,
+                DocumentsContract.Document.COLUMN_SIZE,
+                DocumentsContract.Document.COLUMN_LAST_MODIFIED
+        };
+        try (Cursor cursor = activity.getContentResolver().query(documentUri, projection, null, null, null)) {
+            if (cursor == null || !cursor.moveToFirst()) throw new IllegalArgumentException("SAF document does not exist.");
+            int idColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
+            int nameColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
+            int mimeColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE);
+            int sizeColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE);
+            int modifiedColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED);
+            String id = idColumn >= 0 ? cursor.getString(idColumn) : documentId;
+            String name = nameColumn >= 0 ? cursor.getString(nameColumn) : null;
+            if (id == null || name == null) throw new IllegalStateException("SAF document metadata is incomplete.");
+            String mime = mimeColumn >= 0 ? cursor.getString(mimeColumn) : null;
+            long size = sizeColumn >= 0 && !cursor.isNull(sizeColumn) ? cursor.getLong(sizeColumn) : -1L;
+            long modified = modifiedColumn >= 0 && !cursor.isNull(modifiedColumn) ? cursor.getLong(modifiedColumn) : -1L;
+            return new Node(id, name, DocumentsContract.Document.MIME_TYPE_DIR.equals(mime),
+                    mime, size, modified);
+        }
+    }
+
+    private void validateEntryName(String name) {
+        if (name == null || name.trim().isEmpty() || name.length() > 255
+                || ".".equals(name) || "..".equals(name) || name.indexOf('/') >= 0
+                || name.indexOf('\\\\') >= 0 || name.indexOf('\\0') >= 0) {
+            throw new IllegalArgumentException("A single valid SAF entry name is required.");
+        }
+    }
+
+    private boolean findRelativeDocument(String parentId, String targetId, List<String> path,
+            java.util.Set<String> visited, int depth) throws Exception {
+        if (parentId.equals(targetId)) return true;
+        if (depth >= 64 || !visited.add(parentId)) return false;
+        for (Node child : queryChildren(parentId)) {
+            path.add(child.name);
+            if (child.documentId.equals(targetId)) return true;
+            if (child.directory && findRelativeDocument(child.documentId, targetId, path, visited, depth + 1)) {
+                return true;
+            }
+            path.remove(path.size() - 1);
+        }
+        return false;
     }
 
     private Node findChild(String parentId, String name) throws Exception {
@@ -602,30 +713,6 @@ final class ImagePackDirectoryAccess {
             }
         }
         return result;
-    }
-
-    private static String[] splitPath(String path) {
-        if (path == null || path.length() > 4096 || path.startsWith("/")
-                || path.indexOf('\\') >= 0 || path.indexOf('\0') >= 0) {
-            throw new IllegalArgumentException("Invalid relative image-pack path.");
-        }
-        if (path.isEmpty()) return new String[0];
-        String[] parts = path.split("/", -1);
-        for (String part : parts) {
-            if (part.isEmpty() || ".".equals(part) || "..".equals(part)) {
-                throw new IllegalArgumentException("Invalid relative image-pack path.");
-            }
-        }
-        return parts;
-    }
-
-    private static String join(String[] parts, int count) {
-        StringBuilder result = new StringBuilder();
-        for (int i = 0; i < count; i++) {
-            if (i > 0) result.append('/');
-            result.append(parts[i]);
-        }
-        return result.toString();
     }
 
     private void finishPending(JSONObject result) {
