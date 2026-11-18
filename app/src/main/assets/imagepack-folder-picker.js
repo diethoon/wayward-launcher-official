@@ -577,12 +577,12 @@
         if (mode !== "read" && mode !== "readwrite") throw new TypeError("Invalid permission mode.");
         const current = await this.queryPermission({ mode });
         if (current === "granted") return "granted";
-        if (mode === "read") return current;
         try {
-          const selection = await nativeRequest("readwrite", uri);
-          if (selection.uri !== permissions.treeUri || selection.writable !== true) return "denied";
-          permissions.writable = true;
-          return "granted";
+          const selection = await nativeRequest(mode, uri);
+          if (selection.uri !== permissions.treeUri) return "denied";
+          if (mode === "readwrite" && selection.writable !== true) return "denied";
+          if (mode === "readwrite") permissions.writable = true;
+          return await this.queryPermission({ mode });
         } catch (error) { if (error && error.name === "AbortError") return "denied"; throw error; }
       },
       async getDirectoryHandle(child, options) {
