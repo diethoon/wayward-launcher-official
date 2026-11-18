@@ -177,6 +177,9 @@
         case "deleteImagePackEntry":
           raw = host.deleteImagePackEntry(args[0], requestId || "");
           break;
+        case "getImagePackFolderInfo":
+          raw = host.getImagePackFolderInfo();
+          break;
         case "resolveImagePackEntry":
           raw = host.resolveImagePackEntry(args[0], args[1], requestId || "");
           break;

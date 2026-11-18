@@ -2455,26 +2455,26 @@ public class MainActivity extends Activity {
                         "NotAllowedError", "Android could not start the system image-pack folder picker.");
             }
         }
-        @JavascriptInterface public String listImagePackDirectoryForRequest(String path, String requestId){
-            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.listDirectoryJson(path,requestId);
+        @JavascriptInterface public String listImagePackDirectoryForRequest(String documentUri, String requestId){
+            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.listDirectoryJson(documentUri,requestId);
         }
-        @JavascriptInterface public String readImagePackFileForRequest(String path, String requestId){
-            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.readFileJson(path,requestId);
+        @JavascriptInterface public String readImagePackFileForRequest(String documentUri, String requestId){
+            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.readFileJson(documentUri,requestId);
         }
-        @JavascriptInterface public String listImagePackDirectory(String path){
-            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.listDirectoryJson(path);
+        @JavascriptInterface public String createImagePackFile(String parentUri,String name,String mime,String requestId){
+            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.createFileJson(parentUri,name,mime,requestId);
         }
-        @JavascriptInterface public String readImagePackFile(String path){
-            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.readFileJson(path);
+        @JavascriptInterface public String writeImagePackFile(String documentUri,String mime,String data,String requestId){
+            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.writeFileJson(documentUri,mime,data,requestId);
         }
-        @JavascriptInterface public String writeImagePackFile(String path,String mime,String data){
-            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.writeFileJson(path,mime,data);
+        @JavascriptInterface public String createImagePackDirectory(String parentUri,String name,String requestId){
+            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.createDirectoryJson(parentUri,name,requestId);
         }
-        @JavascriptInterface public String createImagePackDirectory(String path){
-            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.createDirectoryJson(path);
+        @JavascriptInterface public String deleteImagePackEntry(String documentUri,String requestId){
+            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.deleteEntryJson(documentUri,requestId);
         }
-        @JavascriptInterface public String deleteImagePackEntry(String path){
-            return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.deleteEntryJson(path);
+        @JavascriptInterface public String resolveImagePackEntry(String parentUri,String targetUri,String requestId){
+            return imagePackDirectoryAccess==null?"{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}":imagePackDirectoryAccess.resolveEntryJson(parentUri,targetUri,requestId);
         }
         @JavascriptInterface public String getImagePackFolderInfo(){
             return imagePackDirectoryAccess==null?"{\"ok\":false,\"name\":\"NotFoundError\"}":imagePackDirectoryAccess.getFolderInfoJson();
