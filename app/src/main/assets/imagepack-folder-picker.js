@@ -280,6 +280,9 @@
       }
     };
     Object.defineProperty(handle, "__path", { value: path });
+    if (!path && permissions.uri) {
+      Object.defineProperty(handle, "__waywardSafUri", { value: permissions.uri });
+    }
     rootByHandle.set(handle, permissions.root);
     return handle;
   }
@@ -394,7 +397,7 @@
     }
     const permissions = {
       root: {}, writable: selection.writable === true,
-      requestId: selection.requestId || ""
+      uri: selection.uri || "", requestId: selection.requestId || ""
     };
     diagnose("directory_handle_created", permissions.requestId, {
       directoryHandle: true, handleKind: "directory", writable: permissions.writable

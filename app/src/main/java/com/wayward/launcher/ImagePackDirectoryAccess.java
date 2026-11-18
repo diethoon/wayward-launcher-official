@@ -38,6 +38,7 @@ final class ImagePackDirectoryAccess {
     private Uri treeUri;
     private boolean writable;
     private String pendingRequestId;
+    private String pendingMode;
 
     ImagePackDirectoryAccess(Activity activity, WebView webView, String profileId) {
         this(activity, webView, profileId, "");
@@ -83,6 +84,7 @@ final class ImagePackDirectoryAccess {
                 return;
             }
             pendingRequestId = requestId;
+            pendingMode = mode;
             diagnostic("native_folder_picker_ui_start", requestId, "info",
                     details("permissionBefore", "saf_tree_grant_pending",
                             "requestSource", "showDirectoryPicker", "mode", mode, "requestState", "PENDING"));
@@ -176,14 +178,20 @@ final class ImagePackDirectoryAccess {
                 + " persistable=" + ((resultFlags & Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION) != 0));
 
         boolean persistableFlag = (resultFlags & Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION) != 0;
-        if (!treeUriResult || (grants & Intent.FLAG_GRANT_READ_URI_PERMISSION) == 0 || !persistableFlag) {
+        boolean writeRequired = "readwrite".equals(pendingMode);
+        boolean writeGranted = (grants & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0;
+        if (!treeUriResult || (grants & Intent.FLAG_GRANT_READ_URI_PERMISSION) == 0
+                || !persistableFlag || (writeRequired && !writeGranted)) {
             Log.w(TAG, "picker_result result=rejected reason=invalid_or_non_persistable_tree");
             diagnostic("native_saf_uri_rejected", pendingRequestId, "error",
-                    details("result", "missing_readable_persistable_tree_grant",
+                    details("result", "missing_required_persistable_tree_grant",
                             "treeUri", treeUriResult, "readGranted",
                             (grants & Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0,
+                            "writeRequired", writeRequired, "writeGranted", writeGranted,
                             "persistableGranted", persistableFlag));
-            finishPending(failure("SecurityError", "DocumentsUI did not return a readable, persistable SAF tree."));
+            finishPending(failure("SecurityError", writeRequired && !writeGranted
+                    ? "DocumentsUI did not grant write access to the selected folder."
+                    : "DocumentsUI did not return a readable, persistable SAF tree."));
             return;
         }
 
@@ -218,6 +226,7 @@ final class ImagePackDirectoryAccess {
             JSONObject result = new JSONObject();
             result.put("ok", true);
             result.put("name", displayName);
+            result.put("uri", selected.toString());
             result.put("writable", writable);
             result.put("state", "SUCCESS");
             Log.i(TAG, "picker_result result=success persistedRead=true persistedWrite=" + writable);
@@ -592,6 +601,7 @@ final class ImagePackDirectoryAccess {
     private void finishPending(JSONObject result) {
         String requestId = pendingRequestId;
         pendingRequestId = null;
+        pendingMode = null;
         if (requestId != null) {
             diagnostic("native_folder_picker_result_ready", requestId,
                     result.optBoolean("ok") ? "info" : "warn",

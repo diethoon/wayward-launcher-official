@@ -47,14 +47,36 @@ assert.match(connection, /parseSignedLong\(text, "permissions"\)[\s\S]*permissio
 
 assert.match(connection, /certificateSha256/,
   'the signed Host manifest must bind the TLS certificate fingerprint');
-assert.match(connection, /isPrivateLanIpv4\(uri\.getHost\(\)\)/,
-  'every signed Host URL must be restricted to an RFC1918 LAN IPv4 address');
-assert.match(client, /return new String\[\] \{host\.baseUrl\}/,
-  'Remote Host requests must use the single LAN endpoint without external fallback');
-assert.doesNotMatch(connection, /normalizeExternalBaseUrl|isGloballyRoutableIpv4|externalTestEndpoint|externalBaseUrl|portMapping/,
-  'public IPv4 and external QR implementation must be removed');
-assert.doesNotMatch(client, /externalBaseUrl/,
-  'the client must not retain an external endpoint fallback');
+assert.match(connection, /normalizeExternalBaseUrl/,
+  'the optional Internet endpoint must be restricted to a numeric globally routable HTTPS IPv4 address and port');
+assert.ok(connection.includes("baseUrl.equals(externalBaseUrl)") &&
+  connection.includes('mapping.getString("state")') &&
+  connection.includes('"active".equals(state)') &&
+  connection.includes('"TCP".equalsIgnoreCase(protocol)') &&
+  connection.includes('ownershipState.startsWith("wayward-auto-")') &&
+  connection.includes("internalPort != 8765") &&
+  connection.includes("externalPort != uri.getPort()") &&
+  connection.includes("uri.getHost().equalsIgnoreCase(externalAddress)") &&
+  connection.includes("isPrivateLanIpv4(localAddress)"),
+  'public baseUrl must only be accepted for the strict PC-issued external test QR mapping contract');
+assert.ok(connection.includes("externalTestEndpoint") && connection.includes('value.put("portMapping"'),
+  'validated external mapping metadata must be retained for stored Host revalidation');
+assert.ok(client.includes("endpointCandidates(host)") &&
+  client.includes("host.externalBaseUrl.equalsIgnoreCase(host.baseUrl)"),
+  'identical baseUrl and externalBaseUrl must be deduplicated to one endpoint');
+
+assert.match(connection, /uri\.getPort\(\) < 1[^\n]*uri\.getPort\(\) > 65535/,
+  'the signed external endpoint must validate its supplied port instead of assuming 8765');
+for (const port of [8765, 43210, 50000]) {
+  assert.ok(connection.includes('uri.getPort()') && connection.includes('externalBaseUrl'),
+    `the Android signed endpoint parser must retain support for explicit port ${port}`);
+}
+assert.match(connection, /normalizeExternalBaseUrl\(externalBaseUrl\)/,
+  'the persisted signed external endpoint must pass through the same explicit-port validator');
+assert.match(connection, /externalBaseUrl=.*signedText|externalBaseUrl=/,
+  'the optional Internet endpoint must be bound by the Host Identity signature');
+assert.match(client, /host\.externalBaseUrl/,
+  'Remote Host requests must try the signed external endpoint after the private LAN endpoint fails');
 assert.match(client, /SSLException/,
   'TLS or certificate-pin failures must not trigger a fallback to another endpoint');
 assert.match(client, /writeRequestBody/,

@@ -152,6 +152,12 @@ assert.match(access, /"readwrite"\.equals\(mode\)[\s\S]{0,120}FLAG_GRANT_WRITE_U
   "the Android system request must preserve the caller's read versus readwrite permission mode");
 assert.match(access, /Intent\.FLAG_GRANT_PERSISTABLE_URI_PERMISSION/,
   "the system tree request must ask for a persistable grant");
+assert.match(access, /writeRequired && !writeGranted/,
+  "readwrite requests must fail before replacing a previously persisted tree when SAF grants only read access");
+assert.match(access, /result\.put\("uri", selected\.toString\(\)\)/,
+  "the exact selected SAF content URI must reach the originating session result");
+assert.match(helper, /__waywardSafUri/,
+  "the returned FileSystemDirectoryHandle must retain the exact SAF URI without converting it to a filesystem path");
 assert.match(access, /takePersistableUriPermission\(selected, grants\)/,
   "the selected tree must retain its returned permissions");
 assert.match(access, /getPersistedUriPermissions\(\)/,
