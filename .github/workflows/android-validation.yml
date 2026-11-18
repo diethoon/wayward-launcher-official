@@ -75,6 +75,29 @@ jobs:
           node --check app/src/main/assets/imagepack-folder-picker.js
           node --check app/src/main/assets/wayward-download-bridge.js
 
+      - name: Sequential 4096-byte source forensic scan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          for name in (
+              "app/src/main/assets/imagepack-folder-picker.js",
+              "app/src/main/java/com/wayward/launcher/ImagePackDirectoryAccess.java",
+          ):
+              offset = 0
+              print(f"FILE {name}")
+              with Path(name).open("rb") as source:
+                  while True:
+                      chunk = source.read(4096)
+                      if not chunk:
+                          break
+                      print(f"CHUNK offset={offset} length={len(chunk)} sha256={hashlib.sha256(chunk).hexdigest()}")
+                      offset += len(chunk)
+              print(f"EOF bytes={offset}")
+          PY
+
       - name: Test official launcher scope
         run: |
           node scripts/test-official-scope.cjs
@@ -114,6 +137,8 @@ jobs:
 
       - name: Test native image-pack SAF folder bridge contract
         run: node tests/imagepack-folder-picker-contract.test.mjs
+      - name: Test asynchronous SAF batch protocol and 100k synthetic traversal
+        run: node tests/file-access-engine-batch.test.mjs
       - name: Test generic file-access policy isolation and large-tree safety
         run: node tests/file-access-engine-policy.test.mjs
       - name: Test FAITH 3.0.0 webkitdirectory FileList adapter
