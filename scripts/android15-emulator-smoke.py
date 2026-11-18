@@ -651,6 +651,9 @@ def pick_multiple_documents(
     local_path: pathlib.Path, device_path: str, filenames: tuple[str, str], artifact_name: str
 ) -> None:
     latest = open_download_directory_in_documents_ui(local_path, device_path)
+    artifact_path = ARTIFACTS / artifact_name
+    artifact_stem = pathlib.Path(artifact_name).stem
+    artifact_path.write_text(latest, encoding="utf-8")
     first = node_bounds(latest, (filenames[0],), require_clickable=False)
     if first is None:
         raise RuntimeError("The file picker did not list " + filenames[0])
@@ -660,9 +663,10 @@ def pick_multiple_documents(
     time.sleep(1)
 
     latest = dump_ui(local_path, device_path)
+    (ARTIFACTS / f"{artifact_stem}-selection-mode.xml").write_text(latest, encoding="utf-8")
     second = node_bounds(latest, (filenames[1],), require_clickable=False)
     if second is None:
-        (ARTIFACTS / artifact_name).write_text(latest, encoding="utf-8")
+        artifact_path.write_text(latest, encoding="utf-8")
         raise RuntimeError("The file picker did not list " + filenames[1] + " in multi-select mode.")
     tap_bounds(second)
     time.sleep(1)
@@ -671,10 +675,22 @@ def pick_multiple_documents(
         latest = dump_ui(local_path, device_path)
         action = node_bounds(latest, ("Open", "열기", "Select", "선택", "Done", "완료"))
         if action is not None:
+            missing_selected = [name for name in filenames if name not in latest]
+            if missing_selected:
+                artifact_path.write_text(latest, encoding="utf-8")
+                raise RuntimeError(
+                    "The multi-select confirmation UI lost expected selected files: "
+                    + ", ".join(missing_selected)
+                )
+            # Preserve the successful DocumentsUI state before the confirmation tap.
+            artifact_path.write_text(latest, encoding="utf-8")
+            (ARTIFACTS / f"{artifact_stem}-confirmation.xml").write_text(latest, encoding="utf-8")
+            screenshot(ARTIFACTS / f"{artifact_stem}-confirmation.png")
             tap_bounds(action)
             return
+        (ARTIFACTS / f"{artifact_stem}-selection-progress.xml").write_text(latest, encoding="utf-8")
         time.sleep(1)
-    (ARTIFACTS / artifact_name).write_text(latest, encoding="utf-8")
+    artifact_path.write_text(latest, encoding="utf-8")
     raise RuntimeError("The file picker did not expose its multi-select confirmation action.")
 
 
@@ -741,6 +757,13 @@ def select_download_tree_through_documents_ui(
             time.sleep(1)
             continue
         picker_seen = True
+        entry_path = ARTIFACTS / f"{artifact_prefix}-documentsui-entry.xml"
+        if not entry_path.exists():
+            entry_path.write_text(latest, encoding="utf-8")
+        if artifact_prefix == "android15-main-activity-imagepack":
+            (ARTIFACTS / "android15-main-activity-imagepack-picker.xml").write_text(
+                latest, encoding="utf-8"
+            )
         if use_folder_tapped:
             allow_button = node_bounds(latest, ("Allow", "ALLOW", "허용"))
             if allow_button is not None:
@@ -770,6 +793,10 @@ def select_download_tree_through_documents_ui(
                 (ARTIFACTS / f"{artifact_prefix}-documentsui-picker.xml").write_text(
                     latest, encoding="utf-8"
                 )
+                if artifact_prefix == "android15-main-activity-imagepack":
+                    (ARTIFACTS / "android15-main-activity-imagepack-picker.xml").write_text(
+                        latest, encoding="utf-8"
+                    )
                 screenshot(ARTIFACTS / f"{artifact_prefix}-documentsui-picker.png")
                 tap_bounds(use_folder)
                 use_folder_tapped = True
@@ -801,6 +828,133 @@ def select_download_tree_through_documents_ui(
         + " allow_tapped=" + str(allow_tapped)
         + " last_ui=" + latest[-3500:]
         + " logcat_tail=" + logcat_text[-6000:]
+    )
+
+
+def _chooser_event_details(event: dict) -> dict:
+    details = event.get("details", {})
+    if isinstance(details, str):
+        try:
+            details = json.loads(details) if details else {}
+        except json.JSONDecodeError:
+            return {}
+    return details if isinstance(details, dict) else {}
+
+
+def _is_multiple_file_chooser_mode(mode: object) -> bool:
+    """Accept WebChromeClient MODE_OPEN_MULTIPLE (integer 1) and legacy labels."""
+    # Android WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE is the integer 1.
+    if isinstance(mode, bool):
+        return False
+    if isinstance(mode, int):
+        return mode == 1
+    return str(mode).strip().casefold() in {"1", "multiple", "mode_open_multiple"}
+
+
+def validate_file_chooser_diagnostics(events: list[dict]) -> dict:
+    """Require separate JSON and ZIP requests, native multi-select results, and correlated callbacks."""
+    calls = [event for event in events if event.get("stage") == "web_file_chooser_called"]
+    activity_results = [
+        event for event in events if event.get("stage") == "web_file_chooser_activity_result"
+    ]
+    callbacks = [
+        event for event in events if event.get("stage") == "web_file_chooser_callback_delivered"
+    ]
+
+    def require_call(label: str, markers: tuple[str, ...]) -> dict:
+        matches = [
+            event for event in calls
+            if any(marker in str(_chooser_event_details(event).get("acceptTypes", "")).casefold()
+                   for marker in markers)
+        ]
+        if not matches:
+            raise RuntimeError("The diagnostic ZIP is missing the distinct " + label + " file chooser request.")
+        if len(matches) != 1:
+            raise RuntimeError(
+                "Expected exactly one " + label + " file chooser request; found " + str(len(matches)) + "."
+            )
+        call = matches[0]
+        details = _chooser_event_details(call)
+        request_id = str(call.get("requestId", "")).strip()
+        if not request_id:
+            raise RuntimeError("The " + label + " file chooser request has no correlation ID.")
+        if not _is_multiple_file_chooser_mode(details.get("mode")):
+            raise RuntimeError(
+                "The " + label + " chooser was not opened in MODE_OPEN_MULTIPLE; mode="
+                + repr(details.get("mode")) + "."
+            )
+
+        matching_activity_results = [
+            event for event in activity_results if event.get("requestId") == request_id
+        ]
+        if len(matching_activity_results) != 1:
+            raise RuntimeError(
+                "The " + label + " chooser request " + request_id
+                + " has " + str(len(matching_activity_results)) + " native Activity results."
+            )
+        activity_details = _chooser_event_details(matching_activity_results[0])
+        try:
+            clip_count = int(activity_details.get("clipItemCount", 0))
+        except (TypeError, ValueError):
+            clip_count = 0
+        if activity_details.get("result") != "selected" or clip_count < 2:
+            raise RuntimeError(
+                "The " + label + " chooser native result did not contain at least two selected documents: "
+                + repr(activity_details) + "."
+            )
+
+        matching_callbacks = [
+            event for event in callbacks if event.get("requestId") == request_id
+        ]
+        if len(matching_callbacks) != 1:
+            raise RuntimeError(
+                "The " + label + " chooser request " + request_id
+                + " has " + str(len(matching_callbacks)) + " WebView callbacks; expected exactly one."
+            )
+        callback_details = _chooser_event_details(matching_callbacks[0])
+        try:
+            selected_count = int(callback_details.get("selectedCount", 0))
+        except (TypeError, ValueError):
+            selected_count = 0
+        if callback_details.get("cancelled") is True or selected_count < 2:
+            raise RuntimeError(
+                "The " + label + " chooser WebView callback did not deliver at least two files: "
+                + repr(callback_details) + "."
+            )
+
+        return {
+            "requestId": request_id,
+            "mode": details.get("mode"),
+            "acceptTypes": details.get("acceptTypes"),
+            "nativeClipItemCount": clip_count,
+            "callbackSelectedCount": selected_count,
+        }
+
+    pack_json = require_call("pack.json multi-file", ("application/json", ".json"))
+    zip_files = require_call("ZIP multi-file", ("application/zip", ".zip"))
+    if pack_json["requestId"] == zip_files["requestId"]:
+        raise RuntimeError("The pack.json and ZIP multi-file requests were not independently correlated.")
+    return {"packJson": pack_json, "zip": zip_files}
+
+
+def write_file_chooser_acceptance_evidence(events: list[dict]) -> None:
+    ARTIFACTS.mkdir(parents=True, exist_ok=True)
+    (ARTIFACTS / "imagepack-acceptance-events.ndjson").write_text(
+        "".join(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\\n"
+                for event in events),
+        encoding="utf-8",
+    )
+    logcat = adb("logcat", "-d", "-v", "threadtime", check=False, capture=True)
+    lines = (logcat.stdout or "").splitlines()
+    relevant = [
+        line for line in lines
+        if any(token.casefold() in line.casefold() for token in (
+            "WaywardImagePack", "ImagePack", "WebFileChooser", "AndroidRuntime", "chromium"
+        ))
+    ]
+    (ARTIFACTS / "imagepack-acceptance-logcat.txt").write_text(
+        "\\n".join(relevant[-5000:]) + ("\\n" if relevant else ""),
+        encoding="utf-8",
     )
 
 
@@ -1044,6 +1198,9 @@ window.pickImagePackFolder = async function() {
     single_xml = wait_for_ui_contains(
         picker_local, picker_device, "PASS_PACK_JSON_MULTI_FILES", timeout_seconds=25
     )
+    (ARTIFACTS / "android15-pack-json-multiselect-webview-callback.xml").write_text(
+        single_xml, encoding="utf-8"
+    )
     if "PASS_PACK_JSON_MULTI_FILES" not in single_xml or "pack-one.json" not in single_xml or "pack-two.json" not in single_xml:
         raise RuntimeError("The actual game pack.json multi-file input did not return both selected JSON files.")
     print("PASS: the actual game pack.json multi-file input returned both selected pack files.")
@@ -1054,6 +1211,9 @@ window.pickImagePackFolder = async function() {
     tap_bounds(zip_button)
     pick_multiple_zip_documents(picker_local, picker_device)
     zip_xml = wait_for_ui_contains(picker_local, picker_device, "PASS_ZIP_MULTI_FILES", timeout_seconds=25)
+    (ARTIFACTS / "android15-zip-multiselect-webview-callback.xml").write_text(
+        zip_xml, encoding="utf-8"
+    )
     if "PASS_ZIP_MULTI_FILES" not in zip_xml or "test-one.zip" not in zip_xml or "test-two.zip" not in zip_xml:
         raise RuntimeError("The WebView ZIP multi-select callback did not return both selected URIs.")
     print("PASS: the real game WebView ZIP multi-select callback returned both selected files.")
@@ -1392,18 +1552,18 @@ window.pickImagePackFolder = async function() {
                 and "previous_imagepack_journal_fixture" not in previous_payloads["imagepack.previous.ndjson"]):
             raise RuntimeError("The ZIP did not preserve the seeded previous image-pack journal record.")
         events = [json.loads(line) for line in archive.read("imagepack.ndjson").decode("utf-8").splitlines() if line.strip()]
+        write_file_chooser_acceptance_evidence(events)
         if not events or not any(item.get("requestId") for item in events):
             raise RuntimeError("The ZIP has no correlated image-picker request diagnostics.")
-        chooser_calls = [item for item in events if item.get("stage") == "web_file_chooser_called"]
-        chooser_results = [item for item in events if item.get("stage") == "web_file_chooser_callback_delivered"]
-        json_calls = [item for item in chooser_calls
-                      if "application/json" in str(item.get("details", {}).get("acceptTypes", ""))]
-        multiple_calls = [item for item in chooser_calls
-                          if item.get("details", {}).get("mode") == "multiple"]
-        if not json_calls or not multiple_calls or not chooser_results:
-            raise RuntimeError(
-                "The ZIP is missing pack.json/multiple-file chooser requests or their WebView callback result."
-            )
+        chooser_summary = validate_file_chooser_diagnostics(events)
+        (ARTIFACTS / "android15-file-chooser-correlation.json").write_text(
+            json.dumps(chooser_summary, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        print(
+            "PASS: diagnostics ZIP independently correlates pack.json and ZIP MODE_OPEN_MULTIPLE "
+            "native selections to exactly one WebView callback each; "
+            + json.dumps(chooser_summary, ensure_ascii=False)
+        )
         sensitive_patterns = (
             re.compile(r"(?i)content://[^\s,;\"']+"),
             re.compile(r"(?i)(?:/storage/emulated/\d+|/sdcard|/mnt/user/\d+/primary|/data/(?:user(?:_de)?/\d+|data)|/data/local/tmp)/[^\s,;\"']+"),
@@ -1569,5 +1729,34 @@ if __name__ == "__main__":
         print(f"Android 15 emulator command failed ({error.returncode}): {error.cmd}", file=sys.stderr)
         raise SystemExit(error.returncode or 1)
     except Exception as error:
+        # Always preserve failure evidence, even when the acceptance assertion itself fails.
+        try:
+            ARTIFACTS.mkdir(parents=True, exist_ok=True)
+            journal = adb(
+                "shell", "run-as", PACKAGE, "cat", "files/diagnostics/imagepack.ndjson",
+                check=False, capture=True
+            )
+            if journal.returncode == 0 and (journal.stdout or "").strip():
+                (ARTIFACTS / "imagepack-acceptance-events.ndjson").write_text(
+                    journal.stdout, encoding="utf-8"
+                )
+            logcat = adb("logcat", "-d", "-v", "threadtime", check=False, capture=True)
+            log_lines = (logcat.stdout or "").splitlines()
+            relevant = [
+                line for line in log_lines
+                if any(token.casefold() in line.casefold() for token in (
+                    "WaywardImagePack", "ImagePack", "WebFileChooser", "AndroidRuntime", "chromium"
+                ))
+            ]
+            (ARTIFACTS / "imagepack-acceptance-logcat.txt").write_text(
+                "\\n".join(relevant[-5000:]) + ("\\n" if relevant else ""),
+                encoding="utf-8",
+            )
+            failure_ui = dump_ui(LOCAL_XML, DEVICE_XML)
+            (ARTIFACTS / "android15-acceptance-failure-current-ui.xml").write_text(
+                failure_ui, encoding="utf-8"
+            )
+        except Exception as artifact_error:
+            print("WARN: failure evidence capture also failed: " + str(artifact_error), file=sys.stderr)
         print(f"Android 15 emulator acceptance failed: {error}", file=sys.stderr)
         raise SystemExit(1)
