@@ -56,9 +56,14 @@ final class ImagePackDirectoryAccess {
     }
 
     void openFolderPicker(String requestId, String mode) {
-        if (requestId == null || !requestId.matches("[A-Za-z0-9._:-]{1,128}")
-                || !("read".equals(mode) || "readwrite".equals(mode))) {
+        if (requestId == null || !requestId.matches("[A-Za-z0-9._:-]{1,128}")) {
             diagnostic("native_folder_picker_request_rejected", "", "error", details("result", "invalid_request_id"));
+            return;
+        }
+        if (!("read".equals(mode) || "readwrite".equals(mode))) {
+            diagnostic("native_folder_picker_request_rejected", requestId, "error",
+                    details("result", "invalid_permission_mode"));
+            deliver(requestId, failure("TypeError", "Invalid directory picker permission mode."));
             return;
         }
         diagnostic("native_folder_picker_entered", requestId, "info",
