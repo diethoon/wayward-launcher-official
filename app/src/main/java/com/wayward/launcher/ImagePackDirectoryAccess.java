@@ -29,8 +29,6 @@ final class ImagePackDirectoryAccess {
     static final int REQUEST_CODE = 4106;
     private static final String PREFS = "wayward_launcher";
     private static final String TAG = "WaywardImagePackSAF";
-    private static final String EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY = "com.android.externalstorage.documents";
-    private static final String DEFAULT_INITIAL_DOCUMENT_ID = "primary:Download";
     private static final int MAX_FILE_BYTES = 32 * 1024 * 1024;
 
     private final Activity activity;
@@ -40,7 +38,6 @@ final class ImagePackDirectoryAccess {
     private Uri treeUri;
     private boolean writable;
     private String pendingRequestId;
-    private Uri initialUriForTesting;
 
     ImagePackDirectoryAccess(Activity activity, WebView webView, String profileId) {
         this(activity, webView, profileId, "");
@@ -56,10 +53,6 @@ final class ImagePackDirectoryAccess {
         restorePersistedTree();
         diagnostic("directory_access_backend_ready", "", "info",
                 details("apiLevel", Build.VERSION.SDK_INT, "provider", "saf_tree"));
-    }
-
-    void setInitialUriForTesting(Uri uri) {
-        initialUriForTesting = uri;
     }
 
     void openFolderPicker(String requestId, String mode) {
@@ -95,11 +88,8 @@ final class ImagePackDirectoryAccess {
             if ("readwrite".equals(mode)) requestedFlags |= Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
             picker.addFlags(requestedFlags);
 
-            Uri initialUri = resolveInitialPickerUri();
-            picker.putExtra(DocumentsContract.EXTRA_INITIAL_URI, initialUri);
             Log.i(TAG, "picker_open action=OPEN_DOCUMENT_TREE api=" + Build.VERSION.SDK_INT
-                    + " initial=" + pickerInitialSource()
-                    + " flags=read,write,persistable,prefix");
+                    + " flags=caller_mode,persistable,prefix");
             try {
                 activity.startActivityForResult(picker, REQUEST_CODE);
                 diagnostic("native_saf_activity_launch_requested", requestId, "info",
@@ -118,29 +108,6 @@ final class ImagePackDirectoryAccess {
     void rejectRequest(String requestId, String errorName, String message) {
         if (requestId == null || !requestId.matches("[A-Za-z0-9._:-]{1,128}")) return;
         deliver(requestId, failure(errorName, message));
-    }
-
-    private Uri resolveInitialPickerUri() {
-        if (initialUriForTesting != null) return initialUriForTesting;
-        if (treeUri != null) {
-            try {
-                requireTree();
-                String documentId = DocumentsContract.getTreeDocumentId(treeUri);
-                return DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId);
-            } catch (Exception error) {
-                Log.w(TAG, "picker_initial_uri saved_tree_unavailable error=" +
-                        error.getClass().getSimpleName());
-            }
-        }
-        // Android 10 retains the SAF flow and starts at the shared Download folder.
-        return DocumentsContract.buildDocumentUri(
-                EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY, DEFAULT_INITIAL_DOCUMENT_ID);
-    }
-
-    private String pickerInitialSource() {
-        if (initialUriForTesting != null) return "test";
-        if (treeUri != null) return "saved_tree";
-        return "default_download";
     }
 
     void onResume() {
