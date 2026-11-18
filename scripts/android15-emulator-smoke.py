@@ -591,7 +591,7 @@ def pick_single_document(local_path: pathlib.Path, device_path: str, filename: s
                 and node.attrib.get("text", "").strip() == filename
             ), None)
             card = title
-            while card is not None and card.attrib.get("resource-id") != "com.android.documentsui:id/item_root":
+            while card is not None and card.attrib.get("resource-id") != "com.google.android.documentsui:id/item_root":
                 card = parent_by_child.get(card)
         except ET.ParseError:
             card = None
