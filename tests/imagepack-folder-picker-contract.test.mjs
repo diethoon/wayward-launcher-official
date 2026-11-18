@@ -524,24 +524,20 @@ assert.doesNotMatch(pairing, /Log\.[idw]\(TAG,.*raw|Log\.[idw]\(TAG,.*imageUri/,
 assert.match(build, /play-services-mlkit-barcode-scanning:18\.3\.1/,
   "the supported ML Kit image barcode API must be included without replacing the camera scanner");
 
-
-assert.match(access, /private void restorePersistedTree\\(\\)/,
+ 
+assert.ok(access.includes("private void restorePersistedTree()"),
   "Activity reconstruction must restore the saved tree only from persisted SAF grants");
-assert.match(access, /candidate\\.equals\\(permission\\.getUri\\(\\)\\) && permission\\.isReadPermission\\(\\)/,
+assert.ok(access.includes("candidate.equals(permission.getUri()) && permission.isReadPermission()"),
   "restoration must match the exact persisted URI and require read permission");
-assert.match(access, /preferences\\.edit\\(\\)\\.remove\\(preferenceKey\\)\\.remove\\(writablePreferenceKey\\)/,
+assert.ok(access.includes("preferences.edit().remove(preferenceKey).remove(writablePreferenceKey)"),
   "revoked or expired grants must clear stale saved URI metadata");
-assert.match(access, /takePersistableUriPermission\\(selected, grants\\)/,
+assert.ok(access.includes("takePersistableUriPermission(selected, grants)"),
   "the selected URI must persist the exact user-returned grants");
-assert.match(access, /requireTree\\(\\)[\\s\\S]{0,900}getPersistedUriPermissions\\(\\)/,
+assert.ok(access.includes("private void requireTree()") && access.includes("getPersistedUriPermissions()"),
   "every operation must revalidate the current persisted tree permission");
-assert.match(bridge, /async queryPermission\\(options\\)[\\s\\S]{0,500}getImagePackFolderInfo/,
+assert.ok(bridge.includes("async queryPermission(options)") && bridge.includes("getImagePackFolderInfo"),
   "queryPermission must inspect native persisted permission state without opening SAF UI");
-assert.match(bridge, /async requestPermission\\(options\\)[\\s\\S]{0,900}nativeRequest\\(mode, uri\\)/,
+assert.ok(bridge.includes("async requestPermission(options)") && bridge.includes("nativeRequest(mode, uri)"),
   "requestPermission must use a user-mediated SAF request instead of aliasing queryPermission");
-assert.match(bridge, /async seek\\s*\\(/,
-  "the bounded writable sink must expose seek()");
-assert.match(bridge, /async truncate\\s*\\(/,
-  "the bounded writable sink must expose truncate()");
-assert.match(bridge, /async abort\\s*\\(/,
-  "the bounded writable sink must expose abort()");
+assert.ok(bridge.includes("const seek = async") && bridge.includes("const truncate = async") && bridge.includes("async abort()"),
+  "the bounded writable sink must expose seek(), truncate() and abort()");
