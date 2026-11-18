@@ -544,3 +544,16 @@ assert.ok(bridge.includes("const seek = async") && bridge.includes("const trunca
 
 assert.ok(bridge.includes("visitedFileUris.has(fileUri)") && bridge.includes("repeated file URI"),
   "duplicate SAF file document URIs must be rejected before creating duplicate File objects");
+
+assert.ok(main.includes("__WAYWARD_DIR_START__:") && main.includes("startListDirectory"),
+  "the WMLHost bridge must route SAF directory starts to the native asynchronous worker");
+assert.ok(main.includes("__WAYWARD_DIR_ACK__:") && main.includes("acknowledgeDirectoryBatch"),
+  "the WMLHost bridge must route batch acknowledgements to the matching native request");
+assert.ok(main.includes("__WAYWARD_DIR_CANCEL__:") && main.includes("cancelDirectoryList"),
+  "the WMLHost bridge must propagate request cancellation to the native SAF task");
+assert.ok(main.includes("__WAYWARD_DIR_RELEASE__:") && main.includes("releaseDirectoryTreeForRequest"),
+  "the WMLHost bridge must release the request-scoped SAF tree reference");
+assert.ok(access.includes("void releaseDirectoryTreeForRequest(String requestId)"),
+  "the native SAF bridge must expose request-scoped tree release");
+assert.ok(access.includes("task.attachCursor(cursor)") && access.includes("cursor.close()"),
+  "native cancellation must close an already-open SAF Cursor");
