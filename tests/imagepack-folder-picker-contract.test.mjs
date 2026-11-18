@@ -336,6 +336,12 @@ assert.match(main, /MainActivity\.this\.runOnUiThread\(\(\) ->\s*chooseImagePack
   "the production JavascriptInterface must hand WebView URL access and Activity launch to the UI thread");
 assert.match(main, /private void chooseImagePackFolderOnUiThread\(String requestId, String capability\)/,
   "origin and capability checks must execute within the UI-thread bridge handler");
+assert.match(acceptance, /verifiedTestPageUrl/,
+  "the debug SAF fixture must validate the last trusted WebViewClient URL when loadDataWithBaseURL and WebView.getUrl diverge");
+assert.match(acceptance, /onPageStarted\([\s\S]*?verifiedTestPageUrl = ""/,
+  "a new top-level navigation must clear the previously trusted debug fixture origin");
+assert.match(acceptance, /onPageFinished[\s\S]*?isSameOrigin\(url, TEST_ORIGIN\)[\s\S]*?verifiedTestPageUrl = url/,
+  "the debug fixture may trust only an origin-validated page after it finishes loading");
 assert.match(acceptance, /runOnUiThread\(\(\) -> chooseImagePackFolderOnUiThread\(requestId, capability\)\)/,
   "the Android 15 debug acceptance bridge must use the same WebView thread contract");
 assert.match(main, /recordImagePackDiagnostic\(String requestId/, "JavaScript diagnostics must enter the durable journal through WMLHost");
