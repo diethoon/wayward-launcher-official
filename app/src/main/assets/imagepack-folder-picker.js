@@ -160,28 +160,28 @@
       let raw;
       switch (method) {
         case "listImagePackDirectory":
-          raw = host.listImagePackDirectoryForRequest(args[0], requestId || "");
+          raw = host.listImagePackDirectoryForRequest(nativeCapability, args[0], requestId || "");
           break;
         case "readImagePackFile":
-          raw = host.readImagePackFileForRequest(args[0], requestId || "");
+          raw = host.readImagePackFileForRequest(nativeCapability, args[0], requestId || "");
           break;
         case "createImagePackFile":
-          raw = host.createImagePackFile(args[0], args[1], args[2], requestId || "");
+          raw = host.createImagePackFile(nativeCapability, args[0], args[1], args[2], requestId || "");
           break;
         case "writeImagePackFile":
-          raw = host.writeImagePackFile(args[0], args[1], args[2], requestId || "");
+          raw = host.writeImagePackFile(nativeCapability, args[0], args[1], args[2], requestId || "");
           break;
         case "createImagePackDirectory":
-          raw = host.createImagePackDirectory(args[0], args[1], requestId || "");
+          raw = host.createImagePackDirectory(nativeCapability, args[0], args[1], requestId || "");
           break;
         case "deleteImagePackEntry":
-          raw = host.deleteImagePackEntry(args[0], requestId || "");
+          raw = host.deleteImagePackEntry(nativeCapability, args[0], requestId || "");
           break;
         case "getImagePackFolderInfo":
-          raw = host.getImagePackFolderInfo();
+          raw = host.getImagePackFolderInfo(nativeCapability);
           break;
         case "resolveImagePackEntry":
-          raw = host.resolveImagePackEntry(args[0], args[1], requestId || "");
+          raw = host.resolveImagePackEntry(nativeCapability, args[0], args[1], requestId || "");
           break;
         default:
           throw domError("NotSupportedError", "The native SAF operation is unavailable.");
