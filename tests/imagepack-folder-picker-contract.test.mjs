@@ -485,7 +485,7 @@ assert.match(smoke, /require_clickable: bool = True/, "Android 15 smoke must sup
 assert.match(smoke, /require_clickable=False/, "folder navigation must use bounds for ListView text rows");
 assert.match(readFileSync(new URL("../app/src/debug/java/com/wayward/launcher/ImagePackPickerAcceptanceActivity.java", import.meta.url), "utf8"), /verifyFilesystemOperations/, "Android 15 smoke must exercise filesystem CRUD");
 assert.match(smoke, /symlink_fixture_created = symlink_result\.returncode == 0/, "emulator smoke must detect whether its storage provider supports symlink fixtures");
-assert.match(readFileSync(new URL("../app/src/debug/java/com/wayward/launcher/ImagePackPickerAcceptanceActivity.java", import.meta.url), "utf8"), /verifySymlinkFixture/, "device symlink checks must only claim coverage when the fixture exists");
+assert.match(readFileSync(new URL("../app/src/debug/java/com/wayward/launcher/ImagePackPickerAcceptanceActivity.java", import.meta.url), "utf8"), /buildTreeDocumentUri[\s\S]{0,300}buildDocumentUriUsingTree/, "SAF boundary acceptance must construct an unrelated tree/document URI and require rejection");
 
 console.log("Native image-pack filesystem/SAF versioned bridge contract tests passed.");
 
