@@ -23,6 +23,8 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
     private boolean verifySymlinkFixture;
     private String pickerScript;
     private String folderPickerCapability = "";
+    // loadDataWithBaseURL can report a different WebView.getUrl() value than its trusted page callback.
+    private String verifiedTestPageUrl = "";
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -41,7 +43,21 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
         webView.addJavascriptInterface(new TestWmlHost(), "WMLHost");
         webView.addJavascriptInterface(new AcceptanceBridge(), "AcceptanceBridge");
         webView.setWebViewClient(new WebViewClient() {
+            @Override public void onPageStarted(
+                    WebView view, String url, android.graphics.Bitmap favicon) {
+                if (view == webView) verifiedTestPageUrl = "";
+            }
+
             @Override public void onPageFinished(WebView view, String url) {
+                if (view == webView && ImagePackFolderPickerScript.isSameOrigin(url, TEST_ORIGIN)) {
+                    verifiedTestPageUrl = url;
+                } else if (view == webView) {
+                    verifiedTestPageUrl = "";
+                }
+                Log.i(TAG, "PAGE_FINISHED verifiedOrigin="
+                        + ImagePackFolderPickerScript.isSameOrigin(verifiedTestPageUrl, TEST_ORIGIN)
+                        + " callbackOrigin=" + safeOrigin(url)
+                        + " webViewOrigin=" + safeOrigin(view.getUrl()));
                 ImagePackFolderPickerScript.installAfterPageFinished(
                         view, url, TEST_ORIGIN, pickerScript, installed -> {
                             if (!installed) {
@@ -135,6 +151,15 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
         super.onDestroy();
     }
 
+    private static String safeOrigin(String value) {
+        if (value == null || value.isEmpty()) return "empty";
+        Uri parsed = Uri.parse(value);
+        String scheme = parsed.getScheme();
+        String host = parsed.getHost();
+        if (scheme == null || host == null) return "opaque";
+        return scheme + "://" + host + ":" + parsed.getPort();
+    }
+
     private final class TestWmlHost {
         @JavascriptInterface public void chooseImagePackFolder(String requestId, String capability) {
             // Mirror production: do not call WebView methods on the JavascriptInterface thread.
@@ -143,7 +168,10 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
         private void chooseImagePackFolderOnUiThread(String requestId, String capability) {
             try {
                 boolean trustedOrigin = webView != null
-                        && ImagePackFolderPickerScript.isSameOrigin(webView.getUrl(), TEST_ORIGIN);
+                        && ImagePackFolderPickerScript.isSameOrigin(verifiedTestPageUrl, TEST_ORIGIN);
+                Log.i(TAG, "BRIDGE_ORIGIN verified=" + safeOrigin(verifiedTestPageUrl)
+                        + " webView=" + safeOrigin(webView == null ? null : webView.getUrl())
+                        + " accepted=" + trustedOrigin);
                 boolean trustedCapability = ImagePackFolderPickerScript.matchesCapability(
                         folderPickerCapability, capability);
                 if (!trustedOrigin || !trustedCapability) {
