@@ -48,6 +48,7 @@ jobs:
           6674e7e4f3cdac3112137daefd464128e6798f321c7588f0e5dac7089933e347  app/src/main/res/mipmap-xxhdpi-v4/ic_launcher.png
           06b56917bf8427cc49030781d1763fc06ec26317c907955ad97bf38c18549d18  app/src/main/res/mipmap-xxxhdpi-v4/ic_launcher.png
           SHA256
+          mkdir -p app/src/main/res/mipmap-anydpi-v26 app/src/main/res/values
           cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'XML'
           <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
               <background android:drawable="@color/launcher_icon_background" />
