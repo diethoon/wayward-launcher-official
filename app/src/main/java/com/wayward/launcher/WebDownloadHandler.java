@@ -57,8 +57,8 @@ final class WebDownloadHandler {
                 throw new IllegalArgumentException("Invalid download request identifier.");
             }
             if (filename == null || filename.trim().isEmpty() || filename.length() > 255
-                    || filename.indexOf('/') >= 0 || filename.indexOf('\\\\') >= 0
-                    || filename.indexOf('\\0') >= 0 || ".".equals(filename) || "..".equals(filename)) {
+                    || filename.indexOf('/') >= 0 || filename.indexOf('\\') >= 0
+                    || filename.indexOf('\0') >= 0 || ".".equals(filename) || "..".equals(filename)) {
                 throw new IllegalArgumentException("Invalid suggested download filename.");
             }
             bytes = Base64.decode(encodedBytes == null ? "" : encodedBytes, Base64.DEFAULT);
