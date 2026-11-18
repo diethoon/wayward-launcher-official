@@ -126,6 +126,7 @@ const directoryEntries = new Map([
 const diagnostics = [];
 let chooseCount = 0;
 let capturedId = "";
+let grantedWrite = false;
 let lastChangeTarget = null;
 let windowObject;
 const host = {
@@ -137,6 +138,7 @@ const host = {
     assert.ok(mode === "read" || mode === "readwrite");
     assert.equal(initialUri, mode === "readwrite" ? rootUri : "");
     chooseCount++;
+    if (mode === "readwrite") grantedWrite = true;
     capturedId = requestId;
     setTimeout(() => windowObject.__waywardNativeImagePackPickerDispatch(requestId, {
       ok: true,
@@ -166,7 +168,7 @@ const host = {
     });
   },
   getImagePackFolderInfo() {
-    return JSON.stringify({ ok: true, uri: treeUri, documentUri: rootUri, name: "Faith Library", writable: false });
+    return JSON.stringify({ ok: true, uri: treeUri, documentUri: rootUri, name: "Faith Library", writable: grantedWrite });
   },
   resolveImagePackEntry(capability, parentUri, targetUri) {
     assert.equal(capability, "test-native-capability");
