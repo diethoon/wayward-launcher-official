@@ -153,6 +153,8 @@ assert.match(access, /"readwrite"\.equals\(mode\)[\s\S]{0,120}FLAG_GRANT_WRITE_U
 assert.match(access, /DocumentsContract\.EXTRA_INITIAL_URI/, "the launcher must not override Android DocumentsUI start location");
 assert.match(access, /"readwrite"\.equals\(mode\)[\s\S]{0,120}FLAG_GRANT_WRITE_URI_PERMISSION/,
   "the Android system request must preserve the caller's read versus readwrite permission mode");
+assert.match(access, /writable = writeRequired && persisted\.isWritePermission\(\)/, "read requests never expose a writable directory handle, even if the provider over-grants write");
+assert.match(access, /getBoolean\(writablePreferenceKey, permission\.isWritePermission\(\)\)/, "read-only intent survives process restart even if a stale persisted write grant exists");
 assert.match(access, /Intent\.FLAG_GRANT_PERSISTABLE_URI_PERMISSION/,
   "the system tree request must ask for a persistable grant");
 assert.match(access, /writeRequired && !writeGranted/,

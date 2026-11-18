@@ -34,6 +34,7 @@ final class ImagePackDirectoryAccess {
     private final Activity activity;
     private final WebView webView;
     private final String preferenceKey;
+    private final String writablePreferenceKey;
     private final String diagnosticSessionId;
     private Uri treeUri;
     private boolean writable;
@@ -51,6 +52,7 @@ final class ImagePackDirectoryAccess {
         String safeProfile = profileId == null || !profileId.matches("[A-Za-z0-9_-]{1,80}")
                 ? "default" : profileId;
         preferenceKey = "image_pack_tree_uri_" + safeProfile;
+        writablePreferenceKey = "image_pack_tree_writable_" + safeProfile;
         restorePersistedTree();
         diagnostic("directory_access_backend_ready", "", "info",
                 details("apiLevel", Build.VERSION.SDK_INT, "provider", "saf_tree"));
@@ -199,7 +201,10 @@ final class ImagePackDirectoryAccess {
 
         boolean persistableFlag = (resultFlags & Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION) != 0;
         boolean writeRequired = "readwrite".equals(pendingMode);
-        boolean writeGranted = (grants & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0;
+        boolean writeGranted = writeRequired
+                && (resultFlags & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0;
+        // A read request remains read-only even if a provider returns an extra write grant.
+        if (!writeRequired) grants &= ~Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
         if (!treeUriResult || (grants & Intent.FLAG_GRANT_READ_URI_PERMISSION) == 0
                 || !persistableFlag || (writeRequired && !writeGranted)) {
             Log.w(TAG, "picker_result result=rejected reason=invalid_or_non_persistable_tree");
@@ -237,10 +242,11 @@ final class ImagePackDirectoryAccess {
                             "persistedWrite", persisted.isWritePermission()));
 
             treeUri = selected;
-            writable = persisted.isWritePermission();
+            writable = writeRequired && persisted.isWritePermission();
             String displayName = rootName();
             boolean saved = activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE)
-                    .edit().putString(preferenceKey, selected.toString()).commit();
+                    .edit().putString(preferenceKey, selected.toString())
+                    .putBoolean(writablePreferenceKey, writable).commit();
             if (!saved) throw new IllegalStateException("The image-pack folder URI could not be saved.");
 
             JSONObject result = new JSONObject();
@@ -487,7 +493,8 @@ final class ImagePackDirectoryAccess {
             for (android.content.UriPermission permission : activity.getContentResolver().getPersistedUriPermissions()) {
                 if (candidate.equals(permission.getUri()) && permission.isReadPermission()) {
                     treeUri = candidate;
-                    writable = permission.isWritePermission();
+                    writable = permission.isWritePermission()
+                            && preferences.getBoolean(writablePreferenceKey, permission.isWritePermission());
                     Log.i(TAG, "tree_restore result=success persistedRead=true persistedWrite=" + writable);
                     return;
                 }
@@ -496,7 +503,7 @@ final class ImagePackDirectoryAccess {
             Log.w(TAG, "tree_restore result=failed error=" + error.getClass().getSimpleName());
         }
         Log.w(TAG, "tree_restore result=stale_grant");
-        preferences.edit().remove(preferenceKey).apply();
+        preferences.edit().remove(preferenceKey).remove(writablePreferenceKey).apply();
     }
 
     private void requireTree() {
@@ -508,7 +515,9 @@ final class ImagePackDirectoryAccess {
         writable = false;
         for (android.content.UriPermission permission : activity.getContentResolver().getPersistedUriPermissions()) {
             if (treeUri.equals(permission.getUri()) && permission.isReadPermission()) {
-                writable = permission.isWritePermission();
+                writable = permission.isWritePermission()
+                        && activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE)
+                                .getBoolean(writablePreferenceKey, permission.isWritePermission());
                 granted = true;
                 break;
             }
