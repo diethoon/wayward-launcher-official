@@ -126,6 +126,10 @@ public class MainActivity extends Activity {
     private boolean gamePageLoaded = false;
     private boolean gamePageLoadFailed = false;
     private WebFileChooser webFileChooser;
+    private WebDownloadHandler webDownloadHandler;
+    private String waywardDownloadBridgeScript;
+    private String waywardDownloadBridgeOrigin = "";
+    private boolean waywardDownloadBridgeDocumentStartRegistered;
     private ImagePackDirectoryAccess imagePackDirectoryAccess;
     private String imagePackDiagnosticSessionId = "";
     private String imagePackFolderPickerScript;
@@ -874,6 +878,10 @@ public class MainActivity extends Activity {
             }
             return;
         }
+        if(WebDownloadHandler.isRequestCode(req)){
+            if(webDownloadHandler!=null)webDownloadHandler.handleActivityResult(req,result,data);
+            return;
+        }
         if(req==ImagePackDirectoryAccess.REQUEST_CODE){
             if(imagePackDirectoryAccess!=null)imagePackDirectoryAccess.handleActivityResult(result,data);
             return;
@@ -1290,10 +1298,12 @@ public class MainActivity extends Activity {
                 new JSONObject());
         logGameLifecycle("INFO","game_webview_created",activeProfileId,activeGameLaunchRequestId,
                 "generation_"+webViewGeneration);
+        webDownloadHandler=new WebDownloadHandler(this);
         web.addJavascriptInterface(new HostBridge(),"WMLHost");
         ImagePackDiagnostics.event(this, imagePackDiagnosticSessionId, "", "javascript_interface_registered",
                 "info", null);
         installGoogleAuthBridgeScript(origin);
+        installWaywardDownloadBridge(origin);
         installImageGenDocumentStartScript(origin);
         FolderHandler folderHandler=new FolderHandler(tree,getAssets(),zipMods,origin);
         WebViewAssetLoader loader=new WebViewAssetLoader.Builder().setDomain(domain+":"+originPort).addPathHandler("/game/",folderHandler).build();
@@ -1312,6 +1322,10 @@ public class MainActivity extends Activity {
                 super.onPageStarted(view,url,favicon);
             }
             @Override public void onPageFinished(WebView view,String url){
+                if(!waywardDownloadBridgeDocumentStartRegistered && waywardDownloadBridgeScript!=null
+                        &&ImagePackFolderPickerScript.isSameOrigin(url,waywardDownloadBridgeOrigin)){
+                    view.evaluateJavascript(waywardDownloadBridgeScript,null);
+                }
                 DiagnosticsLogger.event(MainActivity.this,"INFO","webview","page_finished",null);
                 ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, "",
                         "webview_page_finished", "info", ImagePackDiagnostics.pageDetails(url, true));
@@ -1717,6 +1731,32 @@ public class MainActivity extends Activity {
         headers.put("X-Content-Type-Options", "nosniff");
         return new WebResourceResponse("text/plain", "UTF-8", status, reason, headers,
                 new ByteArrayInputStream(body));
+    }
+
+    private void installWaywardDownloadBridge(String origin) {
+        waywardDownloadBridgeOrigin = origin;
+        waywardDownloadBridgeDocumentStartRegistered = false;
+        try (InputStream input = getAssets().open("wayward-download-bridge.js");
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[4096];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                output.write(buffer, 0, count);
+                if (output.size() > 64 * 1024) throw new IllegalStateException("Download bridge script is too large.");
+            }
+            waywardDownloadBridgeScript = new String(output.toByteArray(), StandardCharsets.UTF_8);
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                WebViewCompat.addDocumentStartJavaScript(
+                        web, waywardDownloadBridgeScript, Collections.singleton(origin));
+                waywardDownloadBridgeDocumentStartRegistered = true;
+            }
+            DiagnosticsLogger.event(this, "INFO", "webview", waywardDownloadBridgeDocumentStartRegistered
+                    ? "blob_download_bridge_document_start_registered"
+                    : "blob_download_bridge_page_start_fallback", null);
+        } catch (Exception error) {
+            waywardDownloadBridgeScript = null;
+            DiagnosticsLogger.error(this, "webview", "blob_download_bridge_install_failed", error);
+        }
     }
 
     private void installImageGenDocumentStartScript(String origin) {
@@ -2371,6 +2411,7 @@ public class MainActivity extends Activity {
         refreshStatus();refreshImageGenStatus();renderImageModePanel();
     });}
     private void destroyWeb(){
+        if(webDownloadHandler!=null){webDownloadHandler.cancelPending();webDownloadHandler=null;}
         if(webFileChooser!=null){webFileChooser.cancelPending();webFileChooser=null;}
         if(imagePackDirectoryAccess!=null){imagePackDirectoryAccess.cancelPending();imagePackDirectoryAccess=null;}
         imagePackFolderPickerCapability = "";
@@ -2411,6 +2452,10 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void recordImagePackDiagnostic(String requestId, String stage, String detailsJson){
             ImagePackDiagnostics.javascriptEvent(MainActivity.this, imagePackDiagnosticSessionId,
                     requestId, stage, detailsJson);
+        }
+        @JavascriptInterface public void saveBlobDownload(String requestId,String filename,String mimeType,String base64Bytes){
+            WebDownloadHandler handler=webDownloadHandler;
+            if(handler!=null)handler.requestSave(requestId,filename,mimeType,base64Bytes);
         }
         @JavascriptInterface public void chooseImagePackFolder(String requestId, String capability, String mode, String initialUri){
             // JavascriptInterface methods run on WebView's private background thread.
