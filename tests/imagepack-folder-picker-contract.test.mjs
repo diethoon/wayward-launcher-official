@@ -541,3 +541,6 @@ assert.ok(bridge.includes("async requestPermission(options)") && bridge.includes
   "requestPermission must use a user-mediated SAF request instead of aliasing queryPermission");
 assert.ok(bridge.includes("const seek = async") && bridge.includes("const truncate = async") && bridge.includes("async abort()"),
   "the bounded writable sink must expose seek(), truncate() and abort()");
+
+assert.ok(bridge.includes("visitedFileUris.has(fileUri)") && bridge.includes("repeated file URI"),
+  "duplicate SAF file document URIs must be rejected before creating duplicate File objects");

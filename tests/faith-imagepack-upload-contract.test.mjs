@@ -128,6 +128,7 @@ let chooseCount = 0;
 let capturedId = "";
 let grantedWrite = false;
 let lastChangeTarget = null;
+let cancelNextPicker = false;
 let windowObject;
 const host = {
   recordImagePackDiagnostic(requestId, stage, details) {
@@ -140,14 +141,13 @@ const host = {
     chooseCount++;
     if (mode === "readwrite") grantedWrite = true;
     capturedId = requestId;
-    setTimeout(() => windowObject.__waywardNativeImagePackPickerDispatch(requestId, {
-      ok: true,
-      requestId,
-      uri: treeUri,
-      documentUri: rootUri,
-      name: "Faith Library",
-      writable: mode === "readwrite",
-      state: "SUCCESS"
+    const cancelled = cancelNextPicker;
+    cancelNextPicker = false;
+    setTimeout(() => windowObject.__waywardNativeImagePackPickerDispatch(requestId, cancelled ? {
+      ok: false, name: "AbortError", message: "User cancelled the SAF picker."
+    } : {
+      ok: true, requestId, uri: treeUri, documentUri: rootUri,
+      name: "Faith Library", writable: mode === "readwrite", state: "SUCCESS"
     }), 0);
   },
   listImagePackDirectoryForRequest(capability, uri) {
@@ -356,9 +356,52 @@ assert.equal(chooseCount, 3, "initial upload, DirectoryHandle pick, and second u
 assert.notEqual(input.files, firstSelectionList, "a successful subsequent selection replaces the current FileList");
 assert.equal(firstSelectionList.item(0).name, "faith-pack.js", "the prior FileList reference remains usable");
 
+// SAF cancellation must dispatch cancel and preserve the last successful FileList.
+const beforeCancelList = input.files;
+const cancelCountBefore = inputEvents.filter(type => type === "cancel").length;
+cancelNextPicker = true;
+documentListeners.get("click")(secondClick);
+await new Promise((resolve, reject) => {
+  const deadline = Date.now() + 1500;
+  const poll = () => {
+    if (inputEvents.filter(type => type === "cancel").length > cancelCountBefore) resolve();
+    else if (Date.now() > deadline) reject(new Error("SAF cancellation event timed out"));
+    else setTimeout(poll, 5);
+  };
+  poll();
+});
+assert.equal(input.files, beforeCancelList, "cancelling a new selection preserves the previous successful FileList");
+
+// Repeated SAF document URIs are rejected before a FileList is dispatched.
+const originalRootEntries = directoryEntries.get(rootUri);
+const notesEntry = originalRootEntries.find(entry => entry.name === "notes.txt");
+directoryEntries.set(rootUri, [...originalRootEntries, {
+  ...notesEntry, name: "duplicate-uri.txt"
+}]);
+const errorCountBefore = windowListeners.length;
+documentListeners.get("click")(secondClick);
+await new Promise((resolve, reject) => {
+  const deadline = Date.now() + 1500;
+  const poll = () => {
+    if (windowListeners.length > errorCountBefore) resolve();
+    else if (Date.now() > deadline) reject(new Error("duplicate SAF URI rejection timed out"));
+    else setTimeout(poll, 5);
+  };
+  poll();
+});
+assert.equal(windowListeners.at(-1).type, "waywardfoldererror");
+assert.equal(input.files, beforeCancelList, "a malformed SAF tree must not replace the last successful FileList");
+directoryEntries.set(rootUri, originalRootEntries);
+
+
 // A permission query never opens UI. A write request must go through SAF and
 // only report granted after the same persisted tree is selected writable.
 assert.equal(await directoryHandle.queryPermission({ mode: "readwrite" }), "denied");
+cancelNextPicker = true;
+assert.equal(await directoryHandle.requestPermission({ mode: "readwrite" }), "denied",
+  "a cancelled SAF permission request must not report a grant");
+assert.equal(await directoryHandle.queryPermission({ mode: "readwrite" }), "denied");
+
 assert.equal(await directoryHandle.requestPermission({ mode: "readwrite" }), "granted");
 assert.equal(await directoryHandle.queryPermission({ mode: "readwrite" }), "granted");
 const writable = await packHandle.createWritable({ keepExistingData: false });
