@@ -25,6 +25,11 @@ assert.deepEqual(source.scannerContract.requiredFileMembers, ["name", "text()", 
 assert.ok(source.scannerContract.relativePathMustPreserve.includes("image-packs/"));
 assert.equal(source.scannerContract.javascriptExtension, ".js");
 assert.equal(source.scannerContract.imagePackMarker, "/* WAYWARD_FAITH_IMAGE_PACK */");
+assert.equal(source.nativeUploadAdapter.nativeSelection, "ACTION_OPEN_DOCUMENT_TREE through the shared capability-guarded ImagePackDirectoryAccess SAF backend");
+assert.equal(source.nativeUploadAdapter.fileCollection, "FileList prototype-compatible array-like object with length, item(index), numeric entries, and Symbol.iterator");
+assert.deepEqual(source.nativeUploadAdapter.changeEvents, ["input", "change"]);
+assert.equal(source.nativeUploadAdapter.ordinaryFileInputsUnchanged, true);
+assert.equal(source.nativeUploadAdapter.safetyLimits.maximumReadBytesPerFile, 33554432);
 assert.deepEqual(source.scannerContract.mustRemainUnmodified, ["wfPackFolderButton", "wfPackScanFolder"]);
 
 assert.equal(source.separateLauncherApi.api, "window.showDirectoryPicker");

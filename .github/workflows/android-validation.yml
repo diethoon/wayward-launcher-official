@@ -114,6 +114,8 @@ jobs:
 
       - name: Test native image-pack SAF folder bridge contract
         run: node tests/imagepack-folder-picker-contract.test.mjs
+      - name: Test FAITH 3.0.0 webkitdirectory FileList adapter
+        run: node tests/faith-imagepack-upload-contract.test.mjs
 
       - name: Test Android 15 Recents task parser
         run: python3 tests/android15-recents-parser.test.py

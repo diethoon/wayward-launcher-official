@@ -209,6 +209,352 @@
     return entries;
   }
 
+  // FAITH 3.0.0 uses <input type="file" webkitdirectory multiple>.
+  // This is deliberately a FileList adapter, not a DirectoryHandle alias.
+  const MAX_UPLOAD_FILES = 50000;
+  const MAX_UPLOAD_DEPTH = 128;
+  let uploadPickerBusy = false;
+
+  function safePathSegment(value) {
+    const name = String(value || "");
+    if (!name || name === "." || name === ".." || /[\/\\\0]/.test(name)) {
+      throw domError("NotReadableError", "The selected SAF provider returned an invalid path segment.");
+    }
+    return name;
+  }
+
+  function mimeType(value) {
+    const type = String(value || "").trim().toLowerCase();
+    return /^[a-z0-9!#  function listEntries(directoryUri, requestId) {
+    diagnose("directory_entries_native_call", requestId, { method: "listImagePackDirectory", uriBased: true });
+    const entries = nativeJson("listImagePackDirectory", requestId, directoryUri).entries || [];
+    diagnose("directory_entries_returned", requestId, { entryCount: entries.length });
+    return entries;
+  }
+^_.+-]+\/[a-z0-9!#  function listEntries(directoryUri, requestId) {
+    diagnose("directory_entries_native_call", requestId, { method: "listImagePackDirectory", uriBased: true });
+    const entries = nativeJson("listImagePackDirectory", requestId, directoryUri).entries || [];
+    diagnose("directory_entries_returned", requestId, { entryCount: entries.length });
+    return entries;
+  }
+^_.+-]+$/.test(type) ? type : "";
+  }
+
+  function makeSafBackedFile(entry, relativePath, requestId) {
+    const metadata = {
+      name: safePathSegment(entry.name),
+      size: Number.isFinite(Number(entry.size)) && Number(entry.size) >= 0
+        ? Number(entry.size) : null,
+      type: mimeType(entry.mimeType),
+      lastModified: Number.isFinite(Number(entry.lastModified)) && Number(entry.lastModified) >= 0
+        ? Number(entry.lastModified) : 0,
+      webkitRelativePath: relativePath
+    };
+    const documentUri = String(entry.uri || "");
+    if (!documentUri.startsWith("content://")) {
+      throw domError("SecurityError", "The SAF provider returned a non-content file URI.");
+    }
+
+    let inFlight = null;
+    const loadBytes = () => {
+      if (inFlight) return inFlight;
+      inFlight = Promise.resolve().then(() => {
+        const payload = nativeJson("readImagePackFile", requestId, documentUri);
+        const encoded = String(payload.data || "");
+        let binary;
+        try { binary = atob(encoded); }
+        catch (_) { throw domError("NotReadableError", "The SAF file contents were not valid Base64."); }
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+        if (metadata.size === null) metadata.size = bytes.length;
+        return bytes;
+      }).finally(() => { inFlight = null; });
+      return inFlight;
+    };
+
+    // Keep Blob/File identity and synchronous slice() semantics while deferring
+    // the SAF read until a consumer actually asks for bytes.
+    class SafBackedFile extends Blob {
+      constructor(start, end, contentType) {
+        super([], { type: contentType === undefined ? metadata.type : contentType });
+        this._start = start;
+        this._end = end;
+        Object.defineProperties(this, {
+          name: { value: metadata.name, enumerable: true },
+          size: { value: Math.max(0, end - start), enumerable: true },
+          lastModified: { value: metadata.lastModified, enumerable: true },
+          size: { get: () => Math.max(0, (end === null ? (metadata.size === null ? 0 : metadata.size) : end) - start), enumerable: true },
+          webkitRelativePath: { value: metadata.webkitRelativePath, enumerable: true }
+        });
+      }
+      async arrayBuffer() {
+        const bytes = await loadBytes();
+        const end = this._end === null ? bytes.length : this._end;
+        return bytes.slice(this._start, end).buffer;
+      }
+      async text() {
+        return new TextDecoder().decode(await this.arrayBuffer());
+      }
+      async bytes() {
+        return new Uint8Array(await this.arrayBuffer());
+      }
+      stream() {
+        const file = this;
+        let pendingBytes = null;
+        let offset = 0;
+        return new ReadableStream({
+          async pull(controller) {
+            try {
+              if (pendingBytes === null) pendingBytes = await file.bytes();
+              if (offset >= pendingBytes.length) {
+                controller.close();
+                pendingBytes = null;
+                return;
+              }
+              const end = Math.min(offset + 65536, pendingBytes.length);
+              controller.enqueue(pendingBytes.slice(offset, end));
+              offset = end;
+            } catch (error) {
+              controller.error(error);
+            }
+          }
+        });
+      }
+      slice(start, end, contentType) {
+        const size = this.size;
+        const relativeStart = start === undefined ? 0 : Number(start);
+        const relativeEnd = end === undefined ? size : Number(end);
+        const from = relativeStart < 0
+          ? Math.max(size + relativeStart, 0) : Math.min(relativeStart, size);
+        const to = relativeEnd < 0
+          ? Math.max(size + relativeEnd, 0) : Math.min(relativeEnd, size);
+        const absoluteStart = this._start + Math.trunc(Number.isFinite(from) ? from : 0);
+        const absoluteEnd = end === undefined && this._end === null
+          ? null
+          : this._start + Math.trunc(Math.max(from, Number.isFinite(to) ? to : size));
+        return new SafBackedFile(absoluteStart, absoluteEnd,
+          contentType === undefined ? "" : String(contentType));
+      }
+    }
+    // File.prototype supplies the File brand; Blob's internal slot is created by super().
+    Object.setPrototypeOf(SafBackedFile.prototype, File.prototype);
+    return new SafBackedFile(0, metadata.size, metadata.type);
+  }
+
+  async function enumerateSafTree(rootUri, rootName, requestId) {
+    const rootSegment = safePathSegment(rootName);
+    const visited = new Set();
+    const files = [];
+    let entryCount = 0;
+
+    async function visit(directoryUri, prefix, depth) {
+      if (depth > MAX_UPLOAD_DEPTH) {
+        throw domError("QuotaExceededError", "The selected folder is nested too deeply.");
+      }
+      if (visited.has(directoryUri)) {
+        throw domError("NotReadableError", "The SAF provider returned a repeated directory URI.");
+      }
+      visited.add(directoryUri);
+      const children = listEntries(directoryUri, requestId).slice().sort((left, right) =>
+        String(left.name || "").localeCompare(String(right.name || "")));
+      for (const child of children) {
+        entryCount++;
+        if (entryCount > MAX_UPLOAD_FILES * 2) {
+          throw domError("QuotaExceededError", "The selected folder contains too many entries.");
+        }
+        const name = safePathSegment(child.name);
+        const relativePath = prefix + "/" + name;
+        if (child.kind === "directory") {
+          if (!child.uri || !String(child.uri).startsWith("content://")) {
+            throw domError("SecurityError", "The SAF provider returned an invalid directory URI.");
+          }
+          await visit(String(child.uri), relativePath, depth + 1);
+        } else if (child.kind === "file") {
+          if (files.length >= MAX_UPLOAD_FILES) {
+            throw domError("QuotaExceededError", "The selected folder contains too many files.");
+          }
+          files.push(makeSafBackedFile(child, relativePath, requestId));
+        } else {
+          throw domError("NotReadableError", "The SAF provider returned an unknown entry kind.");
+        }
+      }
+    }
+
+    await visit(rootUri, rootSegment, 0);
+    return files;
+  }
+
+  function makeFileList(files) {
+    const prototype = typeof FileList === "function" ? FileList.prototype : Object.prototype;
+    const list = Object.create(prototype);
+    Object.defineProperty(list, "length", {
+      configurable: false, enumerable: true, get: () => files.length
+    });
+    Object.defineProperty(list, "item", {
+      configurable: false, enumerable: false,
+      value(index) {
+        const position = Number(index);
+        return Number.isInteger(position) && position >= 0 && position < files.length
+          ? files[position] : null;
+      }
+    });
+    Object.defineProperty(list, Symbol.iterator, {
+      configurable: false, enumerable: false,
+      value: function* () { yield* files; }
+    });
+    Object.defineProperty(list, Symbol.toStringTag, { value: "FileList" });
+    files.forEach((file, index) => {
+      Object.defineProperty(list, index, {
+        configurable: false, enumerable: true, value: file
+      });
+    });
+    return list;
+  }
+
+  function isDirectoryUploadInput(input) {
+    if (!input || String(input.type || "").toLowerCase() !== "file") return false;
+    try {
+      return input.webkitdirectory === true ||
+        (typeof input.hasAttribute === "function" && input.hasAttribute("webkitdirectory"));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function findDirectoryUploadInput(event) {
+    const path = event && typeof event.composedPath === "function"
+      ? event.composedPath() : [event && event.target];
+    for (const candidate of path) {
+      if (!candidate || candidate.nodeType !== 1) continue;
+      if (isDirectoryUploadInput(candidate)) return candidate;
+      if (String(candidate.tagName || "").toUpperCase() === "LABEL") {
+        try {
+          if (isDirectoryUploadInput(candidate.control)) return candidate.control;
+          const nested = candidate.querySelector &&
+            candidate.querySelector('input[type="file"][webkitdirectory]');
+          if (isDirectoryUploadInput(nested)) return nested;
+        } catch (_) {}
+      }
+    }
+    return null;
+  }
+
+  function dispatchInputEvent(input, name, bubbles) {
+    const view = input.ownerDocument && input.ownerDocument.defaultView;
+    const EventType = view && view.Event || Event;
+    input.dispatchEvent(new EventType(name, { bubbles: !!bubbles, composed: true }));
+  }
+
+  function dispatchDirectoryFileList(input, files) {
+    const fileList = makeFileList(files);
+    const previous = Object.getOwnPropertyDescriptor(input, "files");
+    let attached = false;
+    try {
+      Object.defineProperty(input, "files", {
+        configurable: true, enumerable: true, get: () => fileList
+      });
+      attached = true;
+      // Match a successful native file selection: input first, then change.
+      dispatchInputEvent(input, "input", true);
+      dispatchInputEvent(input, "change", true);
+    } finally {
+      if (attached) {
+        if (previous) Object.defineProperty(input, "files", previous);
+        else delete input.files;
+      }
+    }
+  }
+
+  function dispatchDirectoryCancel(input) {
+    try { dispatchInputEvent(input, "cancel", false); } catch (_) {}
+  }
+
+  async function chooseDirectoryForFileInput(input) {
+    if (uploadPickerBusy) {
+      diagnose("webkitdirectory_upload_rejected_busy", "", { result: "invalid_state" });
+      return;
+    }
+    uploadPickerBusy = true;
+    let requestId = "";
+    try {
+      diagnose("webkitdirectory_upload_started", "", {
+        multiple: input.multiple === true,
+        frameOrigin: String(location.origin || ""),
+        isTopFrame: window === window.top
+      });
+      const selection = await nativeRequest("read", "");
+      requestId = String(selection.requestId || "");
+      if (!selection.documentUri || !selection.uri) {
+        throw domError("NotReadableError", "Android did not return a SAF tree and root document URI.");
+      }
+      const files = await enumerateSafTree(
+        String(selection.documentUri), String(selection.name || "Image packs"), requestId);
+      if (!files.length) {
+        throw domError("NotFoundError", "The selected folder contains no files.");
+      }
+      dispatchDirectoryFileList(input, files);
+      diagnose("webkitdirectory_upload_dispatched", requestId, {
+        fileCount: files.length, rootName: String(selection.name || ""),
+        multiple: input.multiple === true
+      });
+    } catch (error) {
+      const name = error && error.name || "NotReadableError";
+      const message = String(error && error.message || error).slice(0, 240);
+      diagnose("webkitdirectory_upload_failed", requestId, { errorName: name, message });
+      if (name === "AbortError") dispatchDirectoryCancel(input);
+      try {
+        const view = input.ownerDocument && input.ownerDocument.defaultView || window;
+        view.dispatchEvent(new view.CustomEvent("waywardfoldererror", {
+          detail: { name, message }, bubbles: false
+        }));
+      } catch (_) {}
+    } finally {
+      uploadPickerBusy = false;
+    }
+  }
+
+  function installWebkitDirectoryAdapter() {
+    if (!window.document || window.__waywardWebkitDirectoryAdapterInstalled) return;
+    const onClick = event => {
+      const input = findDirectoryUploadInput(event);
+      if (!input || input.disabled) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      chooseDirectoryForFileInput(input);
+    };
+    document.addEventListener("click", onClick, true);
+
+    // Some applications invoke showPicker() rather than click() or a label.
+    try {
+      const prototype = window.HTMLInputElement && window.HTMLInputElement.prototype;
+      const original = prototype && prototype.showPicker;
+      if (prototype && !prototype.__waywardDirectoryShowPickerPatched) {
+        Object.defineProperty(prototype, "__waywardDirectoryShowPickerPatched", { value: true });
+        Object.defineProperty(prototype, "showPicker", {
+          configurable: true, writable: true,
+          value: function() {
+            if (isDirectoryUploadInput(this)) {
+              if (!this.disabled) chooseDirectoryForFileInput(this);
+              return;
+            }
+            if (typeof original === "function") return original.call(this);
+            throw domError("NotSupportedError", "The native input picker is unavailable.");
+          }
+        });
+      }
+    } catch (error) {
+      diagnose("webkitdirectory_show_picker_patch_unavailable", "", {
+        errorName: error && error.name || "Error"
+      });
+    }
+
+    window.__waywardWebkitDirectoryAdapterInstalled = true;
+    diagnose("webkitdirectory_adapter_installed", "", {
+      installed: true, documentStart: document.readyState === "loading",
+      sameOriginFrame: true
+    });
+  }
+
   function queryHandlePermission(permissions, options) {
     const mode = options && options.mode !== undefined ? options.mode : "read";
     if (mode !== "read" && mode !== "readwrite") throw new TypeError("Invalid permission mode.");
@@ -291,6 +637,9 @@
           });
           throw error;
         }
+      },
+      [Symbol.asyncIterator]() {
+        return this.entries();
       },
       async *values() {
         for await (const pair of this.entries()) yield pair[1];
@@ -456,6 +805,7 @@
     return;
   }
   window.__waywardNativeImagePackPickerInstalled = true;
+  installWebkitDirectoryAdapter();
   diagnose("imagepack_adapter_installed", "", {
     installed: true, bridgeAvailable: true, origin: String(location.origin || ""),
     isTopFrame: window === window.top, storageIdentity: "content-uri"

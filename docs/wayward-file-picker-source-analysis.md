@@ -86,3 +86,18 @@ Do not claim that FAITH itself calls `showDirectoryPicker()` unless that call is
 ## Historical baseline warning
 
 The previous version of this document described `Wayward_WML_ko.html`, including its JSON file inputs and Blob-download behavior. Those findings may remain historically true for that WML blob, but they are unrelated to the FAITH 3.0.0 image-pack folder-upload acceptance criteria. Never reuse that WML analysis as evidence that FAITH folder upload works.
+
+
+## Implemented SAF adapter behavior
+
+The launcher-side adapter now intercepts a capture-phase click only when the event resolves to an \`input[type=file][webkitdirectory]\` or its associated label. It does not treat \`showDirectoryPicker()\` or the generic WebView chooser's multiple mode as evidence of a directory-upload request. This avoids depending on an Android hidden or future chooser mode for the API-35 path.
+
+After the SAF tree is granted, the adapter recursively enumerates child document URIs and constructs a FileList-compatible collection. Each file exposes its metadata and a selected-root-relative \`webkitRelativePath\`; file bytes remain lazy and are read from the SAF document only when \`text()\`, \`arrayBuffer()\`, \`bytes()\`, \`stream()\`, or \`slice()\` is used. The compatibility collection is attached to the original input only while the usual \`input\` and \`change\` events are dispatched.
+
+The separate Directory Picker adapter now also exposes the async iterator protocol in addition to its existing \`entries()\`, \`keys()\`, and \`values()\` methods. Both web adapters reuse the same native SAF tree and document-URI boundary validation, while retaining different web-facing results.
+
+Operational limits are explicit: the current native full-file read bridge is bounded to 32 MiB per file, recursive traversal is bounded to 128 levels and 50,000 files, and the File System Access write path uses bounded in-memory staging. Unsupported picker \`id\` and \`startIn\` forms reject rather than being silently accepted.
+
+### Verification status
+
+The automated contract test exercises FAITH's FileList and relative-path contract, lazy Blob/File read methods, input/change event order, separation from normal file inputs, and the distinct DirectoryHandle flow. It uses a deterministic SAF provider stub; it does not replace Android WebView or real DocumentProvider runtime verification.

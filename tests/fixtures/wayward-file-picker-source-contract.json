@@ -15,12 +15,25 @@
   },
   "scannerContract": {
     "fileCollection": "FileList-compatible",
-    "requiredCollectionMembers": ["length", "item(index)"],
-    "requiredFileMembers": ["name", "text()", "webkitRelativePath"],
-    "relativePathMustPreserve": ["selected-folder-relative hierarchy", "image-packs/"],
+    "requiredCollectionMembers": [
+      "length",
+      "item(index)"
+    ],
+    "requiredFileMembers": [
+      "name",
+      "text()",
+      "webkitRelativePath"
+    ],
+    "relativePathMustPreserve": [
+      "selected-folder-relative hierarchy",
+      "image-packs/"
+    ],
     "javascriptExtension": ".js",
     "imagePackMarker": "/* WAYWARD_FAITH_IMAGE_PACK */",
-    "mustRemainUnmodified": ["wfPackFolderButton", "wfPackScanFolder"]
+    "mustRemainUnmodified": [
+      "wfPackFolderButton",
+      "wfPackScanFolder"
+    ]
   },
   "separateLauncherApi": {
     "api": "window.showDirectoryPicker",
@@ -32,5 +45,33 @@
     "sourcePath": "Wayward_WML_ko.html",
     "sourceBlobSha": "d198eacfc127c55dc44bd5d1b8e29ff2bb7d08e6",
     "reason": "Historical WML contract is not the FAITH 3.0.0 acceptance baseline."
+  },
+  "nativeUploadAdapter": {
+    "requestDetection": "capture-phase click interception for input[type=file][webkitdirectory] and its associated label; never inferred from showDirectoryPicker or FileChooserParams mode",
+    "nativeSelection": "ACTION_OPEN_DOCUMENT_TREE through the shared capability-guarded ImagePackDirectoryAccess SAF backend",
+    "traversal": "recursive SAF document enumeration with normalized relative path segments",
+    "relativePathFormat": "<selected-root-name>/<nested-relative-path>",
+    "fileCollection": "FileList prototype-compatible array-like object with length, item(index), numeric entries, and Symbol.iterator",
+    "fileObject": "lazy SAF-backed Blob subclass with File prototype compatibility and webkitRelativePath",
+    "lazyReadMethods": [
+      "text()",
+      "arrayBuffer()",
+      "bytes()",
+      "stream()",
+      "slice()"
+    ],
+    "changeEvents": [
+      "input",
+      "change"
+    ],
+    "eventTarget": "original file input element; temporary files property is removed after synchronous event dispatch",
+    "cancellation": "AbortError dispatches the input cancel event; other failures dispatch waywardfoldererror and a diagnostic",
+    "safetyLimits": {
+      "maximumFiles": 50000,
+      "maximumDepth": 128,
+      "maximumReadBytesPerFile": 33554432
+    },
+    "ordinaryFileInputsUnchanged": true,
+    "sameOriginFrames": "document-start script is installed for every frame matching the active game origin; runtime fallback remains origin-checked"
   }
 }
