@@ -429,8 +429,11 @@ assert.match(main, /isSameOrigin\(web\.getUrl\(\), imagePackFolderPickerOrigin\)
   "native folder requests verify the active game origin");
 assert.match(access, /native_folder_picker_request_rejected_busy/,
   "overlapping folder requests are rejected without replacing the active request");
-assert.match(main, /listImagePackDirectory\(String path\)/, "WMLHost must preserve the existing directory-list method");
-assert.match(main, /readImagePackFile\(String path\)/, "WMLHost must preserve the existing file-read method");
+assert.match(main, /listImagePackDirectoryForRequest\(String documentUri, String requestId\)/, "WMLHost lists directories by actual SAF document URI and request ID");
+assert.match(main, /readImagePackFileForRequest\(String documentUri, String requestId\)/, "WMLHost reads files by actual SAF document URI and request ID");
+assert.match(main, /createImagePackFile\(String parentUri,String name,String mime,String requestId\)/, "file creation uses its actual parent document URI");
+assert.match(main, /writeImagePackFile\(String documentUri,String mime,String data,String requestId\)/, "file writes use the selected document URI");
+assert.match(main, /resolveImagePackEntry\(String parentUri,String targetUri,String requestId\)/, "directory resolution uses real SAF URI ancestry");
 assert.match(readFileSync(new URL("../app/src/debug/java/com/wayward/launcher/ImagePackPickerAcceptanceActivity.java", import.meta.url), "utf8"), /PASS_FS_DIRECTORY_HANDLE/, "acceptance must inspect a real directory-handle object, enumerate it, and read a file");
 assert.match(smoke, /run_native_folder_acceptance\(\)/, "the Android 15 smoke test must exercise the custom folder browser");
 assert.match(smoke, /run_main_activity_game_session_acceptance\(\)/, "Android 15 must exercise image-pack selection in the real MainActivity game session");
