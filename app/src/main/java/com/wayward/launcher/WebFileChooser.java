@@ -11,6 +11,8 @@ import android.provider.OpenableColumns;
 import android.content.Intent;
 import android.content.res.AssetFileDescriptor;
 import android.net.Uri;
+import android.os.Parcelable;
+import android.provider.MediaStore;
 import android.webkit.MimeTypeMap;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -45,17 +47,21 @@ final class WebFileChooser extends WebChromeClient {
         final int mode;
         final WebFileChooserRequestPolicy.Kind kind;
         final List<String> acceptedTypes;
+        final boolean captureEnabled;
+        final Uri captureOutputUri;
         final String pickerAction;
 
         PendingRequest(ValueCallback<Uri[]> callback, String requestId, int requestCode,
                 int mode, WebFileChooserRequestPolicy.Kind kind,
-                List<String> acceptedTypes, String pickerAction) {
+                List<String> acceptedTypes, boolean captureEnabled, Uri captureOutputUri, String pickerAction) {
             this.callback = callback;
             this.requestId = requestId;
             this.requestCode = requestCode;
             this.mode = mode;
             this.kind = kind;
             this.acceptedTypes = new ArrayList<>(acceptedTypes);
+            this.captureEnabled = captureEnabled;
+            this.captureOutputUri = captureOutputUri;
             this.pickerAction = pickerAction;
         }
     }
@@ -158,8 +164,9 @@ final class WebFileChooser extends WebChromeClient {
         }
 
         int requestCode = nextRequestCode();
+        Uri captureOutputUri = captureEnabled ? findCaptureOutputUri(picker) : null;
         PendingRequest request = new PendingRequest(filePathCallback, requestId, requestCode,
-                mode, kind, acceptedTypes, picker.getAction());
+                mode, kind, acceptedTypes, captureEnabled, captureOutputUri, picker.getAction());
         JSONObject details = ImagePackDiagnostics.pageDetails(
                 webView == null ? null : webView.getUrl(), true);
         try {
@@ -213,8 +220,8 @@ final class WebFileChooser extends WebChromeClient {
         if (captureEnabled) {
             // Preserve WebView's platform chooser Intent for capture-capable requests.
             Intent picker = params.createIntent();
-            if (picker == null || picker.getAction() == null) {
-                throw new IllegalArgumentException("WebView did not provide a capture-capable chooser Intent.");
+            if (picker == null || picker.getAction() == null || !containsLiveCaptureIntent(picker)) {
+                throw new UnsupportedOperationException("WebView did not provide a live media capture Intent for this capture request.");
             }
             picker.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,
                     WebFileChooserRequestPolicy.allowsMultipleFiles(kind));
@@ -296,7 +303,7 @@ final class WebFileChooser extends WebChromeClient {
                 "pickerAction", request.pickerAction,
                 "requestCode", request.requestCode,
                 "resultCode", resultCode,
-                "result", resultCode == Activity.RESULT_OK && data != null ? "selected" : "cancelled",
+                "result", resultCode == Activity.RESULT_OK && (data != null || request.captureOutputUri != null) ? "selected" : "cancelled",
                 "dataPresent", data != null,
                 "clipItemCount", resultClip == null ? 0 : resultClip.getItemCount(),
                 "resultFlags", data == null ? 0 : data.getFlags());
@@ -321,13 +328,13 @@ final class WebFileChooser extends WebChromeClient {
             complete(request, null, "cancelled", "user_cancelled");
             return;
         }
-        if (data == null) {
+        if (data == null && !(request.captureEnabled && request.captureOutputUri != null)) {
             complete(request, null, "result_validation_failed", "missing_result_intent");
             return;
         }
 
         try {
-            Uri[] selected = collectFileResult(request, data);
+            Uri[] selected = collectFileResult(request, resultCode, data);
             if (selected == null || selected.length == 0) {
                 complete(request, null, "result_validation_failed", "empty_selection");
                 return;
@@ -346,17 +353,22 @@ final class WebFileChooser extends WebChromeClient {
         }
     }
 
-    private Uri[] collectFileResult(PendingRequest request, Intent data) throws Exception {
+    private Uri[] collectFileResult(PendingRequest request, int resultCode, Intent data) throws Exception {
         List<Uri> selected = new ArrayList<>();
-        ClipData clip = data.getClipData();
+        ClipData clip = data == null ? null : data.getClipData();
         if (clip != null) {
             for (int i = 0; i < clip.getItemCount(); i++) {
                 Uri uri = clip.getItemAt(i).getUri();
                 if (uri != null && !selected.contains(uri)) selected.add(uri);
             }
         }
-        Uri single = data.getData();
+        Uri single = data == null ? null : data.getData();
         if (single != null && !selected.contains(single)) selected.add(single);
+        if (!request.captureEnabled && !WebFileChooserRequestPolicy.isSave(request.kind)) {
+            Uri[] parsed = FileChooserParams.parseResult(resultCode, data);
+            if (parsed != null) for (Uri uri : parsed) if (uri != null && !selected.contains(uri)) selected.add(uri);
+        }
+        if (request.captureEnabled && selected.isEmpty() && request.captureOutputUri != null) selected.add(request.captureOutputUri);
         if (selected.isEmpty()) {
             throw new IllegalArgumentException("The successful picker result contained no file URI.");
         }
@@ -365,7 +377,7 @@ final class WebFileChooser extends WebChromeClient {
         }
 
         for (Uri uri : selected) {
-            if (!isContentUri(uri)) {
+            if (!isContentUri(uri) && !uri.equals(request.captureOutputUri)) {
                 throw new IllegalArgumentException("The picker returned a non-content URI.");
             }
             if (WebFileChooserRequestPolicy.isSave(request.kind)) {
@@ -374,7 +386,7 @@ final class WebFileChooser extends WebChromeClient {
                 validateReadableUri(uri);
             }
             validateAcceptedFile(uri, request.acceptedTypes);
-            persistReturnedPermission(data, uri);
+            if (data != null) persistReturnedPermission(data, uri);
         }
         return selected.toArray(new Uri[0]);
     }
@@ -438,6 +450,45 @@ final class WebFileChooser extends WebChromeClient {
                     "web_file_chooser_persistable_grant_unavailable", "warn",
                     ImagePackDiagnostics.details("uriAuthority", uri.getAuthority(), "grantFlags", grants));
         }
+    }
+
+    private static boolean isLiveCaptureAction(String action) {
+        return Intent.ACTION_IMAGE_CAPTURE.equals(action)
+                || MediaStore.ACTION_VIDEO_CAPTURE.equals(action)
+                || "android.provider.MediaStore.RECORD_SOUND".equals(action);
+    }
+
+    private static boolean containsLiveCaptureIntent(Intent intent) {
+        if (intent == null) return false;
+        if (isLiveCaptureAction(intent.getAction())) return true;
+        Intent nested = (Intent) intent.getParcelableExtra(Intent.EXTRA_INTENT);
+        if (nested != null && containsLiveCaptureIntent(nested)) return true;
+        Parcelable[] initial = intent.getParcelableArrayExtra(Intent.EXTRA_INITIAL_INTENTS);
+        if (initial != null) {
+            for (Parcelable item : initial) {
+                if (item instanceof Intent && containsLiveCaptureIntent((Intent) item)) return true;
+            }
+        }
+        return false;
+    }
+
+    private static Uri findCaptureOutputUri(Intent intent) {
+        if (intent == null) return null;
+        Uri output = intent.getParcelableExtra(MediaStore.EXTRA_OUTPUT);
+        if (output != null) return output;
+        Intent nested = (Intent) intent.getParcelableExtra(Intent.EXTRA_INTENT);
+        output = findCaptureOutputUri(nested);
+        if (output != null) return output;
+        Parcelable[] initial = intent.getParcelableArrayExtra(Intent.EXTRA_INITIAL_INTENTS);
+        if (initial != null) {
+            for (Parcelable item : initial) {
+                if (item instanceof Intent) {
+                    output = findCaptureOutputUri((Intent) item);
+                    if (output != null) return output;
+                }
+            }
+        }
+        return null;
     }
 
     private static final class PermissionDeniedException extends Exception {
