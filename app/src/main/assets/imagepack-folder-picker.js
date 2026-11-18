@@ -40,7 +40,7 @@
     return result;
   }
 
-  function nativeRequest(mode) {
+  function nativeRequest(mode, initialUri) {
     const id = "imagepack-" + Date.now().toString(36) + "-" +
       (++nextId) + "-" + Math.floor(Math.random() * 1000000000);
     const startedAt = Date.now();
@@ -86,7 +86,7 @@
           bridgeAvailable: typeof host.chooseImagePackFolder === "function",
           isTopFrame: topFrame
         });
-        host.chooseImagePackFolder(id, nativeCapability, mode);
+        host.chooseImagePackFolder(id, nativeCapability, mode, initialUri || "");
         diagnose("wmlhost_choose_folder_call_returned", id, { durationMs: Date.now() - startedAt });
       } catch (error) {
         pending.delete(id);
@@ -389,9 +389,19 @@
 
   const showDirectoryPicker = async function(options) {
     options = options || {};
-    const mode = options.mode || "readwrite";
+    const mode = options.mode === undefined ? "readwrite" : options.mode;
     if (mode !== "read" && mode !== "readwrite") throw new TypeError("Invalid directory picker mode.");
-    const selection = await nativeRequest(mode);
+    if (options.id !== undefined && options.id !== null && String(options.id).length > 0) {
+      throw domError("NotSupportedError", "Android SAF cannot preserve the File System Access picker id.");
+    }
+    let initialUri = "";
+    if (options.startIn !== undefined && options.startIn !== null) {
+      initialUri = String(options.startIn.__waywardSafUri || "");
+      if (!initialUri) {
+        throw domError("NotSupportedError", "Android SAF can only honor startIn when it is a previously selected Wayward SAF directory handle.");
+      }
+    }
+    const selection = await nativeRequest(mode, initialUri);
     if (mode === "readwrite" && selection.writable !== true) {
       throw domError("NotAllowedError", "Android did not grant write access to the selected folder.");
     }
@@ -434,7 +444,7 @@
 
   window.__waywardReadPersistedImagePackRoot = function() {
     const info = nativeJson("getImagePackFolderInfo", "");
-    const permissions = { root: {}, writable: info.writable === true, requestId: "" };
+    const permissions = { root: {}, writable: info.writable === true, uri: info.uri || "", requestId: "" };
     return makeDirectory("", info.name || "Image packs", permissions);
   };
 })();

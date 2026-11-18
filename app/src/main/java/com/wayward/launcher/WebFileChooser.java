@@ -21,6 +21,7 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -45,17 +46,19 @@ final class WebFileChooser extends WebChromeClient {
         final int mode;
         final WebFileChooserRequestPolicy.Kind kind;
         final List<String> acceptedTypes;
+        final List<String> acceptedMimeTypes;
         final String pickerAction;
 
         PendingRequest(ValueCallback<Uri[]> callback, String requestId, int requestCode,
                 int mode, WebFileChooserRequestPolicy.Kind kind,
-                List<String> acceptedTypes, String pickerAction) {
+                List<String> acceptedTypes, List<String> acceptedMimeTypes, String pickerAction) {
             this.callback = callback;
             this.requestId = requestId;
             this.requestCode = requestCode;
             this.mode = mode;
             this.kind = kind;
             this.acceptedTypes = new ArrayList<>(acceptedTypes);
+            this.acceptedMimeTypes = new ArrayList<>(acceptedMimeTypes);
             this.pickerAction = pickerAction;
         }
     }
@@ -149,7 +152,7 @@ final class WebFileChooser extends WebChromeClient {
 
         final Intent picker;
         try {
-            picker = buildPickerIntent(params, kind, accepted, acceptedTypes, captureEnabled);
+            picker = buildPickerIntent(params, kind, accepted, captureEnabled);
         } catch (Exception error) {
             ImagePackDiagnostics.error(activity, diagnosticSessionId, requestId,
                     "web_file_chooser_intent_build_failed", error);
@@ -159,7 +162,7 @@ final class WebFileChooser extends WebChromeClient {
 
         int requestCode = nextRequestCode();
         PendingRequest request = new PendingRequest(filePathCallback, requestId, requestCode,
-                mode, kind, acceptedTypes, picker.getAction());
+                mode, kind, acceptedTypes, accepted, picker.getAction());
         JSONObject details = ImagePackDiagnostics.pageDetails(
                 webView == null ? null : webView.getUrl(), true);
         try {
@@ -168,7 +171,7 @@ final class WebFileChooser extends WebChromeClient {
             details.put("mode", mode);
             details.put("captureEnabled", captureEnabled);
             details.put("mimeTypeCount", accepted.size());
-            details.put("acceptTypes", joinMimeTypes(acceptedTypes));
+            details.put("acceptTypes", joinMimeTypes(accepted));
             details.put("pickerAction", picker.getAction());
             details.put("requestCode", requestCode);
             details.put("titlePresent", params.getTitle() != null);
@@ -195,7 +198,7 @@ final class WebFileChooser extends WebChromeClient {
 
     private Intent buildPickerIntent(FileChooserParams params,
             WebFileChooserRequestPolicy.Kind kind, List<String> accepted,
-            List<String> acceptedTypes, boolean captureEnabled) {
+            boolean captureEnabled) {
         if (WebFileChooserRequestPolicy.isSave(kind)) {
             Intent picker = new Intent(Intent.ACTION_CREATE_DOCUMENT);
             picker.addCategory(Intent.CATEGORY_OPENABLE);
@@ -218,7 +221,7 @@ final class WebFileChooser extends WebChromeClient {
             }
             picker.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,
                     WebFileChooserRequestPolicy.allowsMultipleFiles(kind));
-            if (acceptedTypes != null && !acceptedTypes.isEmpty()) applyMimeTypes(picker, accepted);
+            if (accepted != null && !accepted.isEmpty()) applyMimeTypes(picker, accepted);
             picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
                     | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
             return picker;
@@ -232,6 +235,7 @@ final class WebFileChooser extends WebChromeClient {
                 WebFileChooserRequestPolicy.allowsMultipleFiles(kind));
         picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
                 | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        addTitle(picker, params.getTitle());
         return picker;
     }
 

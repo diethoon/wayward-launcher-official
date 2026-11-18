@@ -56,7 +56,7 @@ final class ImagePackDirectoryAccess {
                 details("apiLevel", Build.VERSION.SDK_INT, "provider", "saf_tree"));
     }
 
-    void openFolderPicker(String requestId, String mode) {
+    void openFolderPicker(String requestId, String mode, String initialUri) {
         if (requestId == null || !requestId.matches("[A-Za-z0-9._:-]{1,128}")) {
             diagnostic("native_folder_picker_request_rejected", "", "error", details("result", "invalid_request_id"));
             return;
@@ -83,6 +83,23 @@ final class ImagePackDirectoryAccess {
                         "Another image-pack folder selection is already in progress."));
                 return;
             }
+            Uri initial = null;
+            if (initialUri != null && !initialUri.isEmpty()) {
+                try {
+                    initial = Uri.parse(initialUri);
+                    if (!"content".equalsIgnoreCase(initial.getScheme())
+                            || !DocumentsContract.isTreeUri(initial)) {
+                        throw new SecurityException("startIn is not a SAF tree URI.");
+                    }
+                    requireTree();
+                    if (!initial.equals(treeUri)) {
+                        throw new SecurityException("startIn is outside the currently persisted SAF tree.");
+                    }
+                } catch (Exception error) {
+                    deliver(requestId, failure("NotAllowedError", "The requested startIn directory is unavailable."));
+                    return;
+                }
+            }
             pendingRequestId = requestId;
             pendingMode = mode;
             diagnostic("native_folder_picker_ui_start", requestId, "info",
@@ -94,6 +111,9 @@ final class ImagePackDirectoryAccess {
                     | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION;
             if ("readwrite".equals(mode)) requestedFlags |= Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
             picker.addFlags(requestedFlags);
+            if (initial != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                picker.putExtra(DocumentsContract.EXTRA_INITIAL_URI, initial);
+            }
 
             Log.i(TAG, "picker_open action=OPEN_DOCUMENT_TREE api=" + Build.VERSION.SDK_INT
                     + " flags=caller_mode,persistable,prefix");
@@ -265,6 +285,7 @@ final class ImagePackDirectoryAccess {
             JSONObject result = new JSONObject();
             result.put("ok", true);
             result.put("name", rootName());
+            result.put("uri", treeUri.toString());
             result.put("writable", writable);
             result.put("state", "SUCCESS");
             return result.toString();

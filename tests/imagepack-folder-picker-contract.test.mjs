@@ -120,6 +120,9 @@ assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT/, "ordinary files and ZIPs mu
 assert.match(bridge, /window\.showDirectoryPicker\s*=/, "the Image Studio directory API must be intercepted at document start");
 assert.match(bridge, /host\.chooseImagePackFolder\(id, nativeCapability, mode\)/,
   "the original File System Access read/readwrite mode must cross the native bridge unchanged");
+assert.match(bridge, /options\\.startIn !== undefined/, "startIn is forwarded or explicitly rejected when unsupported");
+assert.match(bridge, /options\\.id !== undefined/, "unsupported picker id semantics fail explicitly");
+assert.match(access, /DocumentsContract\\.EXTRA_INITIAL_URI/, "SAF startIn is mapped to the native initial URI extra");
 assert.match(bridge, /show_directory_picker_called/, "the actual showDirectoryPicker call must be journaled");
 assert.match(bridge, /wmlhost_choose_folder_call_start/, "the JS-to-native bridge call must be journaled");
 assert.match(bridge, /setTimeout\([\s\S]*?120000/, "a lost native callback must not leave the game Promise pending forever");
