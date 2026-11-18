@@ -1,7 +1,8 @@
 # Loaded from the base side of this isolated recovery PR.
 name: Import Android file-engine v2 source
 on:
-  pull_request:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
     branches: [recovery/android-v2-importer-base-20261119]
     paths:
       - .github/workflows/import-file-engine-v2.yml
