@@ -118,7 +118,7 @@ assert.doesNotMatch(picker, /kind\s*==\s*WebFileChooserRequestPolicy\.Kind\.OPEN
 assert.match(picker, /Intent\.ACTION_OPEN_DOCUMENT/, "ordinary files and ZIPs must retain the SAF document picker");
 
 assert.match(bridge, /window\.showDirectoryPicker\s*=/, "the Image Studio directory API must be intercepted at document start");
-assert.match(bridge, /host\.chooseImagePackFolder\(id, nativeCapability, mode, initialUri \|\| ""\)/,
+assert.match(bridge, /host\.chooseImagePackFolder\(id, nativeCapability, mode, initialDocumentUri \|\| ""\)/,
   "the original File System Access read/readwrite mode must cross the native bridge unchanged");
 assert.match(bridge, /options\.startIn !== undefined/, "startIn is forwarded or explicitly rejected when unsupported");
 assert.match(bridge, /options\.id !== undefined/, "unsupported picker id semantics fail explicitly");
