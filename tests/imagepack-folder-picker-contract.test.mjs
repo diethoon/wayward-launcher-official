@@ -337,7 +337,7 @@ assert.match(main, /isLocalOnlyCharacterImagePath\(/,
   "the existing local-only new-character image policy must remain in place");
 
 assert.match(main, /new ImagePackDirectoryAccess\(this,web,activeProfileId,imagePackDiagnosticSessionId\)/, "the production game WebView must own the request-correlated native image-pack bridge");
-assert.match(main, /MainActivity\.this\.runOnUiThread\(\(\) ->\s*chooseImagePackFolderOnUiThread\(requestId, capability, mode\)\)\)/,
+assert.match(main, /MainActivity\.this\.runOnUiThread\(\(\) ->\s*chooseImagePackFolderOnUiThread\(requestId, capability, mode\)\)/,
   "the production JavascriptInterface must hand WebView URL access and Activity launch to the UI thread");
 assert.match(main, /private void chooseImagePackFolderOnUiThread\(String requestId, String capability, String mode\)/,
   "origin and capability checks must execute within the UI-thread bridge handler");
