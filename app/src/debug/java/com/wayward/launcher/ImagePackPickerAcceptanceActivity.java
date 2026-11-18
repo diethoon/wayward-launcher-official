@@ -20,7 +20,9 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
     private WebView webView;
     private boolean verifyExisting;
     private boolean verifyRevoked;
-    private boolean verifySymlinkFixture;
+    private String initialTreeUri = "";
+    private String revokedTestRootDocumentUri = "";
+    private String revokedTestFileUri = "";
     private String pickerScript;
     private String folderPickerCapability = "";
     // loadDataWithBaseURL can report a different WebView.getUrl() value than its trusted page callback.
@@ -30,11 +32,11 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
         super.onCreate(state);
         verifyExisting = getIntent().getBooleanExtra("verify_existing", false);
         verifyRevoked = getIntent().getBooleanExtra("verify_revoked", false);
-        verifySymlinkFixture = getIntent().getBooleanExtra("verify_symlink_fixture", false);
         webView = new WebView(this);
         webView.getSettings().setJavaScriptEnabled(true);
         webView.getSettings().setDomStorageEnabled(true);
         String initialUri = getIntent().getStringExtra("initial_uri");
+        initialTreeUri = initialUri == null ? "" : initialUri;
         if (initialUri != null && !initialUri.isEmpty()) {
             // Seed the same persisted-URI preference consumed by the production constructor.
             getSharedPreferences("wayward_launcher", MODE_PRIVATE).edit()
@@ -83,7 +85,7 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
             String page = "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'></head>"
                     + "<body><button id='pick'>Choose image-pack folder</button><div id='result'>READY</div>"
                     + "<script>document.getElementById('pick').addEventListener('click',async()=>{"
-                    + "try{const directory=await window.showDirectoryPicker({mode:'read'});"
+                    + "try{const directory=await window.showDirectoryPicker({mode:'readwrite'});"
                     + "if(!directory||directory.kind!=='directory'||typeof directory.getFileHandle!=='function'||typeof directory.entries!=='function')"
                     + "throw new Error('showDirectoryPicker did not return a FileSystemDirectoryHandle-compatible object');"
                     + "const names=[];for await(const [name,handle] of directory.entries())names.push(name);"
@@ -193,20 +195,26 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
                         "Android could not start the system image-pack folder picker.");
             }
         }
-        @JavascriptInterface public String listImagePackDirectory(String path) {
-            return access.listDirectoryJson(path);
+        @JavascriptInterface public String listImagePackDirectoryForRequest(String documentUri, String requestId) {
+            return access.listDirectoryJson(documentUri, requestId);
         }
-        @JavascriptInterface public String readImagePackFile(String path) {
-            return access.readFileJson(path);
+        @JavascriptInterface public String readImagePackFileForRequest(String documentUri, String requestId) {
+            return access.readFileJson(documentUri, requestId);
         }
-        @JavascriptInterface public String writeImagePackFile(String path, String mime, String data) {
-            return access.writeFileJson(path, mime, data);
+        @JavascriptInterface public String createImagePackFile(String parentUri, String name, String mime, String requestId) {
+            return access.createFileJson(parentUri, name, mime, requestId);
         }
-        @JavascriptInterface public String createImagePackDirectory(String path) {
-            return access.createDirectoryJson(path);
+        @JavascriptInterface public String writeImagePackFile(String documentUri, String mime, String data, String requestId) {
+            return access.writeFileJson(documentUri, mime, data, requestId);
         }
-        @JavascriptInterface public String deleteImagePackEntry(String path) {
-            return access.deleteEntryJson(path);
+        @JavascriptInterface public String createImagePackDirectory(String parentUri, String name, String requestId) {
+            return access.createDirectoryJson(parentUri, name, requestId);
+        }
+        @JavascriptInterface public String deleteImagePackEntry(String documentUri, String requestId) {
+            return access.deleteEntryJson(documentUri, requestId);
+        }
+        @JavascriptInterface public String resolveImagePackEntry(String parentUri, String targetUri, String requestId) {
+            return access.resolveEntryJson(parentUri, targetUri, requestId);
         }
         @JavascriptInterface public String getImagePackFolderInfo() {
             return access.getFolderInfoJson();
