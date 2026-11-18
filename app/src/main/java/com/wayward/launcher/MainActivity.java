@@ -2412,13 +2412,13 @@ public class MainActivity extends Activity {
             ImagePackDiagnostics.javascriptEvent(MainActivity.this, imagePackDiagnosticSessionId,
                     requestId, stage, detailsJson);
         }
-        @JavascriptInterface public void chooseImagePackFolder(String requestId, String capability){
+        @JavascriptInterface public void chooseImagePackFolder(String requestId, String capability, String mode){
             // JavascriptInterface methods run on WebView's private background thread.
             // WebView state and native Activity launches must be handled on the UI thread.
             MainActivity.this.runOnUiThread(() ->
-                    chooseImagePackFolderOnUiThread(requestId, capability));
+                    chooseImagePackFolderOnUiThread(requestId, capability, mode));
         }
-        private void chooseImagePackFolderOnUiThread(String requestId, String capability) {
+        private void chooseImagePackFolderOnUiThread(String requestId, String capability, String mode) {
             try {
                 boolean trustedOrigin = web != null && activeProfileId != null
                         && ImagePackFolderPickerScript.isSameOrigin(web.getUrl(), imagePackFolderPickerOrigin)
@@ -2440,7 +2440,7 @@ public class MainActivity extends Activity {
                         ImagePackDiagnostics.details("requestSource", "showDirectoryPicker",
                                 "originValidated", true, "capabilityValidated", true));
                 if (imagePackDirectoryAccess != null) {
-                    imagePackDirectoryAccess.openFolderPicker(requestId);
+                    imagePackDirectoryAccess.openFolderPicker(requestId, mode);
                 } else {
                     ImagePackDiagnostics.event(MainActivity.this, imagePackDiagnosticSessionId, requestId,
                             "wmlhost_directory_access_missing", "error", null);
