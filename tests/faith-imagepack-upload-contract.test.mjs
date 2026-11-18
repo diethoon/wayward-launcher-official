@@ -352,7 +352,7 @@ await new Promise((resolve, reject) => {
   };
   poll();
 });
-assert.equal(chooseCount, 2);
+assert.equal(chooseCount, 3, "initial upload, DirectoryHandle pick, and second upload each use SAF once");
 assert.notEqual(input.files, firstSelectionList, "a successful subsequent selection replaces the current FileList");
 assert.equal(firstSelectionList.item(0).name, "faith-pack.js", "the prior FileList reference remains usable");
 
