@@ -31,7 +31,11 @@ assert.match(picker, /validateWritableUri\(/, "save results require an actual wr
 assert.match(picker, /openFileDescriptor\(uri, "rw"\)/, "save result writability is checked through the content provider");
 assert.match(picker, /persistReturnedPermission\(/, "persistable URI grants are retained when returned");
 assert.match(picker, /picker\.putExtra\(Intent\.EXTRA_ALLOW_MULTIPLE,\s*WebFileChooserRequestPolicy\.allowsMultipleFiles\(kind\)\)/, "capture-capable intents preserve selection cardinality");
-assert.doesNotMatch(picker, /addTitle\(picker, params\.getTitle\(\)\)/, "chooser dialog title is never reused as a document filename");
+assert.match(picker, /addTitle\(picker, params\.getTitle\(\)\)/, "the original chooser title is forwarded on ordinary open requests");
+const saveStart = picker.indexOf("if (WebFileChooserRequestPolicy.isSave(kind))");
+const captureStart = picker.indexOf("if (captureEnabled)", saveStart);
+assert.ok(saveStart >= 0 && captureStart > saveStart, "save and capture request branches remain distinct");
+assert.doesNotMatch(picker.slice(saveStart, captureStart), /params\.getTitle\(\)/, "save dialog title is never reused as the suggested filename");
 assert.match(policy, /MODE_OPEN_MULTIPLE = 1/, "mode 1 is multiple files");
 assert.match(policy, /default: return Kind\.UNSUPPORTED/, "folder mode is not diverted through generic file chooser");
 assert.match(policy, /MODE_OPEN = 0/, "mode 0 is one file");
