@@ -161,7 +161,7 @@ assert.match(access, /writeRequired && !writeGranted/,
   "readwrite requests must fail before replacing a previously persisted tree when SAF grants only read access");
 assert.match(access, /result\.put\("uri", selected\.toString\(\)\)/,
   "the exact selected SAF content URI must reach the originating session result");
-assert.match(bridge, /__waywardSafUri/,
+assert.match(bridge, /__waywardSafDocumentUri/,
   "the returned FileSystemDirectoryHandle must retain the exact SAF URI without converting it to a filesystem path");
 assert.match(access, /takePersistableUriPermission\(selected, grants\)/,
   "the selected tree must retain its returned permissions");
@@ -186,7 +186,15 @@ assert.match(access, /DocumentsContract\.buildChildDocumentsUriUsingTree/,
   "subdirectory enumeration remains provider-backed");
 assert.match(access, /DocumentsContract\.buildDocumentUriUsingTree/,
   "file access remains provider-backed without assuming a local path");
-assert.match(access, /openInputStream\(documentUri\)/,
+assert.match(bridge, /__waywardSafDocumentUri/, "each handle stores its actual SAF document URI");
+assert.doesNotMatch(bridge, /__path|childPath|parentPath/, "no synthetic path is used as a document identity");
+assert.match(bridge, /createImagePackFile/, "file creation is addressed by the actual parent document URI");
+assert.match(bridge, /resolveImagePackEntry/, "directory resolve uses native SAF URI ancestry");
+assert.match(access, /requireDocumentUri\(/, "native methods validate document URIs against the selected tree");
+assert.match(access, /DocumentsContract\.getDocumentId\(directoryUri\)/, "directory listing starts from the actual document URI");
+assert.match(access, /item\.put\("uri", DocumentsContract\.buildDocumentUriUsingTree/, "listed entries return actual child document URIs");
+assert.doesNotMatch(access, /splitPath\(|resolveDirectory\(String path\)|resolveFile\(String path\)/, "synthetic relative path resolution is removed");
+assert.match(access, /openInputStream\(fileUri\)/,
   "image files are streamed from the SAF provider");
 assert.match(access, /createDocument\(/,
   "image-pack file and folder operations remain on the SAF provider");
