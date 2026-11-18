@@ -57,7 +57,7 @@ assert.match(picker, /web_file_chooser_result_status/, "final result status is j
 assert.match(main, /web\.setWebChromeClient\(webFileChooser\)/, "the game WebView uses this chooser client");
 assert.match(main, /WebFileChooser\.isRequestCode\(req\)/, "request-specific Activity results are routed");
 assert.doesNotMatch(main, /req==WebFileChooser\.REQUEST_CODE/, "no shared fixed chooser result code remains");
-assert.match(folderBridge, /host\.chooseImagePackFolder\(id, nativeCapability, mode, initialUri \|\| ""\)/,
+assert.match(folderBridge, /host\\.chooseImagePackFolder\\(id, nativeCapability, mode, initialDocumentUri \\|\\| ""\\)/,
   "showDirectoryPicker forwards its permission mode and startIn URI through the capability-guarded native bridge");
 assert.doesNotMatch(picker, /MODE_OPEN_MULTIPLE[\s\S]{0,400}ACTION_OPEN_DOCUMENT_TREE/,
   "MODE_OPEN_MULTIPLE must never imply folder selection");
