@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import { createHash } from "node:crypto";
 
 const fixture = JSON.parse(readFileSync(
   new URL("./fixtures/wayward-file-picker-source-contract.json", import.meta.url), "utf8"));
@@ -24,6 +25,14 @@ assert.equal(fixture.imagePackFolderInput.scanFunction, "wfPackScanFolder");
 assert.deepEqual(fixture.scannerContract.requiredCollectionMembers, ["length", "item(index)"]);
 assert.deepEqual(fixture.scannerContract.requiredFileMembers, ["name", "text()", "webkitRelativePath"]);
 assert.equal(fixture.scannerContract.imagePackMarker, "/* WAYWARD_FAITH_IMAGE_PACK */");
+for (const [name, source] of Object.entries(fixture.sourceFunctions)) {
+  const bytes = Buffer.from(source.code, "utf8");
+  const blobSha = createHash("sha1").update(Buffer.concat([Buffer.from("blob " + bytes.length + "\0"), bytes])).digest("hex");
+  assert.equal(blobSha, source.gitBlobSha, name + " fixture must be byte-identical to its extracted source snippet");
+  assert.ok(source.startByte < source.endByteExclusive);
+}
+assert.equal(fixture.sourceFunctions.wfPackFolderButton.code.includes("await wfPackScanFolder(i.target.files)"), true);
+assert.equal(fixture.sourceFunctions.wfPackScanFolder.code.startsWith("async function wfPackScanFolder("), true);
 
 assert.match(asset, /function isDirectoryUploadInput\s*\(/,
   "real webkitdirectory input elements must be identified independently of FSA calls");
@@ -98,7 +107,7 @@ const rootUri = "content://com.android.externalstorage.documents/tree/primary%3A
 const packsUri = rootUri + "%2Fimage-packs";
 const nestedUri = rootUri + "%2Fimage-packs%2Fcharacters";
 const scriptUri = rootUri + "%2Fimage-packs%2Fcharacters%2Ffaith-pack.js";
-const packSource = "/* WAYWARD_FAITH_IMAGE_PACK */\nwindow.__FAITH_PACK_FIXTURE__ = true;";
+const packSource = "/* WAYWARD_FAITH_IMAGE_PACK */\n{\"packId\":\"faith-fixture-pack\",\"wfImagePack\":{\"character\":\"faith-fixture\",\"basic\":true,\"part\":\"\"},\"entryCount\":1,\"generatedAt\":\"2026-11-19\"}";
 const packBytes = Buffer.from(packSource, "utf8");
 const base64Pack = packBytes.toString("base64");
 
@@ -117,6 +126,7 @@ const directoryEntries = new Map([
 const diagnostics = [];
 let chooseCount = 0;
 let capturedId = "";
+let lastChangeTarget = null;
 let windowObject;
 const host = {
   recordImagePackDiagnostic(requestId, stage, details) {
@@ -124,7 +134,7 @@ const host = {
   },
   chooseImagePackFolder(requestId, capability, mode, initialUri) {
     assert.equal(capability, "test-native-capability");
-    assert.equal(mode, "read");
+    assert.ok(mode === "read" || mode === "readwrite");
     assert.equal(initialUri, "");
     chooseCount++;
     capturedId = requestId;
@@ -134,13 +144,18 @@ const host = {
       uri: treeUri,
       documentUri: rootUri,
       name: "Faith Library",
-      writable: false,
+      writable: mode === "readwrite",
       state: "SUCCESS"
     }), 0);
   },
   listImagePackDirectoryForRequest(capability, uri) {
     assert.equal(capability, "test-native-capability");
     return JSON.stringify({ ok: true, uri, entries: directoryEntries.get(uri) || [] });
+  },
+  writeImagePackFile(capability, uri, mimeType, encoded) {
+    assert.equal(capability, "test-native-capability");
+    host.lastWrite = { uri, mimeType, encoded };
+    return JSON.stringify({ ok: true, uri, size: Buffer.from(encoded, "base64").length });
   },
   readImagePackFileForRequest(capability, uri) {
     assert.equal(capability, "test-native-capability");
@@ -244,6 +259,7 @@ Object.assign(input, {
     inputEvents.push(event.type);
     if (event.type === "change") {
       receivedFiles = this.files;
+      lastChangeTarget = event.target;
       changeResolve();
     }
     return true;
@@ -267,6 +283,7 @@ await Promise.race([
 
 assert.deepEqual(inputEvents, ["input", "change"]);
 assert.equal(receivedFiles instanceof FakeFileList, true);
+assert.equal(input.files, receivedFiles, "the FileList remains attached after synchronous event dispatch");
 assert.equal(receivedFiles.length, 2);
 assert.equal(receivedFiles.item(0).name, "faith-pack.js");
 assert.equal(receivedFiles.item(1).name, "notes.txt");
@@ -315,4 +332,48 @@ assert.equal(await (await packHandle.getFile()).text(), packSource);
 assert.deepEqual(await directoryHandle.resolve(characters), ["image-packs", "characters"]);
 assert.equal(await directoryHandle.queryPermission({ mode: "read" }), "granted");
 
-console.log("FAITH 3.0.0 webkitdirectory FileList and separate DirectoryHandle contracts passed.");
+// Execute the exact original FAITH scanner function from the pinned HTML fixture.
+function makeFaithScanner() {
+  const registrations = [];
+  const scannerContext = {
+    wfPackCatalogues: {},
+    wfPackParseScript(source) { return JSON.parse(source.slice("/* WAYWARD_FAITH_IMAGE_PACK */".length).trim()); },
+    wfPackValidate(parsed, cataloguePath) { return { ...parsed, cataloguePath, entries: [] }; },
+    wfPackInstalled() { return []; }, wfPackFreezeSelections() {}, wfPackLinkExtensions() {},
+    wfPackDropOrphans() {}, wfPackRefreshClothes() {}, ND() {},
+    Rt: { getState: () => ({ set: state => registrations.push(...state.wfImagePacks) }) },
+    Object, Array, Set, String, Date, JSON, Error
+  };
+  return { scan: vm.runInNewContext("(" + fixture.sourceFunctions.wfPackScanFolder.code + ")", scannerContext), registrations };
+}
+const faith = makeFaithScanner();
+assert.equal(await faith.scan(receivedFiles), 1, "original FAITH scanner must register the adapter-provided FileList");
+assert.equal(faith.registrations[0].packId, "faith-fixture-pack");
+assert.equal(faith.registrations[0].cataloguePath, "image-packs/characters/faith-pack.js");
+assert.equal(input.files, receivedFiles, "input.files remains accessible after awaited File.text()");
+function scannerFile(name, path, source, read) { return { name, webkitRelativePath: path, text: read || (async () => source) }; }
+function sourcePack(id) { return "/* WAYWARD_FAITH_IMAGE_PACK */\\n" + JSON.stringify({packId:id,wfImagePack:{character:id,basic:true,part:""},entryCount:1,generatedAt:"2026-11-19"}); }
+const multi = makeFaithScanner();
+assert.equal(await multi.scan([
+ scannerFile("한글.js","Root/image-packs/deep/한글 폴더/one.js",sourcePack("one")),
+ scannerFile("two.js","Root/image-packs/a/b/c/two.js",sourcePack("two")),
+ scannerFile("same.js","Root/image-packs/other/same.js",sourcePack("three")),
+ scannerFile("same.js","Root/image-packs/duplicate/same.js",sourcePack("four")),
+ scannerFile("outside.js","Root/mods/outside.js",sourcePack("ignored")),
+ scannerFile("special-#?.js","Root/image-packs/special-#?/special-#?.js",sourcePack("special"))
+]),5,"nested, Unicode, special names and duplicate basenames are handled; non-image-packs paths are ignored");
+await assert.rejects(()=>makeFaithScanner().scan([scannerFile("bad.js","Root/mods/bad.js",sourcePack("bad"))]),/image-packs 폴더에서 이미지팩을 찾지 못했습니다/);
+await assert.rejects(()=>makeFaithScanner().scan([scannerFile("bad.js","Root/image-packs/bad.js","/* invalid */")]),/image-packs 폴더에서 이미지팩을 찾지 못했습니다/);
+await assert.rejects(()=>makeFaithScanner().scan([scannerFile("empty.js","Root/image-packs/empty.js","")]),/image-packs 폴더에서 이미지팩을 찾지 못했습니다/);
+await assert.rejects(()=>makeFaithScanner().scan([scannerFile("denied.js","Root/image-packs/denied.js","",async()=>{throw new Error("SAF read denied");})]),/SAF read denied/);
+await assert.rejects(()=>makeFaithScanner().scan([scannerFile("one.js","A/image-packs/one.js",sourcePack("dup")),scannerFile("two.js","B/image-packs/two.js",sourcePack("dup"))]),/같은 ID의 이미지팩이 두 폴더에 있습니다/);
+let releaseRead;
+const delayedSource=sourcePack("delayed");
+const delayedFile=scannerFile("delayed.js","Root/image-packs/delayed.js",delayedSource,()=>new Promise(resolve=>{releaseRead=()=>resolve(delayedSource);}));
+const overlap=makeFaithScanner();
+const pendingFirst=overlap.scan([delayedFile]);
+assert.equal(await overlap.scan([scannerFile("second.js","Root/image-packs/second.js",sourcePack("second"))]),1);
+releaseRead();
+assert.equal(await pendingFirst,1,"the first scan retains its File object snapshot after a subsequent selection starts.");
+
+console.log("Pinned FAITH scanner integration, async FileList lifetime and separate DirectoryHandle contracts passed.");
