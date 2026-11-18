@@ -1,15 +1,10 @@
 package com.wayward.launcher;
 
-/**
- * Explicit WebView chooser-mode semantics. MODE_OPEN_FOLDER is API 37;
- * keep the numeric value here so the app can still compile against SDK 35.
- */
+/** File-only WebView chooser semantics; folder selection belongs to the session SAF bridge. */
 final class WebFileChooserRequestPolicy {
     static final int MODE_OPEN = 0;
     static final int MODE_OPEN_MULTIPLE = 1;
     static final int MODE_SAVE = 3;
-    static final int PERMISSION_MODE_READ = 0;
-    static final int PERMISSION_MODE_READ_WRITE = 1;
 
     enum Kind { OPEN_SINGLE, OPEN_MULTIPLE, SAVE, UNSUPPORTED }
 
