@@ -51,8 +51,7 @@ assert.match(analysis, /historical.*baseline warning/i);
 
 assert.match(matrix, /Wayward_Faith_v3\.0\.0\.html/);
 assert.match(matrix, /ac6b44ccb75584383ad2875f4f36a55138c228cf/);
-assert.match(matrix, /DirectoryHandle is not a FileList/);
-assert.match(matrix, /Tree URI is not a FileList/);
+assert.match(matrix, /A DirectoryHandle is not a FileList, and a SAF Tree URI is not a FileList/);
 assert.match(matrix, /API 35/);
 
 console.log("FAITH 3.0.0 source identity and picker contract baseline passed.");
