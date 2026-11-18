@@ -1,7 +1,7 @@
 name: Import Android file-engine v2 source
 on:
   pull_request:
-    branches: [work/android-faith-finalize-20261119]
+    branches: [recovery/android-v2-importer-base-20261119]
     paths:
       - .github/workflows/import-file-engine-v2.yml
 permissions:
