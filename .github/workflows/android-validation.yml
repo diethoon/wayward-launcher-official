@@ -294,6 +294,8 @@ jobs:
             grep -F "application-label:'WWL'" "$RUNNER_TEMP/$variant-badging.txt"
             grep -F 'com.wayward.launcher.official' "$RUNNER_TEMP/$variant-badging.txt"
             unzip -Z1 "$apk" > "$RUNNER_TEMP/$variant-entries.txt"
+            echo "-- $variant launcher archive entries --"
+            grep -i "launcher" "$RUNNER_TEMP/$variant-entries.txt" || true
             grep -F 'ic_launcher.xml' "$RUNNER_TEMP/$variant-entries.txt"
             grep -F 'ic_launcher_round.xml' "$RUNNER_TEMP/$variant-entries.txt"
             grep -F 'ic_launcher_foreground.png' "$RUNNER_TEMP/$variant-entries.txt"
