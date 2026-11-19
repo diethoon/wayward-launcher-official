@@ -39,7 +39,7 @@ jobs:
       # WAL_PATCH_APPLY_START
       # One-time bootstrap: patch the three source files before validation.
       - name: Apply staged WAL and SAF source patches
-        if: github.ref == 'refs/heads/work/wal-saf-deadlock-ui-20261119-retry'
+        if: github.ref == 'refs/heads/work/wal-saf-deadlock-ui-20261119-retry' || github.head_ref == 'work/wal-saf-deadlock-ui-20261119-retry'
         run: |
           set -euo pipefail
           git apply --check patches/wal-saf-source.patch
@@ -404,7 +404,7 @@ jobs:
           retention-days: 14
       # WAL_PATCH_PERSIST_START
       - name: Persist validated WAL and SAF source changes
-        if: success() && github.ref == 'refs/heads/work/wal-saf-deadlock-ui-20261119-retry'
+        if: success() && (github.ref == 'refs/heads/work/wal-saf-deadlock-ui-20261119-retry' || github.head_ref == 'work/wal-saf-deadlock-ui-20261119-retry')
         run: |
           set -euo pipefail
           python3 - <<'PY_CLEANUP'
@@ -426,5 +426,6 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'fix: persist validated WAL UI and SAF traversal source'
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          target_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          git push origin "HEAD:${target_ref}"
       # WAL_PATCH_PERSIST_END
