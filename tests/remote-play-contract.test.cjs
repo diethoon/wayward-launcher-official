@@ -280,4 +280,16 @@ assert.match(pairingActivity, /ExifInterface\.TAG_ORIENTATION/,
   'the image QR reader must apply EXIF rotation before decoding');
 assert.match(instrumented, /developerQrImageSamplingBoundsDecodedMemoryAndRejectsInvalidDimensions/,
   'Android instrumentation must verify large QR image downsampling and invalid dimensions');
+const revokedClassifierStart = main.indexOf("private boolean isRemoteDeviceRevoked(Exception error)");
+assert.ok(revokedClassifierStart >= 0,
+  'the MainActivity revoked-device classifier must remain explicit and reviewable');
+const revokedClassifierEnd = main.indexOf("\n    }", revokedClassifierStart) + 6;
+const revokedClassifier = main.slice(revokedClassifierStart, revokedClassifierEnd);
+assert.match(revokedClassifier, /new org\\.json\\.JSONObject\\(message\\.substring\\(jsonStart\\)\\)/,
+  'revocation classification must parse the structured Host error body');
+assert.match(revokedClassifier, /DeviceRevoked/);
+assert.match(revokedClassifier, /device_not_paired/);
+assert.doesNotMatch(revokedClassifier, /http 401|http 404/i,
+  'generic HTTP 401/404 must never be treated as proof that a device was revoked');
+
 console.log('Remote Play native bridge, cache, ComfyUI and security contract checks passed');
