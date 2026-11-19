@@ -167,7 +167,9 @@ final class DiagnosticsBundleUploader {
                     || response.optString("submissionId", "").isEmpty()) {
                 throw new UploadException("upload_response_invalid");
             }
-            return response.optBoolean("duplicate", false) ? "uploaded_duplicate" : "uploaded";
+            String submissionId = response.optString("submissionId", "");
+            String result = response.optBoolean("duplicate", false) ? "uploaded_duplicate" : "uploaded";
+            return result + ":" + submissionId;
         } finally {
             if (connection != null) connection.disconnect();
         }
