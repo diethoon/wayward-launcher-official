@@ -8,7 +8,7 @@ const gradle = readFileSync(new URL("../app/build.gradle", import.meta.url), "ut
 assert.match(main, /uiText\("WAL",\s*17/);
 assert.match(manifest, /android:label="\$\{appLabel\}"/);
 assert.match(gradle, /manifestPlaceholders\s*=\s*\[appLabel:\s*[\'"]WAL Android Launcher[\'"]\]/);
-assert.match(main, /uiText\("Wayward Android Launcher",\s*11/);
+assert.match(main, /uiText\(BuildConfig\.WAL_OFFICIAL\?"WAL Android Launcher":"Wayward Android Launcher",\s*11/);
 assert.doesNotMatch(main, /여러 게임을 독립 세션으로 실행/);
 assert.doesNotMatch(main, /독립 세션으로 실행되며 브라우저 저장 데이터도 세션별로 분리됩니다/);
 assert.match(main, /identity\.setGravity\(android\.view\.Gravity\.CENTER_VERTICAL\)/);
