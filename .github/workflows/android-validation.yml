@@ -297,7 +297,7 @@ jobs:
             grep -F 'ic_launcher.xml' "$RUNNER_TEMP/$variant-entries.txt"
             grep -F 'ic_launcher_round.xml' "$RUNNER_TEMP/$variant-entries.txt"
             grep -F 'ic_launcher_foreground.png' "$RUNNER_TEMP/$variant-entries.txt"
-            "$aapt" dump resources "$apk" > "$RUNNER_TEMP/$variant-resources.txt"
+            "$aapt" dump resources --values "$apk" > "$RUNNER_TEMP/$variant-resources.txt"
             grep -F 'mipmap/ic_launcher' "$RUNNER_TEMP/$variant-resources.txt"
             grep -F 'mipmap/ic_launcher_round' "$RUNNER_TEMP/$variant-resources.txt"
             grep -i -F 'color/launcher_icon_background' "$RUNNER_TEMP/$variant-resources.txt"
