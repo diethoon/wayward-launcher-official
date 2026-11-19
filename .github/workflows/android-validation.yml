@@ -43,6 +43,7 @@ jobs:
           set -euo pipefail
           git apply --check patches/wal-saf-source.patch
           git apply patches/wal-saf-source.patch
+          git rm -f patches/wal-saf-source.patch
       # WAL_PATCH_APPLY_END
 
       - name: Set up Java 17
@@ -405,7 +406,6 @@ jobs:
         if: success() && github.ref == 'refs/heads/work/wal-saf-deadlock-ui-20261119'
         run: |
           set -euo pipefail
-          git rm -f patches/wal-saf-source.patch
           python3 - <<'PY_CLEANUP'
           from pathlib import Path
           workflow = Path('.github/workflows/android-validation.yml')
