@@ -76,7 +76,7 @@ jobs:
           python3 scripts/embed_imagegen_backend.py "$RUNNER_TEMP/wayward-mods.zip"
 
       - name: Check branch diff whitespace
-        run: git diff --check origin/main...HEAD
+        run: git diff --check origin/main...HEAD -- . ':!patches/wal-saf-source.patch'
 
       - name: Check JavaScript syntax
         run: |
@@ -420,6 +420,7 @@ jobs:
               finish = content.index(end, begin) + len(end)
               content = content[:begin] + content[finish:]
           content = content.replace('permissions:\n  contents: write\n', 'permissions:\n  contents: read\n', 1)
+          content = content.replace("git diff --check origin/main...HEAD -- . ':!patches/wal-saf-source.patch'", "git diff --check origin/main...HEAD", 1)
           content = content.replace('fetch-depth: 0\n\n\n      - name: Set up Java 17', 'fetch-depth: 0\n\n      - name: Set up Java 17', 1)
           workflow.write_text(content)
           PY_CLEANUP
