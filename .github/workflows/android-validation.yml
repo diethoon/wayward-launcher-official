@@ -409,10 +409,17 @@ jobs:
         if: success() && (github.ref == 'refs/heads/work/wal-saf-deadlock-ui-20261119-retry' || github.head_ref == 'work/wal-saf-deadlock-ui-20261119-retry') && env.WAL_PATCH_APPLIED == 'true'
         run: |
           set -euo pipefail
+          target_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          if [ -n "${GITHUB_HEAD_REF:-}" ]; then
+            git fetch origin "$target_ref"
+            git checkout -B wal-source-persist "origin/${target_ref}"
+            git apply --check patches/wal-saf-source.patch
+            git apply patches/wal-saf-source.patch
+            git rm -f patches/wal-saf-source.patch
+          fi
           git add app/src/main/java/com/wayward/launcher/MainActivity.java app/src/main/java/com/wayward/launcher/ImagePackDirectoryAccess.java app/src/main/assets/imagepack-folder-picker.js
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'fix: persist validated WAL UI and SAF traversal source'
-          target_ref="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
           git push origin "HEAD:${target_ref}"
       # WAL_PATCH_PERSIST_END
