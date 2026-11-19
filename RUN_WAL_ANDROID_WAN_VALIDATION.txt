@@ -1,1 +1,2 @@
 Build and sign both Development 1.0.9 and Official 1.0.0 WAN variants with the existing release identity. Validation artifact only; do not publish a release.
+Validation rerun: Maven mirror fallback and native OAuth client forensic inspection.
