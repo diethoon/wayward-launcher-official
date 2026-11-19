@@ -180,8 +180,14 @@ final class DiagnosticsBundleExporter {
             if (newline >= 0) content = content.substring(newline + 1);
         }
         content = redactSecrets(content);
+        byte[] safeBytes = content.getBytes(StandardCharsets.UTF_8);
+        int safeStart = Math.max(0, safeBytes.length - maxBytes);
+        if (safeStart > 0) {
+            while (safeStart < safeBytes.length && safeBytes[safeStart] != '\n') safeStart++;
+            if (safeStart < safeBytes.length) safeStart++;
+        }
         zip.putNextEntry(new ZipEntry(entryName));
-        zip.write(content.getBytes(StandardCharsets.UTF_8));
+        zip.write(safeBytes, safeStart, safeBytes.length - safeStart);
         zip.closeEntry();
     }
 
