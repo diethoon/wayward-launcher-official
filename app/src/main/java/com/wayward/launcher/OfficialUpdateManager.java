@@ -38,6 +38,8 @@ public final class OfficialUpdateManager {
     private static final String TAG = "WALOfficialUpdater";
     private static final String RELEASES_API =
             "https://api.github.com/repos/wal-studio/WAL-Official-Releases/releases?per_page=30";
+    private static final String SOURCE_RELEASES_API =
+            "https://api.github.com/repos/wal-studio/wayward-launcher-official/releases?per_page=30";
     private static final String SIGNER_SHA1 = "D9BE7443EB247D27C958CC4250D7F5D1E078F740";
     private static final String PREFS = "wal_official_update_state";
     private static final String LAST_CHECK = "last_check_ms";
@@ -94,7 +96,33 @@ public final class OfficialUpdateManager {
     }
 
     private static Update findLatest(Context context) throws Exception {
-        JSONArray releases = new JSONArray(readUrl(RELEASES_API, 2 * 1024 * 1024));
+        Exception primaryFailure = null;
+        try {
+            Update update = findLatestFromApi(context, RELEASES_API);
+            if (update != null) return update;
+        } catch (SecurityException invalidRelease) {
+            throw invalidRelease;
+        } catch (Exception unavailable) {
+            primaryFailure = unavailable;
+            Log.w(TAG, "Official Releases feed unavailable; trying source-repository fallback.", unavailable);
+        }
+
+        try {
+            Update update = findLatestFromApi(context, SOURCE_RELEASES_API);
+            if (update != null) return update;
+        } catch (SecurityException invalidRelease) {
+            throw invalidRelease;
+        } catch (Exception fallbackFailure) {
+            if (primaryFailure != null) fallbackFailure.addSuppressed(primaryFailure);
+            throw fallbackFailure;
+        }
+
+        if (primaryFailure != null) throw primaryFailure;
+        return null;
+    }
+
+    private static Update findLatestFromApi(Context context, String releasesApi) throws Exception {
+        JSONArray releases = new JSONArray(readUrl(releasesApi, 2 * 1024 * 1024));
         for (int i = 0; i < releases.length(); i++) {
             JSONObject release = releases.getJSONObject(i);
             if (release.optBoolean("draft", true) || release.optBoolean("prerelease", true)) continue;
@@ -122,15 +150,15 @@ public final class OfficialUpdateManager {
             String expectedName = "WAL-Android-Launcher-" + tag.group(1) + "." + tag.group(2) + "." + tag.group(3) + ".apk";
             if (!expectedName.equals(apkName)) throw new SecurityException("Stable APK filename does not match the release tag.");
             String apkUrl = apkAsset.optString("browser_download_url", "");
-            if (!apkUrl.startsWith("https://github.com/wal-studio/WAL-Official-Releases/")) {
-                throw new SecurityException("Release APK URL is outside the Official Releases repository.");
+            if (!isAllowedReleaseUrl(apkUrl)) {
+                throw new SecurityException("Release APK URL is outside the approved WAL release repositories.");
             }
 
             String expected = digestFromAsset(apkAsset.optString("digest", ""));
             if (expected.isEmpty() && sumsAsset != null) {
                 String sumsUrl = sumsAsset.optString("browser_download_url", "");
-                if (!sumsUrl.startsWith("https://github.com/wal-studio/WAL-Official-Releases/")) {
-                    throw new SecurityException("Checksum URL is outside the Official Releases repository.");
+                if (!isAllowedReleaseUrl(sumsUrl)) {
+                    throw new SecurityException("Checksum URL is outside the approved WAL release repositories.");
                 }
                 expected = findChecksum(readUrl(sumsUrl, 256 * 1024), apkName);
             }
@@ -146,11 +174,18 @@ public final class OfficialUpdateManager {
             PackageInfo installed = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
             if (update.versionCode <= installed.getLongVersionCode()) {
                 apk.delete();
-                return null;
+                continue;
             }
             return update;
         }
         return null;
+    }
+
+    private static boolean isAllowedReleaseUrl(String url) {
+        return url != null && (
+                url.startsWith("https://github.com/wal-studio/WAL-Official-Releases/") ||
+                url.startsWith("https://github.com/wal-studio/wayward-launcher-official/")
+        );
     }
 
     public static void install(Context context, Update update) {
