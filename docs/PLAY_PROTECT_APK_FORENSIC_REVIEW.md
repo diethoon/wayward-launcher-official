@@ -42,6 +42,18 @@ The permission is actively used by the Official-only updater:
 
 The Development Release does not declare this permission and does not include these Official-only self-update strings in its DEX. The Official DEX's only relevant unique installer strings include `canRequestPackageInstalls`, `android.settings.MANAGE_UNKNOWN_APP_SOURCES`, and `application/vnd.android.package-archive`. Generic PackageInstaller/FileProvider references also exist in the Development DEX due to shared Android libraries and are not, by themselves, evidence of an Official-only installer.
 
+## Additional runtime-execution risk signal
+
+Static source review found a second material security signal, separate from the removed self-updater:
+
+- `ImageGenService.ensureBun()` downloads the ARM64 Android Bun ZIP from the pinned GitHub release URL.
+- It verifies the archive against a hard-coded SHA-256, extracts the Bun executable into app-private `getFilesDir()/imagegen/runtime`, marks the executable read-only, validates its version by executing it, and starts the ImageGen backend through `/system/bin/linker64`.
+- The TypeScript backend is bundled in APK assets, but the native Bun executable is downloaded at runtime rather than shipped in the APK.
+
+The pinned hash, HTTPS source, app-private storage, and executable validation are positive integrity controls. However, this is still downloaded native-code execution and is a more material review signal than ordinary WebView/network traffic. Android's security guidance recommends avoiding dynamic code loading and, when unavoidable, using trusted sources and integrity checks. This finding is **not proof** that Play Protect classified the APK because of Bun, but it is a concrete behavior to investigate against the PHA detection.
+
+No change was made to this runtime because deleting it would remove the current local ImageGen server and break that feature. A replacement architecture (for example, an APK-bundled signed runtime or a non-native in-process execution design) needs a separate compatibility, size, and security decision; do not silently remove ImageGen.
+
 ## Policy assessment
 
 Google Play's current `REQUEST_INSTALL_PACKAGES` policy says this restricted permission is for apps whose core functionality includes sending/receiving app packages and enabling user-initiated package installation. It explicitly says the permission may not be used for self-updates unless the app is an eligible enterprise device-management app. WAL Launcher is not an enterprise device-management app. Therefore, the Official self-update implementation is not an appropriate use of this permission for a Google Play-distributed build, even though the final installer handoff requires user action.
@@ -50,11 +62,11 @@ This is a confirmed Official-only policy-sensitive implementation and should be 
 
 ## Play Protect classification — not yet proven
 
-The warning text supplied verbally is not enough to map the event to a specific Google classification.
+The user supplied the exact dialog title `유해한 앱 차단됨` (“Harmful app blocked”), with body text stating that the app may be harmful and the button `무시하고 설치하기`. Google's developer guidance identifies **Harmful App Blocked** as a Potentially Harmful Application (PHA) / malware or mobile unwanted software classification, not the ordinary “App Scan Recommended” or “Send App for Security Check” unknown-app prompt. The category is therefore identified; the precise detection reason or PHA family is not.
 
 Google's developer guidance distinguishes:
 - Internet-sideloading + specific sensitive permissions (RECEIVE_SMS, READ_SMS, notification-listener, ACCESSIBILITY) — neither APK declares these.
-- Harmful App / PHA classification — Google has identified the package as malware or mobile unwanted software; requires the actual Play Protect result and can be appealed after review.
+- Harmful App Blocked / PHA classification — this is the category matching the exact dialog title the user reported. Google describes it as malware or mobile unwanted software. The specific PHA category and detection reason remain unknown without Google's scan details.
 - App Scan Recommended / unknown app — Play Protect has not seen the app before; the package's first-seen status and distribution history matter. Appeals do not remove this informational prompt; Google says Play Protect must become aware of the app.
 - Send App for Security Check — a separate unknown-app scan prompt.
 
@@ -101,7 +113,7 @@ Rebuilt Official candidate:
 ## Remaining verification
 
 - Android 15 launcher UI/SAF emulator smoke test and Official/Development product-split install smoke test are still running in CI.
-- The exact Play Protect classification cannot be confirmed from APK static analysis alone. The verbal warning wording does not uniquely distinguish a PHA warning from an unknown-app scan flow.
+- The reported title maps to Google's Harmful App Blocked / PHA category, but the exact detection reason or PHA family cannot be determined from static analysis alone.
 - No actual Play Protect scan result has been obtained; no clean classification is claimed.
 - No MobSF or VirusTotal result is claimed. The APK was not submitted to public multi-engine services because that would disclose the sample to a third party.
 - No physical Samsung SM-S938N install/upgrade or Play Protect screen capture has been completed. Earlier device-smoke attempts could not discover an authorized ADB device.
