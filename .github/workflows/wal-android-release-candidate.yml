@@ -85,6 +85,11 @@ jobs:
           set -euo pipefail
           work_dir="$RUNNER_TEMP/wayward-release"
           mkdir -p "$work_dir"
+          raw_password_length="${#KEYSTORE_PASSWORD}"
+          KEYSTORE_PASSWORD_CLEAN="$(printf '%s' "$KEYSTORE_PASSWORD_CLEAN" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+          KEY_ALIAS_CLEAN="$(printf '%s' "$KEY_ALIAS_CLEAN" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+          echo "Signing password length: raw=$raw_password_length trimmed=${#KEYSTORE_PASSWORD_CLEAN}."
+          if [[ -z "$KEYSTORE_PASSWORD_CLEAN" || -z "$KEY_ALIAS_CLEAN" ]]; then echo "Release signing password or alias is empty after trimming." >&2; exit 1; fi
           raw_length="${#KEYSTORE_BASE64}"
           normalized="$(printf '%s' "$KEYSTORE_BASE64" | tr -d '\r\n\t ' | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//" -e 's/\\n//g' -e 's/\\r//g')"
           if [[ "$normalized" == data:*base64,* ]]; then normalized="${normalized#*,}"; fi
@@ -98,13 +103,13 @@ jobs:
             echo "Existing Release P12 size mismatch: $actual_bytes bytes (expected 2858)." >&2
             exit 1
           fi
-          openssl pkcs12 -in "$work_dir/uploaded.p12" -info -noout -passin env:KEYSTORE_PASSWORD >/dev/null 2>"$work_dir/p12-check.log" || {
+          openssl pkcs12 -in "$work_dir/uploaded.p12" -info -noout -passin env:KEYSTORE_PASSWORD_CLEAN >/dev/null 2>"$work_dir/p12-check.log" || {
             echo "Existing Release P12 password validation failed." >&2
             cat "$work_dir/p12-check.log" >&2
             exit 1
           }
-          openssl pkcs12 -in "$work_dir/uploaded.p12" -nocerts -nodes -passin env:KEYSTORE_PASSWORD -out "$work_dir/release-key.pem"
-          openssl pkcs12 -in "$work_dir/uploaded.p12" -clcerts -nokeys -passin env:KEYSTORE_PASSWORD -out "$work_dir/release-cert.pem"
+          openssl pkcs12 -in "$work_dir/uploaded.p12" -nocerts -nodes -passin env:KEYSTORE_PASSWORD_CLEAN -out "$work_dir/release-key.pem"
+          openssl pkcs12 -in "$work_dir/uploaded.p12" -clcerts -nokeys -passin env:KEYSTORE_PASSWORD_CLEAN -out "$work_dir/release-cert.pem"
           chmod 600 "$work_dir/release-key.pem" "$work_dir/release-cert.pem"
           key_public_hash="$(openssl pkey -in "$work_dir/release-key.pem" -pubout -outform DER | openssl dgst -sha256)"
           cert_public_hash="$(openssl x509 -in "$work_dir/release-cert.pem" -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256)"
@@ -121,8 +126,8 @@ jobs:
           openssl pkcs12 -export \
             -inkey "$work_dir/release-key.pem" \
             -in "$work_dir/release-cert.pem" \
-            -name "$KEY_ALIAS" \
-            -passout env:KEYSTORE_PASSWORD \
+            -name "$KEY_ALIAS_CLEAN" \
+            -passout env:KEYSTORE_PASSWORD_CLEAN \
             -keypbe PBE-SHA1-3DES \
             -certpbe PBE-SHA1-3DES \
             -macalg sha1 \
@@ -130,20 +135,22 @@ jobs:
           keytool -importkeystore -noprompt \
             -srckeystore "$work_dir/java-compatible.p12" \
             -srcstoretype PKCS12 \
-            -srcstorepass "$KEYSTORE_PASSWORD" \
-            -srcalias "$KEY_ALIAS" \
+            -srcstorepass "$KEYSTORE_PASSWORD_CLEAN" \
+            -srcalias "$KEY_ALIAS_CLEAN" \
             -destkeystore "$work_dir/release.jks" \
             -deststoretype JKS \
-            -deststorepass "$KEYSTORE_PASSWORD" \
-            -destkeypass "$KEYSTORE_PASSWORD" \
-            -destalias "$KEY_ALIAS"
-          jks_sha1="$(keytool -list -v -keystore "$work_dir/release.jks" -storetype JKS -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" | awk '/SHA1:/ {print $2; exit}' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+            -deststorepass "$KEYSTORE_PASSWORD_CLEAN" \
+            -destkeypass "$KEYSTORE_PASSWORD_CLEAN" \
+            -destalias "$KEY_ALIAS_CLEAN"
+          jks_sha1="$(keytool -list -v -keystore "$work_dir/release.jks" -storetype JKS -storepass "$KEYSTORE_PASSWORD_CLEAN" -alias "$KEY_ALIAS_CLEAN" | awk '/SHA1:/ {print $2; exit}' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
           if [[ "$jks_sha1" != "$expected_sha1" ]]; then
             echo "Converted JKS certificate SHA-1 mismatch." >&2
             exit 1
           fi
           chmod 600 "$work_dir/release.jks"
           echo "ANDROID_KEYSTORE_PATH=$work_dir/release.jks" >> "$GITHUB_ENV"
+          echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD_CLEAN" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_ALIAS=$KEY_ALIAS_CLEAN" >> "$GITHUB_ENV"
           echo "Existing Release P12 validated (2858 bytes); signer SHA-1 matches the existing identity." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build and test signed Android variants
