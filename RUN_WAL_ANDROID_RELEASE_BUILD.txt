@@ -1,1 +1,1 @@
-Retry signing with both normalized and raw base64 candidates, validating the existing key/cert pair.
+Inspect only signing secret metadata, then retry the existing signer without exposing values.
