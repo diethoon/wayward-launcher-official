@@ -57,6 +57,7 @@ assert.match(updater,/D9BE7443EB247D27C958CC4250D7F5D1E078F740/);
 assert.match(updater,/context\.getPackageName\(\)/);
 assert.match(updater,/versionCode\s*<=\s*installed\.getLongVersionCode\(\)/);
 assert.match(updater,/isAllowedReleasePageUrl/);
+assert.match(updater,/public final String releaseUrl/);
 assert.match(updater,/new Intent\(Intent\.ACTION_VIEW, Uri\.parse\(update\.releaseUrl\)\)/);
 assert.doesNotMatch(updater,/installPendingIfAllowed|Settings\.ACTION_MANAGE_UNKNOWN_APP_SOURCES|PackageInstaller|FileProvider\.getUriForFile/);
 assert.doesNotMatch(officialManifest,/REQUEST_INSTALL_PACKAGES/);
