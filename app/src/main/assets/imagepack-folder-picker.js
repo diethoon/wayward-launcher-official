@@ -16,143 +16,22 @@
 
   let progressNode = null;
   let progressHideTimer = null;
-  let progressTickTimer = null;
-  let activeProgressControl = null;
-  let progressState = "";
-  let progressRequestId = "";
-  let progressStartedAt = 0;
-  let progressLastActivityAt = 0;
-  let progressCounts = { fileCount: 0, directoryCount: 0, entryCount: 0 };
-
-  function formatProgressElapsed(milliseconds) {
-    const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
-    const minutes = Math.floor(totalSeconds / 60);
-    return String(minutes).padStart(2, "0") + ":" +
-      String(totalSeconds % 60).padStart(2, "0");
-  }
-
-  function refreshProgressDetails() {
-    if (!progressNode || !progressNode.isConnected) return;
-    const elapsed = progressStartedAt ? Date.now() - progressStartedAt : 0;
-    progressNode.__elapsed.textContent = elapsed ? "경과 " + formatProgressElapsed(elapsed) : "";
-    progressNode.__counts.textContent =
-      progressCounts.fileCount.toLocaleString() + "개 파일 · " +
-      progressCounts.directoryCount.toLocaleString() + "개 폴더 · " +
-      progressCounts.entryCount.toLocaleString() + "개 항목";
-    const delayed = progressState === "scanning" && progressLastActivityAt &&
-      Date.now() - progressLastActivityAt >= 8000;
-    progressNode.__delay.textContent = delayed
-      ? "응답 지연 중 · 문서 제공자의 디렉터리 응답을 기다리고 있습니다."
-      : "";
-    progressNode.__delay.style.display = delayed ? "block" : "none";
-    progressNode.__cancel.disabled = !activeProgressControl || activeProgressControl.cancelled;
-  }
-
-  function noteUploadProgressActivity(requestId) {
-    if (progressState !== "scanning") return;
-    if (progressRequestId && requestId && progressRequestId !== String(requestId)) return;
-    progressLastActivityAt = Date.now();
-    refreshProgressDetails();
-  }
-
   function showUploadProgress(message, state, requestId, details) {
-    const info = details || {};
-    diagnose("imagepack_progress_" + state, requestId || "", info);
+    diagnose("imagepack_progress_" + state, requestId || "", details || {});
     try {
       const doc = document;
       const root = doc.body || doc.documentElement;
       if (!root) return;
-      const now = Date.now();
-      if (state === "picker") {
-        progressStartedAt = 0;
-        progressLastActivityAt = 0;
-        progressCounts = { fileCount: 0, directoryCount: 0, entryCount: 0 };
-      }
-      if (state === "scanning" && progressState !== "scanning") {
-        progressStartedAt = now;
-        progressLastActivityAt = now;
-        progressCounts = { fileCount: 0, directoryCount: 1, entryCount: 0 };
-      }
-      if (state === "scanning" || state === "building") {
-        if (typeof info.fileCount === "number") progressCounts.fileCount = info.fileCount;
-        if (typeof info.directoryCount === "number") progressCounts.directoryCount = info.directoryCount;
-        if (typeof info.entryCount === "number") progressCounts.entryCount = info.entryCount;
-        if (typeof info.fileCount === "number" || typeof info.directoryCount === "number" ||
-            typeof info.entryCount === "number") progressLastActivityAt = now;
-      }
-      progressState = state;
-      progressRequestId = String(requestId || "");
       if (!progressNode || !progressNode.isConnected) {
         progressNode = doc.createElement("div");
         progressNode.setAttribute("role", "status");
         progressNode.setAttribute("aria-live", "polite");
-        progressNode.style.cssText = "position:fixed;z-index:2147483647;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:7px;padding:12px 14px;border:1px solid rgba(255,255,255,.2);border-radius:12px;background:rgba(20,20,24,.96);color:#fff;font:600 13px/1.4 sans-serif;box-shadow:0 4px 18px rgba(0,0,0,.38);pointer-events:auto;text-align:left";
-        if (!doc.getElementById("wayward-saf-progress-style")) {
-          const style = doc.createElement("style");
-          style.id = "wayward-saf-progress-style";
-          style.textContent = "@keyframes waywardSafProgressSpin{to{transform:rotate(360deg)}}";
-          (doc.head || root).appendChild(style);
-        }
-        const top = doc.createElement("div");
-        top.style.cssText = "display:flex;align-items:center;gap:9px;min-width:0";
-        const spinner = doc.createElement("span");
-        spinner.style.cssText = "flex:0 0 16px;width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:waywardSafProgressSpin .8s linear infinite";
-        const title = doc.createElement("span");
-        title.style.cssText = "flex:1;min-width:0;overflow-wrap:anywhere";
-        const cancel = doc.createElement("button");
-        cancel.type = "button";
-        cancel.textContent = "취소";
-        cancel.style.cssText = "flex:0 0 auto;border:1px solid rgba(255,255,255,.35);border-radius:7px;padding:5px 10px;background:rgba(255,255,255,.12);color:#fff;font:600 12px sans-serif";
-        cancel.addEventListener("click", () => {
-          const active = activeProgressControl;
-          if (!active || active.cancelled) return;
-          try {
-            if (typeof window.cancelWaywardDirectoryUpload === "function" &&
-                window.cancelWaywardDirectoryUpload(active.requestId)) {
-              cancel.disabled = true;
-              title.textContent = "취소 요청 중…";
-            }
-          } catch (_) {}
-        });
-        top.appendChild(spinner);
-        top.appendChild(title);
-        top.appendChild(cancel);
-        const counts = doc.createElement("div");
-        counts.style.cssText = "font:500 12px/1.4 sans-serif;color:rgba(255,255,255,.82)";
-        const footer = doc.createElement("div");
-        footer.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:16px";
-        const delay = doc.createElement("span");
-        delay.style.cssText = "font:500 11px/1.35 sans-serif;color:#ffd18a;overflow-wrap:anywhere";
-        const elapsed = doc.createElement("span");
-        elapsed.style.cssText = "flex:0 0 auto;font:500 11px/1.35 sans-serif;color:rgba(255,255,255,.7)";
-        footer.appendChild(delay);
-        footer.appendChild(elapsed);
-        progressNode.appendChild(top);
-        progressNode.appendChild(counts);
-        progressNode.appendChild(footer);
-        progressNode.__title = title;
-        progressNode.__spinner = spinner;
-        progressNode.__cancel = cancel;
-        progressNode.__counts = counts;
-        progressNode.__delay = delay;
-        progressNode.__elapsed = elapsed;
+        progressNode.style.cssText = "position:fixed;z-index:2147483647;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));padding:11px 14px;border:1px solid rgba(255,255,255,.2);border-radius:10px;background:rgba(20,20,24,.94);color:#fff;font:600 14px/1.4 sans-serif;box-shadow:0 4px 18px rgba(0,0,0,.35);pointer-events:none;text-align:center";
         root.appendChild(progressNode);
       }
-      progressNode.__title.textContent = String(message || "");
-      const terminal = state === "complete" || state === "failed" || state === "cancelled";
-      progressNode.__spinner.style.display = terminal ? "none" : "block";
-      progressNode.__counts.style.display = state === "scanning" || state === "building" ? "block" : "none";
-      progressNode.__elapsed.style.display = progressStartedAt ? "block" : "none";
-      progressNode.__cancel.style.display = state === "scanning" || state === "building" ? "block" : "none";
-      refreshProgressDetails();
-      if (terminal) {
-        if (progressTickTimer !== null) clearInterval(progressTickTimer);
-        progressTickTimer = null;
-      } else if (progressTickTimer === null) {
-        progressTickTimer = setInterval(refreshProgressDetails, 1000);
-      }
+      progressNode.textContent = String(message || "");
       if (progressHideTimer !== null) clearTimeout(progressHideTimer);
-      if (terminal) {
+      if (state === "complete" || state === "failed" || state === "cancelled") {
         progressHideTimer = setTimeout(() => {
           if (progressNode && progressNode.parentNode) progressNode.parentNode.removeChild(progressNode);
           progressNode = null;
@@ -257,7 +136,8 @@
         pending.delete(id);
         clearTimeout(timeout);
         diagnose("wmlhost_choose_folder_call_failed", id, {
-          errorName: error && error.name || "Error"
+          errorName: error && error.name || "Error",
+          errorMessage: String(error && error.message || error)
         });
         reject(domError("NotAllowedError", String(error && error.message || error)));
       }
@@ -386,7 +266,8 @@
       return result;
     } catch (error) {
       diagnose("native_" + method + "_failure", requestId, {
-        method, uriBased: true, errorName: error && error.name || "Error"
+        method, uriBased: true, errorName: error && error.name || "Error",
+        errorMessage: String(error && error.message || error)
       });
       throw error;
     }
@@ -719,7 +600,6 @@
           state.waiter = receivePacket;
         });
         state.packet = null;
-        noteUploadProgressActivity(requestId);
         if (!packet || packet.batchIndex !== state.expectedBatch) {
           throw domError("NotReadableError", "The native SAF directory batch sequence is invalid.");
         }
@@ -760,114 +640,90 @@
     const rootSegment = safePathSegment(rootName);
     const visited = new Set();
     const visitedFileUris = new Set();
-    const fileRecords = [];
-    const directories = [{ uri: rootUri, prefix: rootSegment, depth: 0, orderKey: "" }];
-    let directoryCursor = 0;
+    const files = [];
     let entryCount = 0;
     let directoryCount = 0;
-    let discoveredDirectoryCount = 1;
     let scannedFileCount = 0;
     let fileObjectBuildMs = 0;
     let excludedCount = 0;
     let sinceYield = 0;
     const startedAt = Date.now();
     if (typeof diagnose === "function") diagnose("directory_enumeration_started", requestId, {
-      rootUriPresent: !!rootUri, rootNamePresent: !!rootName, traversal: "queued_directory_walk"
+      rootUriPresent: !!rootUri, rootNamePresent: !!rootName
     });
 
-    // Consume and ACK every batch from one directory before scheduling its children.
-    // This prevents nested SAF queries from occupying both native ACK-waiting workers.
-    // orderKey retains provider sibling order so FileList order matches the former
-    // depth-first traversal without holding parent ACKs open during child queries.
-    try {
-      while (directoryCursor < directories.length) {
-        checkUploadCancelled(control);
-        const directory = directories[directoryCursor++];
-        if (directory.depth > MAX_UPLOAD_DEPTH) {
-          throw domError("QuotaExceededError", "The selected folder is nested too deeply.");
-        }
-        if (visited.has(directory.uri)) {
-          throw domError("NotReadableError", "The SAF provider returned a repeated directory URI.");
-        }
-        visited.add(directory.uri);
-        directoryCount++;
-        let childIndex = 0;
-
-        for await (const child of iterateDirectoryEntries(directory.uri, requestId, control)) {
-          checkUploadCancelled(control);
-          entryCount++;
-          sinceYield++;
-          if (entryCount > MAX_UPLOAD_ENTRIES) {
-            throw domError("QuotaExceededError", "The selected folder contains too many entries.");
-          }
-          const name = safePathSegment(child.name);
-          const relativePath = directory.prefix + "/" + name;
-          const segment = String(childIndex++).padStart(6, "0");
-          const orderKey = directory.orderKey ? directory.orderKey + "/" + segment : segment;
-
-          if (child.kind === "directory") {
-            if (!child.uri || !String(child.uri).startsWith("content://")) {
-              throw domError("SecurityError", "The SAF provider returned an invalid directory URI.");
-            }
-            directories.push({ uri: String(child.uri), prefix: relativePath,
-              depth: directory.depth + 1, orderKey });
-            discoveredDirectoryCount++;
-          } else if (child.kind === "file") {
-            scannedFileCount++;
-            if (scannedFileCount > MAX_UPLOAD_FILES) {
-              throw domError("QuotaExceededError", "The selected folder contains too many files.");
-            }
-            const fileUri = String(child.uri || "");
-            if (!fileUri.startsWith("content://")) {
-              throw domError("SecurityError", "The SAF provider returned an invalid file URI.");
-            }
-            if (visitedFileUris.has(fileUri)) {
-              throw domError("NotReadableError", "The SAF provider returned a repeated file URI.");
-            }
-            visitedFileUris.add(fileUri);
-            if (matchesFilePolicy(relativePath, name, policy)) {
-              const limit = policy ? policy.maxFiles : MAX_UPLOAD_FILES;
-              if (fileRecords.length >= limit) {
-                throw domError("QuotaExceededError", "The selected folder exceeds the requested file-count limit.");
-              }
-              const fileBuildStartedAt = Date.now();
-              fileRecords.push({ file: makeSafBackedFile(child, relativePath, requestId), orderKey });
-              fileObjectBuildMs += Date.now() - fileBuildStartedAt;
-            } else {
-              excludedCount++;
-            }
-          } else {
-            throw domError("NotReadableError", "The SAF provider returned an unknown entry kind.");
-          }
-
-          if (entryCount % ENUMERATION_YIELD_INTERVAL === 0) {
-            showUploadProgress("파일 탐색 중…", "scanning", requestId, {
-              fileCount: scannedFileCount, directoryCount: discoveredDirectoryCount, entryCount
-            });
-          }
-          if (sinceYield >= ENUMERATION_YIELD_INTERVAL) {
-            sinceYield = 0;
-            await yieldUploadWork(control);
-          }
-        }
-
-        await yieldUploadWork(control);
-        showUploadProgress("파일 탐색 중…", "scanning", requestId, {
-          fileCount: scannedFileCount, directoryCount: discoveredDirectoryCount, entryCount
-        });
-      }
-
-      fileRecords.sort((left, right) => left.orderKey < right.orderKey ? -1 :
-        left.orderKey > right.orderKey ? 1 : 0);
-      const files = fileRecords.map(record => record.file);
+    async function visit(directoryUri, prefix, depth) {
       checkUploadCancelled(control);
-      diagnose("directory_enumeration_completed", requestId, {
-        directoryCount, entryCount, scannedFileCount, fileCount: files.length,
-        fileObjectBuildMs, excludedCount, policyApplied: !!policy,
-        traversal: "queued_directory_walk_preserved_depth_first_order",
-        elapsedMs: Date.now() - startedAt
-      });
-      return files;
+      if (depth > MAX_UPLOAD_DEPTH) {
+        throw domError("QuotaExceededError", "The selected folder is nested too deeply.");
+      }
+      if (visited.has(directoryUri)) {
+        throw domError("NotReadableError", "The SAF provider returned a repeated directory URI.");
+      }
+      visited.add(directoryUri);
+      directoryCount++;
+      // Sort the parsed result in place; cloning the provider's entire entry
+      // array doubled peak references for large directories.
+      for await (const child of iterateDirectoryEntries(directoryUri, requestId, control)) {
+        checkUploadCancelled(control);
+        entryCount++;
+        sinceYield++;
+        if (entryCount > MAX_UPLOAD_ENTRIES) {
+          throw domError("QuotaExceededError", "The selected folder contains too many entries.");
+        }
+        const name = safePathSegment(child.name);
+        const relativePath = prefix + "/" + name;
+        if (child.kind === "directory") {
+          if (!child.uri || !String(child.uri).startsWith("content://")) {
+            throw domError("SecurityError", "The SAF provider returned an invalid directory URI.");
+          }
+          await visit(String(child.uri), relativePath, depth + 1);
+        } else if (child.kind === "file") {
+          scannedFileCount++;
+          if (scannedFileCount > MAX_UPLOAD_FILES) {
+            throw domError("QuotaExceededError", "The selected folder contains too many files.");
+          }
+          const fileUri = String(child.uri || "");
+          if (!fileUri.startsWith("content://")) {
+            throw domError("SecurityError", "The SAF provider returned an invalid file URI.");
+          }
+          if (visitedFileUris.has(fileUri)) {
+            throw domError("NotReadableError", "The SAF provider returned a repeated file URI.");
+          }
+          visitedFileUris.add(fileUri);
+          if (matchesFilePolicy(relativePath, name, policy)) {
+            const limit = policy ? policy.maxFiles : MAX_UPLOAD_FILES;
+            if (files.length >= limit) {
+              throw domError("QuotaExceededError", "The selected folder exceeds the requested file-count limit.");
+            }
+            const fileBuildStartedAt = Date.now();
+            files.push(makeSafBackedFile(child, relativePath, requestId));
+            fileObjectBuildMs += Date.now() - fileBuildStartedAt;
+          } else {
+            excludedCount++;
+          }
+        } else {
+          throw domError("NotReadableError", "The SAF provider returned an unknown entry kind.");
+        }
+        if (sinceYield >= ENUMERATION_YIELD_INTERVAL) {
+          sinceYield = 0;
+          await yieldUploadWork(control);
+        }
+      }
+      // Let WebView input, paint, and cancellation tasks run between provider
+      // directory queries, even when each directory is small.
+      await yieldUploadWork(control);
+    }
+
+    try {
+    await visit(rootUri, rootSegment, 0);
+    checkUploadCancelled(control);
+    diagnose("directory_enumeration_completed", requestId, {
+      directoryCount, entryCount, scannedFileCount, fileCount: files.length,
+      fileObjectBuildMs, excludedCount, policyApplied: !!policy,
+      elapsedMs: Date.now() - startedAt
+    });
+    return files;
     } finally {
       try { host.listImagePackDirectoryForRequest(nativeCapability, "__WAYWARD_DIR_RELEASE__:", requestId); } catch (_) {}
     }
@@ -977,7 +833,6 @@
     nativePickerBusy = true;
     let requestId = "";
     const control = { requestId: "", cancelled: false, nativeDirectoryIds: new Set() };
-    activeProgressControl = control;
     activeUploadControls.add(control);
     showUploadProgress("폴더 선택 창을 여는 중…", "picker", "", {});
     try {
@@ -1011,12 +866,10 @@
       if (!files.length) {
         throw domError("NotFoundError", "The selected folder contains no files.");
       }
-      checkUploadCancelled(control);
       showUploadProgress("파일 목록 구성 중…", "building", requestId, { fileCount: files.length });
-      checkUploadCancelled(control);
       dispatchDirectoryFileList(input, files, requestId);
       diagnose("webkitdirectory_upload_dispatched", requestId, {
-        fileCount: files.length, rootNamePresent: !!selection.name,
+        fileCount: files.length, rootName: String(selection.name || ""),
         policyApplied: !!policy, multiple: input.multiple === true
       });
       showUploadProgress("게임 전달 완료 · 이미지팩 스캔을 시작했습니다.", "complete", requestId,
@@ -1024,7 +877,7 @@
     } catch (error) {
       const name = error && error.name || "NotReadableError";
       const message = String(error && error.message || error).slice(0, 240);
-      diagnose("webkitdirectory_upload_failed", requestId, { errorName: name });
+      diagnose("webkitdirectory_upload_failed", requestId, { errorName: name, message });
       showUploadProgress(name === "AbortError" ? "폴더 선택이 취소되었습니다." : "폴더 탐색 실패: " + message,
         name === "AbortError" ? "cancelled" : "failed", requestId, { errorName: name });
       if (name === "AbortError") dispatchDirectoryCancel(input);
@@ -1036,7 +889,6 @@
       } catch (_) {}
     } finally {
       activeUploadControls.delete(control);
-      if (activeProgressControl === control) activeProgressControl = null;
       nativePickerBusy = false;
     }
   }

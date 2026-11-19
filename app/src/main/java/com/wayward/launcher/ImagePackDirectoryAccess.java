@@ -366,8 +366,6 @@ final class ImagePackDirectoryAccess {
             if (directoryTasks.putIfAbsent(requestId, task) != null) {
                 return failure("InvalidStateError", "The directory request ID is already active.").toString();
             }
-            diagnostic("native_directory_query_queued", requestId, "info",
-                    details("batchSize", DIRECTORY_BATCH_SIZE));
             try {
                 task.future = directoryExecutor.submit(() -> runDirectoryList(task, requestTree, directory));
             } catch (RuntimeException rejected) {
@@ -386,15 +384,7 @@ final class ImagePackDirectoryAccess {
 
     boolean acknowledgeDirectoryBatch(String requestId, int batchIndex) {
         DirectoryTask task = directoryTasks.get(requestId);
-        boolean accepted = task != null && task.acknowledge(batchIndex);
-        if (!accepted) {
-            diagnostic("native_directory_batch_ack_rejected", requestId, "warn",
-                    details("batchIndex", batchIndex));
-        } else if (batchIndex == 0) {
-            diagnostic("native_directory_first_batch_acknowledged", requestId, "info",
-                    details("batchIndex", batchIndex));
-        }
-        return accepted;
+        return task != null && task.acknowledge(batchIndex);
     }
 
     boolean cancelDirectoryList(String requestId) {
@@ -431,8 +421,6 @@ final class ImagePackDirectoryAccess {
     private void runDirectoryList(DirectoryTask task, Uri selectedTree, Uri directoryUri) {
         int batchIndex = 0;
         try {
-            diagnostic("native_directory_query_started", task.requestId, "info",
-                    details("batchSize", DIRECTORY_BATCH_SIZE));
             Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
                     selectedTree, DocumentsContract.getDocumentId(directoryUri));
             String[] projection = {
@@ -488,10 +476,7 @@ final class ImagePackDirectoryAccess {
                     }
                 }
             }
-            if (!task.cancelled && dispatchDirectoryBatchAndAwaitAck(task, batch, batchIndex, true)) {
-                diagnostic("native_directory_query_completed", task.requestId, "info",
-                        details("batchCount", batchIndex + 1));
-            }
+            if (!task.cancelled) dispatchDirectoryBatchAndAwaitAck(task, batch, batchIndex, true);
         } catch (OperationCanceledException cancelled) {
             if (!task.cancelled) dispatchDirectoryError(task, batchIndex, "AbortError", "The SAF directory provider cancelled the query.");
         } catch (Exception error) {
@@ -516,22 +501,13 @@ final class ImagePackDirectoryAccess {
             packet.put("done", done);
             packet.put("entries", entries);
             CountDownLatch acknowledgement = task.beginBatch(batchIndex);
-            if (acknowledgement == null) return false;
-            if (batchIndex == 0) {
-                diagnostic("native_directory_first_batch_dispatched", task.requestId, "info",
-                        details("entryCount", entries.length(), "done", done));
-            }
             dispatchDirectoryPacket(task, packet);
             boolean acknowledged = acknowledgement.await(
                     DIRECTORY_BATCH_ACK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            if (!acknowledged) {
-                task.expireBatch(batchIndex);
-                diagnostic("native_directory_batch_ack_timeout", task.requestId, "error",
-                        details("batchIndex", batchIndex, "timeoutSeconds", DIRECTORY_BATCH_ACK_TIMEOUT_SECONDS));
+            if (!acknowledged || task.cancelled) {
                 task.cancel();
                 return false;
             }
-            if (task.cancelled) return false;
             return true;
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
@@ -1306,57 +1282,47 @@ final class ImagePackDirectoryAccess {
         final CancellationSignal cancellationSignal = new CancellationSignal();
         volatile Future<?> future;
         volatile boolean cancelled;
-        private final DirectoryBatchAcknowledgement batchAcknowledgement =
-                new DirectoryBatchAcknowledgement();
+        private int awaitingBatchIndex = -1;
+        private CountDownLatch acknowledgement;
         private volatile Cursor activeCursor;
 
         DirectoryTask(String requestId) { this.requestId = requestId; }
 
         void attachCursor(Cursor cursor) {
-            boolean closeImmediately;
-            synchronized (this) {
-                closeImmediately = cancelled;
-                activeCursor = closeImmediately ? null : cursor;
-            }
-            if (closeImmediately && cursor != null) {
+            activeCursor = cursor;
+            if (cancelled && cursor != null) {
                 try { cursor.close(); } catch (RuntimeException ignored) {}
             }
         }
 
         void clearCursor() {
-            synchronized (this) { activeCursor = null; }
+            activeCursor = null;
         }
 
-        CountDownLatch beginBatch(int batchIndex) {
-            if (cancelled) return null;
-            return batchAcknowledgement.begin(batchIndex,
-                    DIRECTORY_BATCH_ACK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        synchronized CountDownLatch beginBatch(int batchIndex) {
+            awaitingBatchIndex = batchIndex;
+            acknowledgement = new CountDownLatch(1);
+            return acknowledgement;
         }
 
-        boolean acknowledge(int batchIndex) {
-            return !cancelled && batchAcknowledgement.acknowledge(batchIndex);
-        }
-
-        void expireBatch(int batchIndex) {
-            batchAcknowledgement.expire(batchIndex);
+        synchronized boolean acknowledge(int batchIndex) {
+            if (cancelled || acknowledgement == null || awaitingBatchIndex != batchIndex) return false;
+            acknowledgement.countDown();
+            return true;
         }
 
         void cancel() {
-            Cursor cursor;
-            Future<?> current;
-            synchronized (this) {
-                if (cancelled) return;
-                cancelled = true;
-                batchAcknowledgement.cancel();
-                cursor = activeCursor;
-                activeCursor = null;
-                current = future;
-            }
+            cancelled = true;
             try { cancellationSignal.cancel(); } catch (RuntimeException ignored) {}
+            Cursor cursor = activeCursor;
             if (cursor != null) {
                 try { cursor.close(); } catch (RuntimeException ignored) {}
             }
+            Future<?> current = future;
             if (current != null) current.cancel(true);
+            synchronized (this) {
+                if (acknowledgement != null) acknowledgement.countDown();
+            }
         }
     }
 

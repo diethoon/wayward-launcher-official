@@ -302,7 +302,7 @@ public class MainActivity extends Activity {
         page.setPadding(dp(16),dp(13),dp(16),dp(24));scroll.addView(page);
 
         LinearLayout top=new LinearLayout(this);top.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        TextView title=uiText("WAL",17,Color.rgb(24,27,31),true);
+        TextView title=uiText("WAYWARD",17,Color.rgb(24,27,31),true);
         title.setLetterSpacing(0.005f);
         title.setSingleLine(true);
         title.setHorizontallyScrolling(true);
@@ -321,11 +321,8 @@ public class MainActivity extends Activity {
         diagnosticsParams.leftMargin=dp(4);top.addView(diagnostics,diagnosticsParams);
         LinearLayout.LayoutParams topParams=new LinearLayout.LayoutParams(-1,-2);topParams.bottomMargin=dp(3);
         page.addView(top,topParams);
-        TextView subtitle=uiText("Wayward Android Launcher",11,Color.rgb(111,118,125),false);
-        subtitle.setLetterSpacing(0.025f);
-        subtitle.setSingleLine(true);
-        subtitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        page.addView(subtitle);
+        TextView subtitle=uiText("GAME LAUNCHER  ·  여러 게임을 독립 세션으로 실행",11,Color.rgb(111,118,125),false);
+        subtitle.setLetterSpacing(0.025f);page.addView(subtitle);
 
         LinearLayout statusCard=uiCard();
         LinearLayout.LayoutParams statusParams=new LinearLayout.LayoutParams(-1,-2);
@@ -819,7 +816,7 @@ public class MainActivity extends Activity {
     private void showLauncherInfoDialog(){
         new android.app.AlertDialog.Builder(this)
                 .setTitle("런처 안내")
-                .setMessage("게임 폴더는 읽기 권한으로 연결해 원본 파일을 직접 수정하지 않습니다.")
+                .setMessage("게임 폴더는 읽기 권한으로 연결해 원본 파일을 직접 수정하지 않습니다. 등록한 게임은 각각 독립 세션으로 실행되며 브라우저 저장 데이터도 세션별로 분리됩니다.")
                 .setPositiveButton("확인",null).show();
     }
     private void chooseFolder(){
@@ -1198,14 +1195,9 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams cardParams=new LinearLayout.LayoutParams(-1,-2);cardParams.bottomMargin=dp(6);
             profileList.addView(card,cardParams);
             LinearLayout identity=new LinearLayout(this);identity.setOrientation(LinearLayout.VERTICAL);
-            identity.setGravity(android.view.Gravity.CENTER_VERTICAL);
-            TextView name=uiText(p.label,14,Color.rgb(30,34,38),true);
-            name.setSingleLine(true);
-            name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            TextView name=uiText(p.label,14,Color.rgb(30,34,38),true);name.setMaxLines(1);
             identity.addView(name);
             TextView meta=uiText(p.id.equals(activeProfileId)?"현재 선택된 게임":"등록된 게임 폴더",10,Color.rgb(124,131,138),false);
-            meta.setSingleLine(true);
-            meta.setEllipsize(android.text.TextUtils.TruncateAt.END);
             LinearLayout.LayoutParams metaParams=new LinearLayout.LayoutParams(-1,-2);metaParams.topMargin=dp(3);
             identity.addView(meta,metaParams);
             card.addView(identity,new LinearLayout.LayoutParams(0,dp(42),1f));
