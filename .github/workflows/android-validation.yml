@@ -34,6 +34,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
+          ref: ${{ github.head_ref || github.ref_name }}
           fetch-depth: 0
 
       # WAL_PATCH_APPLY_START
