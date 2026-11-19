@@ -344,7 +344,19 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Android 15 emulator startup and Native crypto tests
+      - name: Android 15 Remote Play Keystore and crypto instrumentation
+        if: github.ref != 'refs/heads/fix/android-qr-pairing-20261116' && github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119' && github.ref != 'refs/heads/work/android-file-engine-v2.1-complete-20261119' && github.head_ref != 'work/android-file-engine-v2.1-complete-20261119' && github.ref != 'refs/heads/fix/saf-picker-promise-dispatch-20261119' && github.head_ref != 'fix/saf-picker-promise-dispatch-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119-validate2' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119-validate2'
+        timeout-minutes: 12
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: gradle --no-daemon connectedDebugAndroidTest
+
+      - name: Android 15 launcher UI and SAF smoke test
         if: github.ref != 'refs/heads/fix/android-qr-pairing-20261116' && github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119' && github.ref != 'refs/heads/work/android-file-engine-v2.1-complete-20261119' && github.head_ref != 'work/android-file-engine-v2.1-complete-20261119' && github.ref != 'refs/heads/fix/saf-picker-promise-dispatch-20261119' && github.head_ref != 'fix/saf-picker-promise-dispatch-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119-validate2' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119-validate2'
         id: android15_smoke
         timeout-minutes: 15
@@ -359,7 +371,7 @@ jobs:
 
       - name: Report Android emulator smoke-test warning
         if: steps.android15_smoke.outcome == 'failure'
-        run: echo "::warning::Android 15 emulator/ADB smoke test failed; APK build and deterministic routing tests remain independently reported."
+        run: echo "::warning::Android 15 launcher UI/SAF smoke test failed; native Keystore instrumentation is reported in its separate step."
 
       - name: Upload Android 15 UI diagnostics
         if: always() && github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119' && github.ref != 'refs/heads/work/android-file-engine-v2.1-complete-20261119' && github.head_ref != 'work/android-file-engine-v2.1-complete-20261119' && github.ref != 'refs/heads/fix/saf-picker-promise-dispatch-20261119' && github.head_ref != 'fix/saf-picker-promise-dispatch-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119-validate2' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119-validate2'
