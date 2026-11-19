@@ -396,6 +396,45 @@ jobs:
           stat -c '%n %s bytes' "dist/official/$final_apk"
           echo "SIGNED_OFFICIAL_APK=true PACKAGE=com.wayward.launcher.official.wal VERSION=1.0.0 VERSION_CODE=1 SIGNER_SHA1=$actual_sha1" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Audit merged APK manifests and ZIP structure
+        if: env.RELEASE_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          aapt="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          apksigner="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          official="app/build/outputs/apk/official/app-official.apk"
+          development="app/build/outputs/apk/release/app-release.apk"
+          for pair in "official:$official" "development:$development"; do
+            variant="${pair%%:*}"
+            apk="${pair#*:}"
+            test -s "$apk"
+            "$aapt" dump permissions "$apk" > "$RUNNER_TEMP/$variant-permissions.txt"
+            "$aapt" dump xmltree "$apk" AndroidManifest.xml > "$RUNNER_TEMP/$variant-manifest.txt"
+            if grep -E 'android\.permission\.(REQUEST_INSTALL_PACKAGES|READ_SMS|RECEIVE_SMS|SEND_SMS|QUERY_ALL_PACKAGES|SYSTEM_ALERT_WINDOW|MANAGE_EXTERNAL_STORAGE)' "$RUNNER_TEMP/$variant-permissions.txt"; then
+              echo "Unexpected restricted permission in $variant APK" >&2
+              exit 1
+            fi
+            if grep -E 'BIND_NOTIFICATION_LISTENER_SERVICE|BIND_ACCESSIBILITY_SERVICE' "$RUNNER_TEMP/$variant-manifest.txt"; then
+              echo "Unexpected notification-listener/accessibility component in $variant APK" >&2
+              exit 1
+            fi
+            "$apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/$variant-apksigner.txt"
+            python3 - "$apk" "$variant" <<'PY'
+          import sys, zipfile
+          apk, variant = sys.argv[1:]
+          with zipfile.ZipFile(apk) as archive:
+              names = archive.namelist()
+              if len(names) != len(set(names)):
+                  raise SystemExit(f"{variant}: duplicate ZIP entry names")
+              bad = archive.testzip()
+              if bad:
+                  raise SystemExit(f"{variant}: CRC/decompression failure at {bad}")
+          print(f"{variant}: ZIP entries unique and CRC/decompression verified")
+          PY
+          done
+          echo "Both merged Release APK manifests exclude REQUEST_INSTALL_PACKAGES, SMS, notification-listener, accessibility, and broad package/storage permissions." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload Debug and Release APKs
         uses: actions/upload-artifact@v7
         with:
