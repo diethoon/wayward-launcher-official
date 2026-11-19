@@ -39,7 +39,7 @@ jobs:
       # WAL_PATCH_APPLY_START
       # One-time bootstrap: patch the three source files before validation.
       - name: Apply staged WAL and SAF source patches
-        if: github.ref == 'refs/heads/work/wal-saf-deadlock-ui-20261119'
+        if: github.ref == 'refs/heads/work/wal-saf-deadlock-ui-20261119-retry'
         run: |
           set -euo pipefail
           git apply --check patches/wal-saf-source.patch
@@ -348,14 +348,14 @@ jobs:
           retention-days: 14
 
       - name: Enable KVM for Android emulator
-        if: github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119' && github.ref != 'refs/heads/work/android-file-engine-v2.1-complete-20261119' && github.head_ref != 'work/android-file-engine-v2.1-complete-20261119' && github.ref != 'refs/heads/fix/saf-picker-promise-dispatch-20261119' && github.head_ref != 'fix/saf-picker-promise-dispatch-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119'
+        if: github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119' && github.ref != 'refs/heads/work/android-file-engine-v2.1-complete-20261119' && github.head_ref != 'work/android-file-engine-v2.1-complete-20261119' && github.ref != 'refs/heads/fix/saf-picker-promise-dispatch-20261119' && github.head_ref != 'fix/saf-picker-promise-dispatch-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119-retry' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119-retry'
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
       - name: Android 15 emulator startup and Native crypto tests
-        if: github.ref != 'refs/heads/fix/android-qr-pairing-20261116' && github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119' && github.ref != 'refs/heads/work/android-file-engine-v2.1-complete-20261119' && github.head_ref != 'work/android-file-engine-v2.1-complete-20261119' && github.ref != 'refs/heads/fix/saf-picker-promise-dispatch-20261119' && github.head_ref != 'fix/saf-picker-promise-dispatch-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119'
+        if: github.ref != 'refs/heads/fix/android-qr-pairing-20261116' && github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119' && github.ref != 'refs/heads/work/android-file-engine-v2.1-complete-20261119' && github.head_ref != 'work/android-file-engine-v2.1-complete-20261119' && github.ref != 'refs/heads/fix/saf-picker-promise-dispatch-20261119' && github.head_ref != 'fix/saf-picker-promise-dispatch-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119-retry' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119-retry'
         id: android15_smoke
         timeout-minutes: 15
         uses: reactivecircus/android-emulator-runner@v2
@@ -372,7 +372,7 @@ jobs:
         run: echo "::warning::Android 15 emulator/ADB smoke test failed; APK build and deterministic routing tests remain independently reported."
 
       - name: Upload Android 15 UI diagnostics
-        if: always() && github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119' && github.ref != 'refs/heads/work/android-file-engine-v2.1-complete-20261119' && github.head_ref != 'work/android-file-engine-v2.1-complete-20261119' && github.ref != 'refs/heads/fix/saf-picker-promise-dispatch-20261119' && github.head_ref != 'fix/saf-picker-promise-dispatch-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119'
+        if: always() && github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119' && github.ref != 'refs/heads/work/android-file-engine-v2.1-complete-20261119' && github.head_ref != 'work/android-file-engine-v2.1-complete-20261119' && github.ref != 'refs/heads/fix/saf-picker-promise-dispatch-20261119' && github.head_ref != 'fix/saf-picker-promise-dispatch-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119-retry' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119-retry'
         uses: actions/upload-artifact@v7
         with:
           name: wayward-launcher-android15-ui-diagnostics
@@ -404,7 +404,7 @@ jobs:
           retention-days: 14
       # WAL_PATCH_PERSIST_START
       - name: Persist validated WAL and SAF source changes
-        if: success() && github.ref == 'refs/heads/work/wal-saf-deadlock-ui-20261119'
+        if: success() && github.ref == 'refs/heads/work/wal-saf-deadlock-ui-20261119-retry'
         run: |
           set -euo pipefail
           python3 - <<'PY_CLEANUP'
