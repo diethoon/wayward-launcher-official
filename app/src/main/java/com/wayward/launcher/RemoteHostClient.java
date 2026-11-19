@@ -110,19 +110,10 @@ final class RemoteHostClient {
             throw new SecurityException("mDNS 주소에서 응답한 HTTPS Host가 기존 등록 Host와 다릅니다.");
         }
 
-        String query = "/v1/host/qr?address=" + URLEncoder.encode(address, "UTF-8");
-        JSONObject qr = requestJsonPinned(baseUrl, trustedHost.certificateSha256,
-                query, "GET", null, null);
-        RemoteHostConnection refreshed = RemoteHostConnection.fromQrJson(qr.toString());
-        refreshed.verifySignedManifest();
-        if (!refreshed.hostId.equalsIgnoreCase(trustedHost.hostId) ||
-                !refreshed.certificateSha256.equalsIgnoreCase(trustedHost.certificateSha256) ||
-                !refreshed.publicKeyFingerprint.equalsIgnoreCase(trustedHost.publicKeyFingerprint) ||
-                !refreshed.publicKeyBase64.equals(trustedHost.publicKeyBase64) ||
-                !refreshed.baseUrl.equalsIgnoreCase(baseUrl)) {
-            throw new SecurityException("새 IP 주소가 기존 Host Identity 및 서명된 연결 매니페스트와 일치하지 않습니다.");
-        }
-        return refreshed;
+        // mDNS can update only the LAN route. It cannot create a new pairing QR or
+        // replace the signed Host identity; the previously stored QR remains the trust anchor.
+        trustedHost.updateLanBaseUrl(baseUrl);
+        return trustedHost;
     }
 
     private static void verifyIdentityResponse(RemoteHostConnection host, JSONObject identity) throws Exception {
@@ -227,6 +218,13 @@ final class RemoteHostClient {
         synchronized (SESSION_LOCK) {
             if (host.hostId.equals(sessionHostId) && !accessToken.isEmpty() &&
                     tokenExpiresAtMillis > System.currentTimeMillis() + 60_000L) {
+                if (host.wanBaseUrl == null || host.wanBaseUrl.isEmpty()) {
+                    try { refreshWanEndpointWithToken(context, host, accessToken); }
+                    catch (Exception endpointError) {
+                        Log.w(PAIRING_TAG, "stage=wan_endpoint_refresh result=unavailable error=" +
+                                endpointError.getClass().getSimpleName());
+                    }
+                }
                 return accessToken;
             }
 
@@ -259,6 +257,16 @@ final class RemoteHostClient {
                 accessToken = newToken;
                 sessionHostId = host.hostId;
                 tokenExpiresAtMillis = expires;
+                if (host.wanBaseUrl == null || host.wanBaseUrl.isEmpty()) {
+                    try {
+                        refreshWanEndpointWithToken(context, host, newToken);
+                    } catch (Exception endpointError) {
+                        // WAN mapping may be unsupported or temporarily unavailable. Keep the
+                        // verified LAN route and the existing Host/device trust state unchanged.
+                        Log.w(PAIRING_TAG, "stage=wan_endpoint_refresh result=unavailable error=" +
+                                endpointError.getClass().getSimpleName());
+                    }
+                }
                 Log.i(PAIRING_TAG, "stage=pc_session_auth result=success");
                 return accessToken;
             } finally {
@@ -267,6 +275,30 @@ final class RemoteHostClient {
                 if (deviceSignature != null) java.util.Arrays.fill(deviceSignature, (byte) 0);
             }
         }
+    }
+
+    static void refreshWanEndpoint(Context context, RemoteHostConnection host) throws Exception {
+        boolean hadWanEndpoint = host.wanBaseUrl != null && !host.wanBaseUrl.isEmpty();
+        String token = authenticate(context, host);
+        if (hadWanEndpoint) refreshWanEndpointWithToken(context, host, token);
+    }
+
+    private static void refreshWanEndpointWithToken(Context context, RemoteHostConnection host,
+            String token) throws Exception {
+        JSONObject endpoint = requestJson(host, "/v1/host/connection", "GET", null, "Bearer " + token);
+        if (!host.hostId.equalsIgnoreCase(endpoint.getString("hostId")) ||
+                !host.certificateSha256.equalsIgnoreCase(endpoint.getString("certificateSha256"))) {
+            throw new SecurityException("Authenticated WAN endpoint metadata belongs to a different Host or TLS certificate.");
+        }
+        String baseUrl = RemoteHostConnection.normalizeWanBaseUrl(endpoint.getString("baseUrl"));
+        long expires = Instant.parse(endpoint.getString("leaseExpiresAtUtc")).toEpochMilli();
+        if (expires <= System.currentTimeMillis() + 5_000L ||
+                expires > System.currentTimeMillis() + 10 * 60_000L) {
+            throw new SecurityException("Host WAN endpoint lease expiry is outside the expected finite window.");
+        }
+        host.updateWanBaseUrl(baseUrl);
+        RemoteHostStore.saveConnection(context, host);
+        Log.i(PAIRING_TAG, "stage=wan_endpoint_refresh result=success");
     }
 
     static JSONArray getWorkspaceRoots(Context context, RemoteHostConnection host) throws Exception {
@@ -469,8 +501,12 @@ final class RemoteHostClient {
     }
 
     static String[] endpointCandidates(RemoteHostConnection host) {
-        if (host == null) throw new IllegalArgumentException("Trusted LAN Host is required.");
-        return new String[] {host.baseUrl};
+        if (host == null) throw new IllegalArgumentException("Trusted Remote Host is required.");
+        java.util.LinkedHashSet<String> candidates = new java.util.LinkedHashSet<>();
+        if (host.wanBaseUrl != null && !host.wanBaseUrl.isEmpty()) candidates.add(host.wanBaseUrl);
+        if (host.lanBaseUrl != null && !host.lanBaseUrl.isEmpty()) candidates.add(host.lanBaseUrl);
+        candidates.add(host.baseUrl);
+        return candidates.toArray(new String[0]);
     }
 
     private static HttpsURLConnection openPinned(RemoteHostConnection host, String path,
