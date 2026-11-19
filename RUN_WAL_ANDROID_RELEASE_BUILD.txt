@@ -1,1 +1,1 @@
-Retry P12 verification with raw password and alias trimmed safely.
+Diagnose embedded release certificate separately from P12 password before final signing attempt.
