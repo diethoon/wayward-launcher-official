@@ -155,6 +155,7 @@ public class MainActivity extends Activity {
     }
     @Override protected void onResume(){
         super.onResume();
+        if(web!=null)web.onResume();
         DiagnosticsUploader.uploadPending(this);
         if(imagePackDirectoryAccess!=null)imagePackDirectoryAccess.onResume();
         logGameLifecycle("INFO","activity_resume",sessionProfileId(getIntent()),
@@ -173,6 +174,8 @@ public class MainActivity extends Activity {
     @Override protected void onPause(){
         logGameLifecycle("INFO","activity_pause",sessionProfileId(getIntent()),
                 activeGameLaunchRequestId,"onPause");
+        if(imagePackDirectoryAccess!=null)imagePackDirectoryAccess.onPause();
+        if(web!=null)web.onPause();
         if(remoteHostDiscovery!=null){
             try{remoteHostDiscovery.close();}catch(Exception ignored){}
             remoteHostDiscovery=null;

@@ -14,6 +14,33 @@
     } catch (_) {}
   }
 
+  let progressNode = null;
+  let progressHideTimer = null;
+  function showUploadProgress(message, state, requestId, details) {
+    diagnose("imagepack_progress_" + state, requestId || "", details || {});
+    try {
+      const doc = document;
+      const root = doc.body || doc.documentElement;
+      if (!root) return;
+      if (!progressNode || !progressNode.isConnected) {
+        progressNode = doc.createElement("div");
+        progressNode.setAttribute("role", "status");
+        progressNode.setAttribute("aria-live", "polite");
+        progressNode.style.cssText = "position:fixed;z-index:2147483647;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));padding:11px 14px;border:1px solid rgba(255,255,255,.2);border-radius:10px;background:rgba(20,20,24,.94);color:#fff;font:600 14px/1.4 sans-serif;box-shadow:0 4px 18px rgba(0,0,0,.35);pointer-events:none;text-align:center";
+        root.appendChild(progressNode);
+      }
+      progressNode.textContent = String(message || "");
+      if (progressHideTimer !== null) clearTimeout(progressHideTimer);
+      if (state === "complete" || state === "failed" || state === "cancelled") {
+        progressHideTimer = setTimeout(() => {
+          if (progressNode && progressNode.parentNode) progressNode.parentNode.removeChild(progressNode);
+          progressNode = null;
+          progressHideTimer = null;
+        }, state === "complete" ? 3500 : 9000);
+      }
+    } catch (_) {}
+  }
+
   let nextId = 0;
   const pending = new Map();
   const pendingDirectoryLists = new Map();
@@ -77,7 +104,7 @@
       origin: frameOrigin, frameOrigin, topOrigin, pagePath: String(location.pathname || ""),
       frameDepth, isTopFrame: topFrame, mode
     });
-    return new Promise((resolve, reject) => {
+    const requestPromise = new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         pending.delete(id);
         diagnose("show_directory_picker_timeout", id, {
@@ -114,6 +141,17 @@
         });
         reject(domError("NotAllowedError", String(error && error.message || error)));
       }
+    });
+    return requestPromise.then(value => {
+      diagnose("native_request_promise_continuation_entered", id, {
+        durationMs: Date.now() - startedAt, resultOk: !!(value && value.ok)
+      });
+      return value;
+    }, error => {
+      diagnose("native_request_rejection_continuation_entered", id, {
+        durationMs: Date.now() - startedAt, errorName: error && error.name || "Error"
+      });
+      throw error;
     });
   }
 
@@ -543,6 +581,9 @@
     if (control && control.nativeDirectoryIds) control.nativeDirectoryIds.add(directoryRequestId);
     let completed = false;
     try {
+      if (typeof diagnose === "function") diagnose("directory_entries_native_call", requestId, {
+        directoryRequestId, method: "listImagePackDirectoryForRequest", uriPresent: !!directoryUri
+      });
       parseResult(host.listImagePackDirectoryForRequest(
         nativeCapability, "__WAYWARD_DIR_START__:" + directoryUri, directoryRequestId));
       while (true) {
@@ -567,6 +608,12 @@
             packet.message || "The SAF provider could not list this directory.");
         }
         const entries = Array.isArray(packet.entries) ? packet.entries : [];
+        if (state.expectedBatch === 0) {
+          if (typeof diagnose === "function") diagnose("directory_entries_first_batch_received", requestId, {
+            directoryRequestId, batchIndex: packet.batchIndex, entryCount: entries.length,
+            done: packet.done === true
+          });
+        }
         for (const entry of entries) {
           checkUploadCancelled(control);
           yield entry;
@@ -601,6 +648,9 @@
     let excludedCount = 0;
     let sinceYield = 0;
     const startedAt = Date.now();
+    if (typeof diagnose === "function") diagnose("directory_enumeration_started", requestId, {
+      rootUriPresent: !!rootUri, rootNamePresent: !!rootName
+    });
 
     async function visit(directoryUri, prefix, depth) {
       checkUploadCancelled(control);
@@ -743,16 +793,22 @@
   // Retain the successful selection after dispatch; FAITH scans asynchronously.
   const activeFileLists = new WeakMap();
 
-  function dispatchDirectoryFileList(input, files) {
+  function dispatchDirectoryFileList(input, files, requestId) {
     const fileList = makeFileList(files);
     const previous = activeFileLists.get(input);
     const previousDescriptor = Object.getOwnPropertyDescriptor(input, "files");
     try {
       Object.defineProperty(input, "files", { configurable: true, enumerable: true, get: () => fileList });
       activeFileLists.set(input, fileList);
+      diagnose("webkitdirectory_filelist_constructed", requestId, { fileCount: files.length });
       // Match a successful native file selection: input first, then change.
       dispatchInputEvent(input, "input", true);
       dispatchInputEvent(input, "change", true);
+      diagnose("webkitdirectory_input_event_dispatched", requestId, { fileCount: files.length });
+      diagnose("webkitdirectory_change_event_dispatched", requestId, { fileCount: files.length,
+        faithScannerTrigger: "change" });
+      diagnose("faith_scanner_change_trigger_dispatched", requestId, { fileCount: files.length,
+        listenerDispatchCompleted: true });
     } catch (error) {
       if (previous) {
         Object.defineProperty(input, "files", { configurable: true, enumerable: true, get: () => previous });
@@ -778,6 +834,7 @@
     let requestId = "";
     const control = { requestId: "", cancelled: false, nativeDirectoryIds: new Set() };
     activeUploadControls.add(control);
+    showUploadProgress("폴더 선택 창을 여는 중…", "picker", "", {});
     try {
       const policy = readRequestFilePolicy(input);
       diagnose("webkitdirectory_upload_started", "", {
@@ -786,28 +843,43 @@
         isTopFrame: window === window.top
       });
       const selection = await nativeRequest("read", "");
-      // The OS picker is closed. The independent SAF tree scans can now overlap.
-      nativePickerBusy = false;
       requestId = String(selection.requestId || "");
       control.requestId = requestId;
+      diagnose("webkitdirectory_picker_await_continued", requestId, {
+        selectionOk: !!(selection && selection.ok),
+        documentUriPresent: !!(selection && selection.documentUri),
+        treeUriPresent: !!(selection && selection.uri)
+      });
+      showUploadProgress("폴더 선택 완료 · 접근 권한 확인 중…", "selected", requestId, {
+        documentUriPresent: !!selection.documentUri, treeUriPresent: !!selection.uri
+      });
+      // The OS picker is closed. The independent SAF tree scans can now overlap.
+      nativePickerBusy = false;
       checkUploadCancelled(control);
       if (!selection.documentUri || !selection.uri) {
         throw domError("NotReadableError", "Android did not return a SAF tree and root document URI.");
       }
+      showUploadProgress("파일 탐색 중…", "scanning", requestId, {});
       const files = await enumerateSafTree(
         String(selection.documentUri), String(selection.name || "Image packs"), requestId, policy, control);
+      diagnose("webkitdirectory_enumeration_result", requestId, { fileCount: files.length });
       if (!files.length) {
         throw domError("NotFoundError", "The selected folder contains no files.");
       }
-      dispatchDirectoryFileList(input, files);
+      showUploadProgress("파일 목록 구성 중…", "building", requestId, { fileCount: files.length });
+      dispatchDirectoryFileList(input, files, requestId);
       diagnose("webkitdirectory_upload_dispatched", requestId, {
         fileCount: files.length, rootName: String(selection.name || ""),
         policyApplied: !!policy, multiple: input.multiple === true
       });
+      showUploadProgress("게임 전달 완료 · 이미지팩 스캔을 시작했습니다.", "complete", requestId,
+        { fileCount: files.length });
     } catch (error) {
       const name = error && error.name || "NotReadableError";
       const message = String(error && error.message || error).slice(0, 240);
       diagnose("webkitdirectory_upload_failed", requestId, { errorName: name, message });
+      showUploadProgress(name === "AbortError" ? "폴더 선택이 취소되었습니다." : "폴더 탐색 실패: " + message,
+        name === "AbortError" ? "cancelled" : "failed", requestId, { errorName: name });
       if (name === "AbortError") dispatchDirectoryCancel(input);
       try {
         const view = input.ownerDocument && input.ownerDocument.defaultView || window;

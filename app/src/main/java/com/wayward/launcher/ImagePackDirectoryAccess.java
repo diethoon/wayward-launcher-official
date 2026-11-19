@@ -57,6 +57,10 @@ final class ImagePackDirectoryAccess {
     private boolean writable;
     private String pendingRequestId;
     private String pendingMode;
+    // SAF Activity results can arrive before Activity.onResume(). Never dispatch
+    // a Promise result into a backgrounded WebView: queue it until the renderer resumes.
+    private boolean activityResumed;
+    private PendingDelivery pendingDelivery;
     private final Map<String, NativeFileStream> openFileStreams = new HashMap<>();
     private static final int DIRECTORY_BATCH_SIZE = 32;
     private static final long DIRECTORY_BATCH_ACK_TIMEOUT_SECONDS = 30L;
@@ -159,18 +163,32 @@ final class ImagePackDirectoryAccess {
         deliver(requestId, failure(errorName, message));
     }
 
+    void onPause() {
+        activityResumed = false;
+        diagnostic("native_webview_delivery_paused", pendingDelivery == null ? "" : pendingDelivery.requestId,
+                "info", details("queuedDelivery", pendingDelivery != null));
+    }
+
     void onResume() {
+        activityResumed = true;
         if (treeUri == null) {
             restorePersistedTree();
-            return;
+        } else {
+            try {
+                requireTree();
+            } catch (SecurityException error) {
+                treeUri = null;
+                writable = false;
+                diagnostic("native_saf_persisted_permission_revoked", "", "error",
+                        details("result", "denied", "recoverable", true));
+            }
         }
-        try {
-            requireTree();
-        } catch (SecurityException error) {
-            treeUri = null;
-            writable = false;
-            diagnostic("native_saf_persisted_permission_revoked", "", "error",
-                    details("result", "denied", "recoverable", true));
+        PendingDelivery queued = pendingDelivery;
+        pendingDelivery = null;
+        if (queued != null) {
+            diagnostic("native_js_result_resume_flush", queued.requestId, "info",
+                    details("webViewAlive", webView != null, "activityResumed", true));
+            deliverNow(queued.requestId, queued.result);
         }
     }
 
@@ -1198,6 +1216,21 @@ final class ImagePackDirectoryAccess {
     }
 
     private void deliver(String requestId, JSONObject result) {
+        if (!activityResumed) {
+            if (pendingDelivery != null && !pendingDelivery.requestId.equals(requestId)) {
+                diagnostic("native_js_result_queued_delivery_replaced", pendingDelivery.requestId,
+                        "warn", details("replacementRequestPresent", true));
+            }
+            pendingDelivery = new PendingDelivery(requestId, result);
+            diagnostic("native_js_result_queued_until_activity_resume", requestId, "info",
+                    details("webViewAlive", webView != null, "activityResumed", false,
+                            "resultOk", result != null && result.optBoolean("ok")));
+            return;
+        }
+        deliverNow(requestId, result);
+    }
+
+    private void deliverNow(String requestId, JSONObject result) {
         String script = "(function(){"
                 + "if(typeof window.__waywardNativeImagePackPickerDispatch==='function')"
                 + "return window.__waywardNativeImagePackPickerDispatch("
@@ -1207,11 +1240,19 @@ final class ImagePackDirectoryAccess {
                 + JSONObject.quote(requestId) + "," + result.toString() + ")?1:0;"
                 + "return 0;})()";
         activity.runOnUiThread(() -> {
+            if (!activityResumed) {
+                pendingDelivery = new PendingDelivery(requestId, result);
+                diagnostic("native_js_result_delivery_deferred", requestId, "info",
+                        details("activityResumed", false, "webViewAlive", webView != null));
+                return;
+            }
             if (webView == null || activity.isFinishing()) {
                 diagnostic("native_js_result_delivery_skipped", requestId, "error",
                         details("webViewAlive", webView != null));
                 return;
             }
+            diagnostic("native_js_result_delivery_started", requestId, "info",
+                    details("targetFrame", "main", "activityResumed", true));
             webView.evaluateJavascript(script, value -> {
                 int delivered = 0;
                 try { delivered = value == null ? 0 : Integer.parseInt(value.trim()); }
@@ -1298,6 +1339,16 @@ final class ImagePackDirectoryAccess {
             result.put("state", state);
         } catch (Exception ignored) {}
         return result;
+    }
+
+    private static final class PendingDelivery {
+        final String requestId;
+        final JSONObject result;
+
+        PendingDelivery(String requestId, JSONObject result) {
+            this.requestId = requestId;
+            this.result = result;
+        }
     }
 
     private static final class Node {
