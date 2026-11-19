@@ -293,24 +293,13 @@ jobs:
             "$aapt" dump badging "$apk" > "$RUNNER_TEMP/$variant-badging.txt"
             grep -F "application-label:'WWL'" "$RUNNER_TEMP/$variant-badging.txt"
             grep -F 'com.wayward.launcher.official' "$RUNNER_TEMP/$variant-badging.txt"
-            unzip -Z1 "$apk" > "$RUNNER_TEMP/$variant-entries.txt"
-            echo "-- $variant launcher archive entries --"
-            grep -i "launcher" "$RUNNER_TEMP/$variant-entries.txt" || true
-            if [ "$variant" = "release" ]; then
-              echo "-- release resource archive entries --"
-              grep -E "^res/|^AndroidManifest.xml" "$RUNNER_TEMP/$variant-entries.txt" | head -80 || true
-              echo "-- release compiled manifest icon attributes --"
-              "$aapt" dump xmltree "$apk" AndroidManifest.xml | grep -i -E "icon|roundIcon|label" || true
-              echo "-- release manifest merger report --"
-              grep -n -C2 -E "android:icon|android:roundIcon|launcher" app/build/outputs/logs/manifest-merger-release-report.txt 2>/dev/null || true
-            fi
-            grep -F 'ic_launcher.xml' "$RUNNER_TEMP/$variant-entries.txt"
-            grep -F 'ic_launcher_round.xml' "$RUNNER_TEMP/$variant-entries.txt"
-            grep -F 'ic_launcher_foreground.png' "$RUNNER_TEMP/$variant-entries.txt"
             "$aapt" dump --values resources "$apk" > "$RUNNER_TEMP/$variant-resources.txt"
             grep -F 'mipmap/ic_launcher' "$RUNNER_TEMP/$variant-resources.txt"
             grep -F 'mipmap/ic_launcher_round' "$RUNNER_TEMP/$variant-resources.txt"
             grep -i -F '24170f' "$RUNNER_TEMP/$variant-resources.txt"
+            "$aapt" dump xmltree "$apk" AndroidManifest.xml > "$RUNNER_TEMP/$variant-manifest.txt"
+            grep -F 'android:icon' "$RUNNER_TEMP/$variant-manifest.txt"
+            grep -F 'android:roundIcon' "$RUNNER_TEMP/$variant-manifest.txt"
             sha256sum "$apk"
             stat -c '%n %s bytes' "$apk"
           done
