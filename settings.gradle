@@ -1,9 +1,9 @@
 pluginManagement {
     repositories {
-        // Prefer mirrors reachable from CI runners with restricted Maven Central routes.
+        // Central artifacts must resolve from the Central mirror, not the Google mirror.
+        maven { url = uri("https://maven.aliyun.com/repository/public") }
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
-        maven { url = uri("https://maven.aliyun.com/repository/public") }
         google()
         mavenCentral()
         gradlePluginPortal()
@@ -12,11 +12,11 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        // Keep official repositories as fallback; mirrors are additive, not exclusive.
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        // Central first; Google Maven remains available for AndroidX and AGP artifacts.
         maven { url = uri("https://maven.aliyun.com/repository/public") }
-        google()
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
         mavenCentral()
+        google()
     }
 }
 rootProject.name = "WaywardFolderLauncher"
