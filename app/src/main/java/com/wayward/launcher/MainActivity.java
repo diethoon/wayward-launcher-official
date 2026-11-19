@@ -596,9 +596,19 @@ public class MainActivity extends Activity {
     }
 
     private boolean isRemoteDeviceRevoked(Exception error){
-        String value=error==null?"":String.valueOf(error.getMessage()).toLowerCase(Locale.ROOT);
-        return value.contains("http 401")||value.contains("http 404")||
-                value.contains("devicerevoked")||value.contains("device_not_paired");
+        for(Throwable current=error;current!=null;current=current.getCause()){
+            String message=current.getMessage();
+            if(message==null)continue;
+            int jsonStart=message.indexOf('{');
+            if(jsonStart<0)continue;
+            try{
+                org.json.JSONObject body=new org.json.JSONObject(message.substring(jsonStart));
+                String code=body.optString("error","");
+                if("DeviceRevoked".equalsIgnoreCase(code)||
+                        "device_not_paired".equalsIgnoreCase(code))return true;
+            }catch(org.json.JSONException ignored){}
+        }
+        return false;
     }
 
     private void startRemoteHostDiscoveryIfNeeded(){
