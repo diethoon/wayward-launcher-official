@@ -1,1 +1,1 @@
-Run signed Official 1.0.0 hosted build; publish a private draft release in this public source repository.
+Retry signed Official 1.0.0 build after correcting inline contract assertions.
