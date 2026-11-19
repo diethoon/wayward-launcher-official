@@ -58,6 +58,14 @@ jobs:
       - name: Test Google OAuth bridge contract
         run: node scripts/test-google-auth-bridge.cjs
 
+      - name: Test SAF image direct document-ID resolver
+        run: |
+          test_dir="$RUNNER_TEMP/saf-image-resolver-test"
+          mkdir -p "$test_dir"
+          javac -d "$test_dir" app/src/main/java/com/wayward/launcher/SafImageDocumentResolver.java tests/SafImageDocumentResolverTest.java
+          java -cp "$test_dir" com.wayward.launcher.SafImageDocumentResolverTest
+          node tests/saf-image-fast-path.contract.test.cjs
+
       - name: Prepare optional release keystore
         shell: bash
         env:
