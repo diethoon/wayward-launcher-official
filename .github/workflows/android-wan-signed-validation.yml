@@ -303,6 +303,9 @@ jobs:
     needs: signed-wan-validation
     if: \${{ needs.signed-wan-validation.result == 'success' }}
     timeout-minutes: 25
+    env:
+      WAL_RELEASE_VERSION: 1.0.0
+      ANDROID_HOME: 'C:\\Users\\Admin\\.android\\sdk'
     steps:
       - name: Download signed APKs from this run
         uses: actions/download-artifact@v4
