@@ -1619,8 +1619,8 @@ def run_native_folder_acceptance() -> None:
     first_log = wait_for_log("PASS fs-directory-handle")
     if "FAIL " in first_log:
         raise RuntimeError("Selected-root CRUD or symbolic-link boundary acceptance failed: " + first_log[-4000:])
-    if "PASS selected-root-boundary" not in first_log:
-        raise RuntimeError("Selected-root CRUD and boundary tests did not report success.")
+    if "PASS SAF document-uri CRUD, ancestry, and cross-tree access denied" not in first_log:
+        raise RuntimeError("Selected-root SAF CRUD, ancestry, and cross-tree checks did not report success.")
     if "listed=" not in first_log or "bytes=" not in first_log:
         raise RuntimeError("The returned directory handle did not enumerate and read the selected image.")
     print("PASS: adapter test returned a directory-handle-compatible JS object, listed files, and read WaywardImagePackAcceptance/pixel.png.")
