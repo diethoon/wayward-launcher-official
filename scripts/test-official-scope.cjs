@@ -6,6 +6,8 @@ const main = fs.readFileSync('app/src/main/java/com/wayward/launcher/MainActivit
 const application = fs.readFileSync('app/src/main/java/com/wayward/launcher/LauncherApplication.java', 'utf8');
 const manifest = fs.readFileSync('app/src/main/AndroidManifest.xml', 'utf8');
 const gradle = fs.readFileSync('app/build.gradle', 'utf8');
+const tactileStyle = fs.readFileSync('app/src/main/java/com/wayward/launcher/NeumorphicButtonStyle.java', 'utf8');
+const naiSettings = fs.readFileSync('app/src/main/java/com/wayward/launcher/NovelAiSettingsActivity.java', 'utf8');
 
 const homeStart = main.indexOf('private void showHome(){');
 const homeEnd = main.indexOf('private void showLauncherInfoDialog()', homeStart);
@@ -19,6 +21,30 @@ assert.match(home, /이미지 생성 서버 실행/, 'home must expose the expli
 assert.match(main, /glassSettingsButton\(this::openNovelAiSettings\)/, 'the image server row must expose a compact NovelAI settings gear');
 assert.match(main, /setContentDescription\("NovelAI 토큰 설정"\)/, 'the settings gear must be accessible');
 assert.match(main, /⚙/, 'the settings affordance must render as a gear icon');
+assert.match(main, /NeumorphicButtonStyle\.bind\(this,tile,selected,17f\)/,
+  'image mode choices must share the common raised/recessed button style');
+assert.match(main, /NeumorphicButtonStyle\.bind\(this,gear,false,16f\)/,
+  'the settings gear must use the same button style');
+assert.match(main, /NeumorphicButtonStyle\.bind\(this,b,false,12f\)/,
+  'standard launcher buttons must use the common button style');
+assert.match(main, /NeumorphicButtonStyle\.bind\(this,b,false,10f\)/,
+  'compact launcher buttons must use the common button style');
+assert.match(naiSettings, /NeumorphicButtonStyle\.bind\(this, button, false, 12f\)/,
+  'NovelAI settings actions must use the common button style');
+assert.match(tactileStyle, /setOutlineSpotShadowColor/,
+  'neumorphic controls must tune native outline shadows');
+assert.match(tactileStyle, /setElevation/,
+  'neumorphic controls must distinguish raised and recessed elevation');
+assert.match(tactileStyle, /ACTION_DOWN/,
+  'neumorphic controls must depress on touch down');
+assert.match(tactileStyle, /recessed/,
+  'neumorphic style must represent persistent selected/recessed states');
+assert.doesNotMatch(main, /tile\.setClipToOutline\(true\)/,
+  'mode button borders must not be clipped by outline clipping');
+assert.match(main, /packsParams\.bottomMargin=dp\(8\)/,
+  'the image-pack button must have extra room beneath its lower border and shadow');
+assert.match(main, /imageModePanel\.setClipChildren\(false\)/,
+  'image mode panel must not clip button shadows');
 const imageModeUiStart = main.indexOf('private void renderImageModePanel()');
 const imageModeUiEnd = main.indexOf('private void openNovelAiSettings()', imageModeUiStart);
 assert(imageModeUiStart >= 0 && imageModeUiEnd > imageModeUiStart, 'image mode panel method must exist');

@@ -226,7 +226,15 @@ jobs:
             adb shell pidof -s com.wayward.launcher.official.debug > /tmp/wayward-launcher-app-pid.txt
             adb logcat -d -s AndroidRuntime:E > /tmp/wayward-launcher-crash.log
             test -s /tmp/wayward-launcher-app-pid.txt && ! grep -q "Process: com.wayward.launcher.official.debug" /tmp/wayward-launcher-crash.log
-            echo "Android 15 emulator launched the official launcher process."
+            adb shell uiautomator dump /sdcard/wayward-launcher-home.xml >/dev/null
+            adb pull /sdcard/wayward-launcher-home.xml /tmp/wayward-launcher-home.xml
+            grep -q "이미지 생성 서버 실행" /tmp/wayward-launcher-home.xml
+            grep -q "이미지팩만 사용" /tmp/wayward-launcher-home.xml
+            grep -q "NovelAI 토큰 설정" /tmp/wayward-launcher-home.xml
+            mkdir -p artifacts
+            adb exec-out screencap -p > artifacts/android15-launcher-home.png
+            test -s artifacts/android15-launcher-home.png
+            echo "Android 15 emulator launched the official launcher and confirmed both image mode controls plus the NovelAI settings gear. Home screenshot captured."
 
       - name: Upload APKs
         uses: actions/upload-artifact@v7
@@ -235,5 +243,6 @@ jobs:
           path: |
             app/build/outputs/apk/debug/*.apk
             app/build/outputs/apk/release/*.apk
+            artifacts/android15-launcher-home.png
           if-no-files-found: error
           retention-days: 14
