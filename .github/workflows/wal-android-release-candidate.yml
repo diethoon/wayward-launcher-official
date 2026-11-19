@@ -8,28 +8,29 @@ on:
       - RUN_WAL_ANDROID_RELEASE_BUILD.txt
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: wal-android-release-candidate
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   signed-release-candidate:
-    runs-on: [self-hosted, Windows, X64, wal-android]
+    runs-on: ubuntu-latest
     timeout-minutes: 75
     env:
-      ANDROID_HOME: C:\Users\Admin\.android\sdk
-      ANDROID_SDK_ROOT: C:\Users\Admin\.android\sdk
-      ANDROID_KEYSTORE_BASE64: \${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      GH_TOKEN: \${{ github.token }}
+      GH_REPO: wal-studio/wayward-launcher-official
       ANDROID_KEYSTORE_PASSWORD: \${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       ANDROID_KEY_ALIAS: \${{ secrets.ANDROID_KEY_ALIAS }}
-      WAL_ANDROID_BRANCH: work/android-product-split-v1.3-20261120
-      WAL_ANDROID_COMMIT: 412c34afe84974413c222833077b71ec37275d58
+      KEYSTORE_BASE64: \${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORD: \${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      KEY_ALIAS: \${{ secrets.ANDROID_KEY_ALIAS }}
       WAL_RELEASE_VERSION: 1.0.0
+      WAL_ANDROID_DEVELOPMENT_COMMIT: 412c34afe84974413c222833077b71ec37275d58
 
     steps:
-      - name: Checkout isolated release-builder workflow
+      - name: Checkout mirrored Android product-split source
         uses: actions/checkout@v4
 
       - name: Set up Java 17
@@ -38,197 +39,174 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4.0.4
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.9'
           cache-provider: basic
 
-      - name: Verify existing cross-repository access
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { throw "Existing GitHub CLI is unavailable on the Android runner." }
-          if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN)) { throw "One-shot runner did not inherit its scoped GitHub CLI token." }
-          Write-Output "::add-mask::$env:GH_TOKEN"
-          gh auth status
-          if ($LASTEXITCODE -ne 0) { throw "The runner's existing GitHub CLI authentication is unavailable." }
-          gh api repos/wal-studio/WAL-Android-Development --jq .full_name
-          if ($LASTEXITCODE -ne 0) { throw "The runner cannot read WAL-Android-Development." }
-          gh api repos/wal-studio/WAL-Official-Releases --jq .full_name
-          if ($LASTEXITCODE -ne 0) { throw "The runner cannot access WAL-Official-Releases." }
-
-      - name: Decode existing source Release P12
+      - name: Run product, Google OAuth and CloudSave contracts
         shell: bash
         run: |
           set -euo pipefail
-          work_dir="$(cygpath -u "$RUNNER_TEMP")/wal-official-release-signing"
+          node --check app/src/main/assets/wayward-google-auth-bridge.js
+          node scripts/test-google-auth-bridge.cjs
+          node tests/cloudsave-native-auth-selection.test.cjs
+          node scripts/test-official-scope.cjs
+          node - <<'NODE'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const gradle = fs.readFileSync('app/build.gradle', 'utf8');
+          const updater = fs.readFileSync('app/src/main/java/com/wayward/launcher/OfficialUpdateManager.java', 'utf8');
+          assert.match(gradle, /applicationIdSuffix '\\.wal'/);
+          assert.match(gradle, /walOfficialVersionName/);
+          assert.match(updater, /WAL-Official-Releases\\/releases\\?per_page=30/);
+          assert.match(updater, /wayward-launcher-official\\/releases\\?per_page=30/);
+          assert.match(updater, /isAllowedReleaseUrl/);
+          assert.match(updater, /D9BE7443EB247D27C958CC4250D7F5D1E078F740/);
+          console.log('Official package, dual release feeds and signer contract passed.');
+          NODE
+
+      - name: Prepare existing Android Release signing identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          work_dir="$RUNNER_TEMP/wayward-release"
           mkdir -p "$work_dir"
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$work_dir/existing-release.p12"
-          actual_bytes="$(wc -c < "$work_dir/existing-release.p12" | tr -d '[:space:]')"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$work_dir/uploaded.p12"
+          chmod 600 "$work_dir/uploaded.p12"
+          actual_bytes="$(wc -c < "$work_dir/uploaded.p12" | tr -d '[:space:]')"
           if [[ "$actual_bytes" != "2858" ]]; then
             echo "Existing Release P12 size mismatch: $actual_bytes bytes (expected 2858)." >&2
             exit 1
           fi
-          echo "WAL_P12_PATH=$(cygpath -w "$work_dir/existing-release.p12")" >> "$GITHUB_ENV"
-          echo "Existing Release P12 decoded and size-checked: $actual_bytes bytes."
-
-      - name: Prepare existing Android signing identity
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          foreach ($name in @("WAL_P12_PATH","ANDROID_KEYSTORE_PASSWORD","ANDROID_KEY_ALIAS")) {
-            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
-              throw "Existing source-repository signing material is missing: $name"
-            }
+          openssl pkcs12 -in "$work_dir/uploaded.p12" -info -noout -passin env:KEYSTORE_PASSWORD >/dev/null 2>"$work_dir/p12-check.log" || {
+            echo "Existing Release P12 password validation failed." >&2
+            cat "$work_dir/p12-check.log" >&2
+            exit 1
           }
-          $opensslCommand = Get-Command openssl -ErrorAction SilentlyContinue
-          if ($null -eq $opensslCommand) {
-            $gitOpenSsl = Join-Path $env:ProgramFiles "Git/usr/bin/openssl.exe"
-            if (Test-Path $gitOpenSsl) { $opensslPath = $gitOpenSsl } else { throw "OpenSSL is unavailable." }
-          } else { $opensslPath = $opensslCommand.Source }
-          $workDir = Split-Path -Parent $env:WAL_P12_PATH
-          $p12 = $env:WAL_P12_PATH
-          & $opensslPath pkcs12 -in $p12 -info -noout -passin env:ANDROID_KEYSTORE_PASSWORD 2>$null
-          if ($LASTEXITCODE -ne 0) { throw "Existing release P12 password verification failed." }
-          $keyPem = Join-Path $workDir "release-key.pem"
-          $certPem = Join-Path $workDir "release-cert.pem"
-          & $opensslPath pkcs12 -in $p12 -nocerts -nodes -passin env:ANDROID_KEYSTORE_PASSWORD -out $keyPem
-          if ($LASTEXITCODE -ne 0) { throw "Existing release private key extraction failed." }
-          & $opensslPath pkcs12 -in $p12 -clcerts -nokeys -passin env:ANDROID_KEYSTORE_PASSWORD -out $certPem
-          if ($LASTEXITCODE -ne 0) { throw "Existing release certificate extraction failed." }
-          $sha1Line = & $opensslPath x509 -in $certPem -noout -fingerprint -sha1
-          $actualSha1 = (($sha1Line -split "=")[-1] -replace ":", "").ToUpperInvariant()
-          $expectedSha1 = "D9BE7443EB247D27C958CC4250D7F5D1E078F740"
-          if ($actualSha1 -ne $expectedSha1) { throw "Existing release signer does not match the registered SHA-1." }
-          $compatibleP12 = Join-Path $workDir "java-compatible.p12"
-          & $opensslPath pkcs12 -export -inkey $keyPem -in $certPem -name $env:ANDROID_KEY_ALIAS -passout env:ANDROID_KEYSTORE_PASSWORD -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 -out $compatibleP12
-          if ($LASTEXITCODE -ne 0) { throw "Java-compatible PKCS#12 conversion failed." }
-          $jks = Join-Path $workDir "release.jks"
-          & keytool -importkeystore -noprompt -srckeystore $compatibleP12 -srcstoretype PKCS12 -srcstorepass $env:ANDROID_KEYSTORE_PASSWORD -srcalias $env:ANDROID_KEY_ALIAS -destkeystore $jks -deststoretype JKS -deststorepass $env:ANDROID_KEYSTORE_PASSWORD -destkeypass $env:ANDROID_KEYSTORE_PASSWORD -destalias $env:ANDROID_KEY_ALIAS
-          if ($LASTEXITCODE -ne 0) { throw "Existing release JKS conversion failed." }
-          [IO.File]::AppendAllText($env:GITHUB_ENV,"ANDROID_KEYSTORE_PATH=$jks"+[char]10,[Text.UTF8Encoding]::new($false))
-          Write-Host "Existing registered Release signer verified; key material remains in runner temp storage."
-
-      - name: Clone and pin isolated Android Development commit
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          gh auth setup-git
-          if ($LASTEXITCODE -ne 0) { throw "Could not configure the runner's existing GitHub CLI credential for Git." }
-          $repoDir = Join-Path $env:RUNNER_TEMP "wal-android-development-release-build"
-          if (Test-Path $repoDir) { Remove-Item -LiteralPath $repoDir -Recurse -Force }
-          git clone --single-branch --branch $env:WAL_ANDROID_BRANCH https://github.com/wal-studio/WAL-Android-Development.git $repoDir
-          if ($LASTEXITCODE -ne 0) { throw "Could not clone the isolated Android Development branch." }
-          git -C $repoDir checkout --detach $env:WAL_ANDROID_COMMIT
-          if ($LASTEXITCODE -ne 0) { throw "Could not pin the requested Android commit." }
-          $actual = (git -C $repoDir rev-parse HEAD).Trim()
-          if ($actual -ne $env:WAL_ANDROID_COMMIT) { throw "Android source commit mismatch: $actual" }
-          Write-Host "Pinned Android source commit: $actual"
-          [IO.File]::AppendAllText($env:GITHUB_ENV,"WAL_ANDROID_SOURCE_DIR=$repoDir"+[char]10,[Text.UTF8Encoding]::new($false))
-
-      - name: Run product and CloudSave contracts
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          Set-Location $env:WAL_ANDROID_SOURCE_DIR
-          node --check app/src/main/assets/wayward-google-auth-bridge.js
-          if ($LASTEXITCODE -ne 0) { throw "Google auth bridge JavaScript syntax check failed." }
-          node scripts/test-google-auth-bridge.cjs
-          if ($LASTEXITCODE -ne 0) { throw "Google auth bridge contract failed." }
-          node tests/cloudsave-native-auth-selection.test.cjs
-          if ($LASTEXITCODE -ne 0) { throw "CloudSave native auth policy contract failed." }
-          node scripts/test-product-split-v1.3.cjs
-          if ($LASTEXITCODE -ne 0) { throw "Official product split contract failed." }
-          node scripts/test-official-scope.cjs
-          if ($LASTEXITCODE -ne 0) { throw "Development scope regression test failed." }
+          openssl pkcs12 -in "$work_dir/uploaded.p12" -nocerts -nodes -passin env:KEYSTORE_PASSWORD -out "$work_dir/release-key.pem"
+          openssl pkcs12 -in "$work_dir/uploaded.p12" -clcerts -nokeys -passin env:KEYSTORE_PASSWORD -out "$work_dir/release-cert.pem"
+          chmod 600 "$work_dir/release-key.pem" "$work_dir/release-cert.pem"
+          key_public_hash="$(openssl pkey -in "$work_dir/release-key.pem" -pubout -outform DER | openssl dgst -sha256)"
+          cert_public_hash="$(openssl x509 -in "$work_dir/release-cert.pem" -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256)"
+          if [[ "$key_public_hash" != "$cert_public_hash" ]]; then
+            echo "Existing Release private key does not match its certificate." >&2
+            exit 1
+          fi
+          actual_sha1="$(openssl x509 -in "$work_dir/release-cert.pem" -noout -fingerprint -sha1 | sed 's/.*=//' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+          expected_sha1="D9BE7443EB247D27C958CC4250D7F5D1E078F740"
+          if [[ "$actual_sha1" != "$expected_sha1" ]]; then
+            echo "Existing Release certificate SHA-1 mismatch." >&2
+            exit 1
+          fi
+          openssl pkcs12 -export \
+            -inkey "$work_dir/release-key.pem" \
+            -in "$work_dir/release-cert.pem" \
+            -name "$KEY_ALIAS" \
+            -passout env:KEYSTORE_PASSWORD \
+            -keypbe PBE-SHA1-3DES \
+            -certpbe PBE-SHA1-3DES \
+            -macalg sha1 \
+            -out "$work_dir/java-compatible.p12"
+          keytool -importkeystore -noprompt \
+            -srckeystore "$work_dir/java-compatible.p12" \
+            -srcstoretype PKCS12 \
+            -srcstorepass "$KEYSTORE_PASSWORD" \
+            -srcalias "$KEY_ALIAS" \
+            -destkeystore "$work_dir/release.jks" \
+            -deststoretype JKS \
+            -deststorepass "$KEYSTORE_PASSWORD" \
+            -destkeypass "$KEYSTORE_PASSWORD" \
+            -destalias "$KEY_ALIAS"
+          jks_sha1="$(keytool -list -v -keystore "$work_dir/release.jks" -storetype JKS -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" | awk '/SHA1:/ {print $2; exit}' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+          if [[ "$jks_sha1" != "$expected_sha1" ]]; then
+            echo "Converted JKS certificate SHA-1 mismatch." >&2
+            exit 1
+          fi
+          chmod 600 "$work_dir/release.jks"
+          echo "ANDROID_KEYSTORE_PATH=$work_dir/release.jks" >> "$GITHUB_ENV"
+          echo "Existing Release P12 validated (2858 bytes); signer SHA-1 matches the existing identity." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build and test signed Android variants
-        shell: pwsh
+        shell: bash
         run: |
-          $ErrorActionPreference = "Stop"
-          Set-Location $env:WAL_ANDROID_SOURCE_DIR
-          gradle --no-daemon --stacktrace clean testDebugUnitTest assembleDebug assembleRelease assembleOfficial -PwalOfficialVersionName=$env:WAL_RELEASE_VERSION
-          if ($LASTEXITCODE -ne 0) { throw "Android unit tests or signed variant builds failed." }
+          set -euo pipefail
+          gradle --no-daemon --stacktrace clean testDebugUnitTest assembleDebug assembleRelease assembleOfficial \
+            -PwalOfficialVersionName="$WAL_RELEASE_VERSION"
 
       - name: Package and verify Official release APK and checksum
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          Set-Location $env:WAL_ANDROID_SOURCE_DIR
-          & .\scripts\build-official-release-v1.3.ps1 -Version $env:WAL_RELEASE_VERSION
+          & ./scripts/build-official-release-v1.3.ps1 -Version $env:WAL_RELEASE_VERSION
           if ($LASTEXITCODE -ne 0) { throw "Official signed release packaging failed." }
           $apk = Join-Path $PWD "dist/official/WAL-Android-Launcher-$env:WAL_RELEASE_VERSION.apk"
           $sum = Join-Path $PWD "dist/official/SHA256SUMS.txt"
-          if (-not (Test-Path $apk) -or -not (Test-Path $sum)) { throw "Signed release APK or checksum file is missing." }
+          if (-not (Test-Path $apk) -or -not (Test-Path $sum)) { throw "Signed APK or checksum file is missing." }
           $hash = (Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLowerInvariant()
-          Write-Host "SIGNED OFFICIAL APK: $apk"
-          Write-Host "SHA256: $hash"
+          Write-Host "SIGNED OFFICIAL APK SHA256: $hash"
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "Signed Official APK created; SHA-256: $hash"
 
-      - name: Test Samsung SM-S938N over the existing ADB bridge when available
-        shell: pwsh
+      - name: Check physical device visibility
+        shell: bash
         run: |
-          $ErrorActionPreference = "Stop"
-          Set-Location $env:WAL_ANDROID_SOURCE_DIR
-          $adb = Join-Path $env:ANDROID_HOME "platform-tools/adb.exe"
-          & $adb connect "192.168.0.3:45581" 2>&1 | Out-Null
-          Start-Sleep -Seconds 3
-          $deviceLines = @(& $adb devices | Select-Object -Skip 1 | Where-Object { $_ -match "\sdevice$" })
-          $target = $null
-          foreach ($line in $deviceLines) {
-            $serial = ($line -split "\s+")[0]
-            $model = (& $adb -s $serial shell getprop ro.product.model).Trim()
-            if ($model -eq "SM-S938N") { $target = $serial; break }
-          }
-          if ($null -eq $target) {
-            $message = "SM-S938N physical test: SKIPPED — existing ADB bridge did not expose the device to the runner."
-            Write-Host $message
-            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value $message
-            exit 0
-          }
-          $api = (& $adb -s $target shell getprop ro.build.version.sdk).Trim()
-          if ($api -ne "35") { throw "SM-S938N is not Android 15 / API 35: $api" }
-          $debugApk = Join-Path $PWD "app/build/outputs/apk/debug/app-debug.apk"
-          $releaseApks = @(Get-ChildItem -LiteralPath "app/build/outputs/apk/release" -Filter "*.apk" -File)
-          $officialApk = Join-Path $PWD "dist/official/WAL-Android-Launcher-$env:WAL_RELEASE_VERSION.apk"
-          if ($releaseApks.Count -ne 1) { throw "Expected one signed Development Release APK." }
-          foreach ($apk in @($debugApk,$releaseApks[0].FullName,$officialApk)) {
-            & $adb -s $target install -r $apk
-            if ($LASTEXITCODE -ne 0) { throw "APK install failed: $apk" }
-          }
-          $packages = (& $adb -s $target shell pm list packages | Out-String)
-          foreach ($package in @("com.wayward.launcher.official.debug","com.wayward.launcher.official","com.wayward.launcher.official.wal")) {
-            if ($packages -notmatch [regex]::Escape("package:"+$package)) { throw "Co-install package missing: $package" }
-          }
-          & $adb -s $target shell monkey -p com.wayward.launcher.official.wal 1
-          if ($LASTEXITCODE -ne 0) { throw "Official launcher did not start on SM-S938N." }
-          $message = "SM-S938N physical test: PASS — Development Debug, Development Release, and Official coexist; Official launcher started."
-          Write-Host $message
-          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value $message
+          set -euo pipefail
+          devices="$(adb devices | awk 'NR>1 && $2=="device" {print $1}')"
+          if [[ -z "$devices" ]]; then
+            echo "SM-S938N physical test: SKIPPED — GitHub-hosted runner has no attached Android device." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ADB devices visible to hosted runner: $devices" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
-      - name: Create or update private draft release with signed assets
-        shell: pwsh
+      - name: Create or update draft signed release in source repository
+        shell: bash
         run: |
-          $ErrorActionPreference = "Stop"
-          Set-Location $env:WAL_ANDROID_SOURCE_DIR
-          $tag = "v$env:WAL_RELEASE_VERSION"
-          $apk = Join-Path $PWD "dist/official/WAL-Android-Launcher-$env:WAL_RELEASE_VERSION.apk"
-          $sum = Join-Path $PWD "dist/official/SHA256SUMS.txt"
-          $draftState = & gh release view $tag --repo wal-studio/WAL-Official-Releases --json isDraft --jq .isDraft 2>$null
-          if ($LASTEXITCODE -eq 0) {
-            if ($draftState.Trim() -ne "true") { throw "Refusing to overwrite an already published stable release." }
-            & gh release upload $tag $apk $sum --repo wal-studio/WAL-Official-Releases --clobber
-          } else {
-            & gh release create $tag $apk $sum --repo wal-studio/WAL-Official-Releases --draft --target main --title "WAL Android Launcher $env:WAL_RELEASE_VERSION" --notes "Draft signed release candidate built from WAL-Android-Development commit $env:WAL_ANDROID_COMMIT. This draft is not publicly published. Validate OAuth registration for package com.wayward.launcher.official.wal before publishing."
-          }
-          if ($LASTEXITCODE -ne 0) { throw "Could not stage the signed APK in WAL-Official-Releases." }
-          $message = "Signed Official APK and SHA256SUMS.txt staged in draft release $tag; not publicly published."
-          Write-Host $message
-          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value $message
+          set -euo pipefail
+          tag="v$WAL_RELEASE_VERSION"
+          apk="dist/official/WAL-Android-Launcher-$WAL_RELEASE_VERSION.apk"
+          sums="dist/official/SHA256SUMS.txt"
+          if gh release view "$tag" --json isDraft --jq .isDraft >/tmp/wal-release-draft-state.txt 2>/dev/null; then
+            state="$(cat /tmp/wal-release-draft-state.txt)"
+            if [[ "$state" != "true" ]]; then
+              echo "Refusing to overwrite an already published stable release." >&2
+              exit 1
+            fi
+            gh release upload "$tag" "$apk" "$sums" --clobber
+          else
+            gh release create "$tag" "$apk" "$sums" \
+              --draft \
+              --target "$GITHUB_SHA" \
+              --title "WAL Android Launcher $WAL_RELEASE_VERSION" \
+              --notes "Draft signed release candidate mirrored from WAL-Android-Development commit $WAL_ANDROID_DEVELOPMENT_COMMIT. Not publicly published. Before publishing, verify Google OAuth Android client registration for package com.wayward.launcher.official.wal with signer SHA-1 D9BE7443EB247D27C958CC4250D7F5D1E078F740."
+          fi
+          echo "Signed APK and SHA256SUMS.txt staged in draft release $tag in $GITHUB_REPOSITORY." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload signed APK build artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: WAL-Android-Launcher-1.0.0-signed
+          path: |
+            dist/official/WAL-Android-Launcher-1.0.0.apk
+            dist/official/SHA256SUMS.txt
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Remove temporary signing material
         if: always()
-        shell: pwsh
-        run: |
-          $signingDir = Join-Path $env:RUNNER_TEMP "wal-official-release-signing"
-          if (Test-Path $signingDir) { Remove-Item -LiteralPath $signingDir -Recurse -Force }
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/wayward-release"
