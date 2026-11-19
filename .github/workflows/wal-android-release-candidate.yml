@@ -89,6 +89,7 @@ jobs:
           KEYSTORE_PASSWORD_CLEAN="$(printf '%s' "$KEYSTORE_PASSWORD" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
           KEY_ALIAS_CLEAN="$(printf '%s' "$KEY_ALIAS" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
           echo "Signing password length: raw=$raw_password_length trimmed=${#KEYSTORE_PASSWORD_CLEAN}."
+          export KEYSTORE_PASSWORD_CLEAN KEY_ALIAS_CLEAN
           if [[ -z "$KEYSTORE_PASSWORD_CLEAN" || -z "$KEY_ALIAS_CLEAN" ]]; then echo "Release signing password or alias is empty after trimming." >&2; exit 1; fi
           raw_length="${#KEYSTORE_BASE64}"
           normalized="$(printf '%s' "$KEYSTORE_BASE64" | tr -d '\r\n\t ' | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//" -e 's/\\n//g' -e 's/\\r//g')"
