@@ -9,6 +9,7 @@ public final class RemoteDownloadResumePolicyTest {
         RemoteDownloadResumePolicy.Decision initial = RemoteDownloadResumePolicy.validate(
                 0, 100, HASH, 200, null, 100, HASH.toLowerCase());
         check(!initial.shouldAppend(), "initial 200 response must truncate/start");
+        check(initial.getTotalBytes() == 100, "initial total size must be preserved");
         RemoteDownloadResumePolicy.Decision emptyFile = RemoteDownloadResumePolicy.validate(
                 0, 0, "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
                 200, null, 0, "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855");
