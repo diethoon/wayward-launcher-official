@@ -44,7 +44,7 @@ assert.match(asset, /nativeRequest\("read",\s*""\)/,
   "FAITH folder upload must select a read-only SAF tree through the common native backend");
 assert.match(asset, /async function enumerateSafTree/,
   "the SAF tree must be recursively enumerated");
-assert.match(asset, /relativePath = prefix \+ "\/" \+ name/,
+assert.match(asset, /relativePath = directory\.prefix \+ "\/" \+ name/,
   "the selected root name and nested hierarchy must be retained in relative paths");
 assert.match(asset, /class SafBackedFile extends Blob/,
   "lazy files must keep Blob identity and File prototype compatibility");

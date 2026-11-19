@@ -21,7 +21,9 @@ assert.match(home, /\+ 현재 기기 폴더/, 'home must retain current-device f
 assert.match(home, /페어링/, 'home must expose internal QR pairing instead of the old info action');
 assert.match(home, /원격 PC 파일매니저/, 'home must keep remote file management below image routing');
 assert.match(home, /내 게임/, 'home must expose the registered game list');
-assert.match(home, /여러 게임을 독립 세션으로 실행/, 'home must describe independent sessions');
+assert.doesNotMatch(home, /여러 게임을 독립 세션으로 실행/, 'home must not show the retired independent-session promotional copy');
+assert.match(main, /RUNNING_SESSIONS/, 'independent session tracking must remain implemented');
+assert.match(main, /launchProfileSession\(/, 'game launch/session behavior must remain implemented');
 assert.match(home, /이미지 생성 서버 실행/, 'home must expose the explicit local image-generation server switch');
 assert.match(main, /setContentDescription\("NovelAI 토큰 설정"\)/, 'the settings gear must be accessible');
 assert.match(main, /⚙/, 'the settings affordance must render as a gear icon');
