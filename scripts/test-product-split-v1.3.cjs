@@ -41,7 +41,7 @@ assert.match(validationWorkflow,/SM-S938N physical test: PASS/);
 assert.match(validationWorkflow,/Get-ChildItem -LiteralPath "app\/build\/outputs\/apk\/release"/);
 assert.doesNotMatch(validationWorkflow,/throw "Existing Android Release signing secrets are incomplete/);
 assert.doesNotMatch(validationWorkflow,/.github\/workflows\/android-product-validation-v1\.3\.yml\s*$/m);
-assert.match(main,/OfficialUpdateManager\.installPendingIfAllowed\(this\)/);
+assert.doesNotMatch(main,/OfficialUpdateManager\.installPendingIfAllowed/);
 assert.match(main,/OfficialUpdateManager\.checkForUpdate\(this/);
 assert.match(updater,/WAL-Official-Releases\/releases\?per_page=30/);
 assert.match(updater,/wayward-launcher-official\/releases\?per_page=30/);
@@ -56,9 +56,12 @@ assert.match(updater,/WAL-Android-Launcher-/);
 assert.match(updater,/D9BE7443EB247D27C958CC4250D7F5D1E078F740/);
 assert.match(updater,/context\.getPackageName\(\)/);
 assert.match(updater,/versionCode\s*<=\s*installed\.getLongVersionCode\(\)/);
-assert.match(updater,/FileProvider\.getUriForFile/);
-assert.match(officialManifest,/android\.permission\.REQUEST_INSTALL_PACKAGES/);
-assert.match(providerPaths,/name="updates" path="updates\//);
+assert.match(updater,/isAllowedReleasePageUrl/);
+assert.match(updater,/public final String releaseUrl/);
+assert.match(updater,/new Intent\(Intent\.ACTION_VIEW, Uri\.parse\(update\.releaseUrl\)\)/);
+assert.doesNotMatch(updater,/installPendingIfAllowed|Settings\.ACTION_MANAGE_UNKNOWN_APP_SOURCES|PackageInstaller|FileProvider\.getUriForFile/);
+assert.doesNotMatch(officialManifest,/REQUEST_INSTALL_PACKAGES/);
+assert.doesNotMatch(providerPaths,/name="updates" path="updates\//);
 console.log('WAL Android product split v1.3 contract checks passed');
 
 // Trigger a fresh validation run after the workflow self-trigger correction.

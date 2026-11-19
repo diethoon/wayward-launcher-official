@@ -195,6 +195,40 @@ def extract(archive: Path, output: Path) -> None:
                     "        if (this.config.imageProvider === 'nai' && !this.config.naiToken.trim()) throw new Error('NovelAI API 토큰을 이미지 생성 방식 설정에서 저장하세요.')",
                     "require-token-only-for-novelai-provider",
                 ),
+                (
+                    """          try {
+            const result = await NovelAI_이미지생성하기(config, job.prompt, job.negativePrompt || '', args.seed)
+            job.genParams = { ...job.genParams, seed: result.seed }
+            await this.finalize(job, [{ filename: 'novelai.png', subfolder: '', type: 'output' }], [], undefined, result.bytes)
+          } catch (error) {
+            job.status = 'error'; job.error = (error as Error).message; job.completedAt = this.now()
+          }""",
+                    """          const naiStartedAt = this.now()
+          try {
+            const result = await NovelAI_이미지생성하기(config, job.prompt, job.negativePrompt || '', args.seed)
+            job.genParams = { ...job.genParams, seed: result.seed }
+            await this.finalize(job, [{ filename: 'novelai.png', subfolder: '', type: 'output' }], [], undefined, result.bytes)
+          } catch (error) {
+            const rawMessage = error instanceof Error ? error.message : String(error)
+            const promptRedacted = job.prompt ? rawMessage.split(job.prompt).join('[PROMPT REDACTED]') : rawMessage
+            const negativeRedacted = job.negativePrompt ? promptRedacted.split(job.negativePrompt).join('[PROMPT REDACTED]') : promptRedacted
+            const safeMessage = negativeRedacted
+              .split(config.naiToken).join('[REDACTED]')
+              .replace(/Bearer\\s+[A-Za-z0-9._~+/-]+=*/gi, 'Bearer [REDACTED]')
+              .replace(/(NAI_TOKEN|TOKEN|API[_-]?KEY|APIKEY|AUTHORIZATION|PASSWORD|SECRET)\\s*[=:]\\s*[^\\s,;]+/gi, '$1=[REDACTED]')
+              .slice(0, 500)
+            const statusMatch = safeMessage.match(/NovelAI API\\s+(\\d{3})/i)
+            console.error('[novelai] generation_failed', JSON.stringify({
+              errorType: error instanceof Error ? error.name : 'UnknownError',
+              httpStatus: statusMatch ? Number(statusMatch[1]) : null,
+              message: safeMessage,
+              model: config.naiModel,
+              elapsedMs: this.now() - naiStartedAt,
+            }))
+            job.status = 'error'; job.error = safeMessage; job.completedAt = this.now()
+          }""",
+                    "record-sanitized-novelai-upstream-failure",
+                ),
             ],
         )
 
