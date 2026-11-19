@@ -8,7 +8,6 @@ on:
       - RUN_WAL_ANDROID_RELEASE_BUILD.txt
 
 permissions:
-  actions: read
   contents: write
 
 concurrency:
@@ -28,7 +27,7 @@ jobs:
       KEYSTORE_PASSWORD: \${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       KEY_ALIAS: \${{ secrets.ANDROID_KEY_ALIAS }}
       WAL_RELEASE_VERSION: 1.0.0
-      WAL_ANDROID_DEVELOPMENT_COMMIT: 412c34afe84974413c222833077b71ec37275d58
+      WAL_ANDROID_DEVELOPMENT_COMMIT: 83f2dbd
 
     steps:
       - name: Checkout mirrored Android product-split source
@@ -80,69 +79,37 @@ jobs:
           console.log('Official package, dual release feeds and signer contract passed.');
           NODE
 
-      - name: Inspect signing secret metadata only
-        shell: bash
-        continue-on-error: true
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY/actions/secrets?per_page=100" \
-            --jq '.secrets[] | select(.name | test("ANDROID|KEYSTORE|RELEASE|SIGN"; "i")) | "\(.name) updated=\(.updated_at)"' \
-            || echo "Repository secret metadata is not readable with the workflow token."
-
       - name: Prepare existing Android Release signing identity
         shell: bash
+        env:
+          KEYSTORE_BASE64: \${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: \${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: \${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           set -euo pipefail
+          if [[ -z "$KEYSTORE_BASE64" || -z "$KEYSTORE_PASSWORD" || -z "$KEY_ALIAS" ]]; then
+            echo "Existing Release signing secrets are incomplete." >&2
+            exit 1
+          fi
           work_dir="$RUNNER_TEMP/wayward-release"
           mkdir -p "$work_dir"
-          raw_password_length="${#KEYSTORE_PASSWORD}"
-          KEYSTORE_PASSWORD_CLEAN="$(printf '%s' "$KEYSTORE_PASSWORD" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-          KEY_ALIAS_CLEAN="$(printf '%s' "$KEY_ALIAS" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-          echo "Signing password length: raw=$raw_password_length trimmed=${#KEYSTORE_PASSWORD_CLEAN}."
-          export KEYSTORE_PASSWORD_CLEAN KEY_ALIAS_CLEAN
-          if [[ -z "$KEYSTORE_PASSWORD_CLEAN" || -z "$KEY_ALIAS_CLEAN" ]]; then echo "Release signing password or alias is empty after trimming." >&2; exit 1; fi
-          raw_length="${#KEYSTORE_BASE64}"
-          normalized="$(printf '%s' "$KEYSTORE_BASE64" | tr -d '\r\n\t ' | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//" -e 's/\\n//g' -e 's/\\r//g')"
-          if [[ "$normalized" == data:*base64,* ]]; then normalized="${normalized#*,}"; fi
-          normalized="$(printf '%s' "$normalized" | tr '_-' '/+' | tr -cd 'A-Za-z0-9+/=')"
-          while (( ${#normalized} % 4 != 0 )); do normalized="${normalized}="; done
-          echo "Signing secret encoded length: raw=$raw_length normalized=${#normalized}."
-          echo "Signing secret encoded length: raw=$raw_length normalized=${#normalized}." >> "$GITHUB_STEP_SUMMARY"
-          printf '%s' "$normalized" | base64 --decode > "$work_dir/uploaded.p12"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$work_dir/uploaded.p12"
           chmod 600 "$work_dir/uploaded.p12"
           actual_bytes="$(wc -c < "$work_dir/uploaded.p12" | tr -d '[:space:]')"
           if [[ "$actual_bytes" != "2858" ]]; then
             echo "Existing Release P12 size mismatch: $actual_bytes bytes (expected 2858)." >&2
             exit 1
           fi
-          mac_verified=true
-          if ! openssl pkcs12 -in "$work_dir/uploaded.p12" -info -noout -passin env:KEYSTORE_PASSWORD_CLEAN >"$work_dir/p12-check.log" 2>&1; then
-            mac_verified=false
-            echo "Normalized P12 candidate failed MAC validation; trying the original secret with base64 ignore-garbage."
-            raw_candidate="$work_dir/raw-ignore-garbage.p12"
-            if printf '%s' "$KEYSTORE_BASE64" | base64 --ignore-garbage --decode > "$raw_candidate" 2>"$work_dir/raw-decode.log"; then
-              raw_bytes="$(wc -c < "$raw_candidate" | tr -d '[:space:]')"
-              echo "Raw ignore-garbage candidate size: $raw_bytes bytes."
-              if [[ "$raw_bytes" == "2858" ]]; then
-                if openssl pkcs12 -in "$raw_candidate" -info -noout -passin env:KEYSTORE_PASSWORD_CLEAN >"$work_dir/raw-p12-check.log" 2>&1; then
-                  cp "$raw_candidate" "$work_dir/uploaded.p12"
-                  mac_verified=true
-                  echo "Raw ignore-garbage P12 candidate passed MAC validation."
-                elif openssl pkcs12 -in "$raw_candidate" -nocerts -nodes -nomacver -passin env:KEYSTORE_PASSWORD_CLEAN -out "$work_dir/raw-release-key.pem" 2>"$work_dir/raw-key-check.log" &&
-                     openssl pkcs12 -in "$raw_candidate" -clcerts -nokeys -nomacver -passin env:KEYSTORE_PASSWORD_CLEAN -out "$work_dir/raw-release-cert.pem" 2>"$work_dir/raw-cert-check.log"; then
-                  cp "$raw_candidate" "$work_dir/uploaded.p12"
-                  mac_verified=false
-                  echo "Raw ignore-garbage P12 candidate decrypted with the existing password; signer checks will validate the key pair."
-                else
-                  echo "Raw ignore-garbage candidate could not be authenticated or decrypted."
-                  cat "$work_dir/raw-p12-check.log" "$work_dir/raw-key-check.log" "$work_dir/raw-cert-check.log" 2>/dev/null || true
-                fi
-              fi
-            fi
-          fi
-          pkcs12_options=()
-          if [[ "$mac_verified" != "true" ]]; then pkcs12_options=(-nomacver); fi
-          openssl pkcs12 -in "$work_dir/uploaded.p12" "${pkcs12_options[@]}" -nocerts -nodes -passin env:KEYSTORE_PASSWORD_CLEAN -out "$work_dir/release-key.pem"
-          openssl pkcs12 -in "$work_dir/uploaded.p12" "${pkcs12_options[@]}" -clcerts -nokeys -passin env:KEYSTORE_PASSWORD_CLEAN -out "$work_dir/release-cert.pem"
+          openssl pkcs12 -in "$work_dir/uploaded.p12" -info -noout \
+            -passin env:KEYSTORE_PASSWORD >/dev/null 2>"$work_dir/p12-check.log" || {
+              echo "OpenSSL could not verify the existing Release P12 using ANDROID_KEYSTORE_PASSWORD." >&2
+              cat "$work_dir/p12-check.log" >&2
+              exit 1
+            }
+          openssl pkcs12 -in "$work_dir/uploaded.p12" -nocerts -nodes \
+            -passin env:KEYSTORE_PASSWORD -out "$work_dir/release-key.pem"
+          openssl pkcs12 -in "$work_dir/uploaded.p12" -clcerts -nokeys \
+            -passin env:KEYSTORE_PASSWORD -out "$work_dir/release-cert.pem"
           chmod 600 "$work_dir/release-key.pem" "$work_dir/release-cert.pem"
           openssl pkey -in "$work_dir/release-key.pem" -noout -check >/dev/null
           key_public_hash="$(openssl pkey -in "$work_dir/release-key.pem" -pubout -outform DER | openssl dgst -sha256)"
@@ -155,41 +122,40 @@ jobs:
           expected_sha1="D9BE7443EB247D27C958CC4250D7F5D1E078F740"
           if [[ "$actual_sha1" != "$expected_sha1" ]]; then
             echo "Existing Release certificate SHA-1 mismatch." >&2
+            echo "Expected: $expected_sha1; actual: \${actual_sha1:-missing}" >&2
             exit 1
           fi
           openssl pkcs12 -export \
             -inkey "$work_dir/release-key.pem" \
             -in "$work_dir/release-cert.pem" \
-            -name "$KEY_ALIAS_CLEAN" \
-            -passout env:KEYSTORE_PASSWORD_CLEAN \
+            -name "$KEY_ALIAS" \
+            -passout env:KEYSTORE_PASSWORD \
             -keypbe PBE-SHA1-3DES \
             -certpbe PBE-SHA1-3DES \
             -macalg sha1 \
             -out "$work_dir/java-compatible.p12"
+          chmod 600 "$work_dir/java-compatible.p12"
           keytool -importkeystore -noprompt \
             -srckeystore "$work_dir/java-compatible.p12" \
             -srcstoretype PKCS12 \
-            -srcstorepass "$KEYSTORE_PASSWORD_CLEAN" \
-            -srcalias "$KEY_ALIAS_CLEAN" \
+            -srcstorepass "$KEYSTORE_PASSWORD" \
+            -srcalias "$KEY_ALIAS" \
             -destkeystore "$work_dir/release.jks" \
             -deststoretype JKS \
-            -deststorepass "$KEYSTORE_PASSWORD_CLEAN" \
-            -destkeypass "$KEYSTORE_PASSWORD_CLEAN" \
-            -destalias "$KEY_ALIAS_CLEAN"
-          jks_sha1="$(keytool -list -v -keystore "$work_dir/release.jks" -storetype JKS -storepass "$KEYSTORE_PASSWORD_CLEAN" -alias "$KEY_ALIAS_CLEAN" | awk '/SHA1:/ {print $2; exit}' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+            -deststorepass "$KEYSTORE_PASSWORD" \
+            -destkeypass "$KEYSTORE_PASSWORD" \
+            -destalias "$KEY_ALIAS"
+          cert_info="$(keytool -list -v -keystore "$work_dir/release.jks" -storetype JKS -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS")"
+          jks_sha1="$(printf '%s\n' "$cert_info" | awk '/SHA1:/ {print $2; exit}' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
           if [[ "$jks_sha1" != "$expected_sha1" ]]; then
-            echo "Converted JKS certificate SHA-1 mismatch." >&2
+            echo "Temporary JKS certificate SHA-1 mismatch." >&2
             exit 1
           fi
           chmod 600 "$work_dir/release.jks"
           echo "ANDROID_KEYSTORE_PATH=$work_dir/release.jks" >> "$GITHUB_ENV"
-          echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD_CLEAN" >> "$GITHUB_ENV"
-          echo "ANDROID_KEY_ALIAS=$KEY_ALIAS_CLEAN" >> "$GITHUB_ENV"
-          if [[ "$mac_verified" == "true" ]]; then
-            echo "Existing Release P12 MAC verified; private key/certificate pair and signer SHA-1 validated." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "P12 MAC check failed, but password-authenticated extraction, private-key/certificate match, and expected signer SHA-1 all passed." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "Existing Release P12 validated (2858 bytes); private key matched its certificate and signer SHA-1." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build and test signed Android variants
         shell: bash
