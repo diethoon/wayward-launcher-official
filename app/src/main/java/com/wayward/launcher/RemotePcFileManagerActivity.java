@@ -18,17 +18,24 @@ import android.widget.Toast;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.IOException;
 import java.security.MessageDigest;
+import java.util.Collections;
 import java.util.Locale;
+import java.util.UUID;
 
 public final class RemotePcFileManagerActivity extends Activity {
     private static final int REQUEST_DOWNLOAD_TARGET = 8701;
     private static final int REQUEST_UPLOAD_SOURCE = 8702;
     private static final String PREFS = "wayward_launcher";
     private static final String KEY_PENDING_UPLOAD = "remote_pc_pending_upload_v1";
+    private static final String KEY_PENDING_DOWNLOAD = "remote_pc_pending_download_v1";
+    private static final long MAX_REMOTE_DOWNLOAD_BYTES = 512L * 1024 * 1024;
 
     private LinearLayout page;
     private LinearLayout itemList;
@@ -250,6 +257,11 @@ public final class RemotePcFileManagerActivity extends Activity {
     }
 
     private void confirmDownload(String path, String name) {
+        String unfinished = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_PENDING_DOWNLOAD, "");
+        if (unfinished != null && !unfinished.isEmpty()) {
+            promptResumeDownload();
+            return;
+        }
         new AlertDialog.Builder(this).setTitle("PC 파일 다운로드")
                 .setMessage(name + " 파일을 이 Android 기기로 저장할까요?")
                 .setNegativeButton("취소", null)
@@ -260,6 +272,9 @@ public final class RemotePcFileManagerActivity extends Activity {
                     intent.addCategory(Intent.CATEGORY_OPENABLE);
                     intent.setType("application/octet-stream");
                     intent.putExtra(Intent.EXTRA_TITLE, name);
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION |
+                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION |
+                            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
                     startActivityForResult(intent, REQUEST_DOWNLOAD_TARGET);
                 }).show();
     }
@@ -277,6 +292,14 @@ public final class RemotePcFileManagerActivity extends Activity {
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
         if (requestCode == REQUEST_DOWNLOAD_TARGET) {
+            int grantFlags = data.getFlags() &
+                    (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            try {
+                getContentResolver().takePersistableUriPermission(uri, grantFlags);
+            } catch (Exception error) {
+                showError("다운로드 저장 위치 권한을 유지할 수 없습니다: " + error.getMessage());
+                return;
+            }
             downloadTo(uri);
         } else if (requestCode == REQUEST_UPLOAD_SOURCE) {
             try { getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION); }
@@ -286,41 +309,233 @@ public final class RemotePcFileManagerActivity extends Activity {
     }
 
     private void downloadTo(Uri destination) {
-        setBusy(true, "PC 파일을 다운로드하고 SHA-256 검증 중…");
+        try {
+            File temporary = createDownloadTempFile();
+            JSONObject metadata = new JSONObject()
+                    .put("hostId", host.hostId)
+                    .put("rootId", rootId)
+                    .put("path", pendingDownloadPath)
+                    .put("name", pendingDownloadName)
+                    .put("destinationUri", destination.toString())
+                    .put("tempName", temporary.getName())
+                    .put("totalBytes", -1L)
+                    .put("sha256", "");
+            savePendingDownload(metadata);
+            downloadPending(metadata);
+        } catch (Exception error) {
+            showError("다운로드 준비 실패: " + error.getMessage());
+        }
+    }
+
+    private void promptResumeDownload() {
+        String raw = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_PENDING_DOWNLOAD, "");
+        if (raw == null || raw.isEmpty()) return;
+        try {
+            JSONObject pending = new JSONObject(raw);
+            File temporary = getDownloadTempFile(pending.getString("tempName"));
+            long total = pending.optLong("totalBytes", -1L);
+            String name = pending.optString("name", "PC 파일");
+            String progress = readableSize(temporary.exists() ? temporary.length() : 0) +
+                    (total >= 0 ? " / " + readableSize(total) : "");
+            new AlertDialog.Builder(this).setTitle("미완료 다운로드")
+                    .setMessage(name + " 다운로드가 중단되었습니다. 저장된 위치부터 이어 받을까요? " + progress)
+                    .setNegativeButton("부분 파일 삭제", (dialog, which) -> discardPendingDownload(pending))
+                    .setNeutralButton("나중에", null)
+                    .setPositiveButton("이어 받기", (dialog, which) -> downloadPending(pending))
+                    .show();
+        } catch (Exception error) {
+            showError("저장된 다운로드 재개 정보를 읽을 수 없습니다: " + error.getMessage());
+        }
+    }
+
+    private void downloadPending(JSONObject metadata) {
+        setBusy(true, "PC 파일 다운로드 재개 및 SHA-256 검증 중…");
         new Thread(() -> {
-            boolean valid = false;
-            try (RemoteFilesClient.FileDownloadResponse response =
-                         RemoteFilesClient.openDownload(this, host, rootId, pendingDownloadPath, null);
-                 InputStream input = response.getStream();
-                 OutputStream output = getContentResolver().openOutputStream(destination, "w")) {
-                if (output == null) throw new IOException("저장 위치를 열 수 없습니다.");
-                MessageDigest digest = MessageDigest.getInstance("SHA-256");
-                byte[] buffer = new byte[64 * 1024];
-                int read;
-                while ((read = input.read(buffer)) != -1) {
-                    if (read == 0) continue;
-                    digest.update(buffer, 0, read);
-                    output.write(buffer, 0, read);
+            try {
+                if (!host.hostId.equalsIgnoreCase(metadata.getString("hostId"))) {
+                    throw new SecurityException("이 다운로드는 다른 PC Host에서 시작되었습니다.");
                 }
-                String actual = hex(digest.digest());
-                if (!MessageDigest.isEqual(actual.getBytes(java.nio.charset.StandardCharsets.US_ASCII),
-                        response.getSha256().getBytes(java.nio.charset.StandardCharsets.US_ASCII))) {
+                String savedRootId = metadata.getString("rootId");
+                String path = metadata.getString("path");
+                String name = metadata.optString("name", "PC 파일");
+                Uri destination = Uri.parse(metadata.getString("destinationUri"));
+                File temporary = getDownloadTempFile(metadata.getString("tempName"));
+                if (!temporary.getParentFile().exists() && !temporary.getParentFile().mkdirs()) {
+                    throw new IOException("다운로드 임시 폴더를 만들 수 없습니다.");
+                }
+
+                long totalBytes = metadata.optLong("totalBytes", -1L);
+                String expectedSha256 = metadata.optString("sha256", "");
+                long offset = temporary.exists() ? temporary.length() : 0L;
+                if (totalBytes > MAX_REMOTE_DOWNLOAD_BYTES) {
+                    throw new IOException("다운로드는 0~512MiB 파일만 지원합니다.");
+                }
+
+                if (totalBytes < 0 || expectedSha256.isEmpty()) {
+                    if (offset != 0 && !temporary.delete()) {
+                        throw new IOException("이전 임시 다운로드를 초기화할 수 없습니다.");
+                    }
+                    try (RemoteFilesClient.FileDownloadResponse response =
+                                 RemoteFilesClient.openDownload(this, host, savedRootId, path, null)) {
+                        totalBytes = response.getContentLength();
+                        if (totalBytes < 0 || totalBytes > MAX_REMOTE_DOWNLOAD_BYTES) {
+                            throw new IOException("다운로드는 0~512MiB 파일만 지원합니다.");
+                        }
+                        expectedSha256 = response.getSha256();
+                        metadata.put("totalBytes", totalBytes).put("sha256", expectedSha256);
+                        savePendingDownload(metadata);
+                        RemoteDownloadResumePolicy.Decision decision = RemoteDownloadResumePolicy.validate(
+                                0L, totalBytes, expectedSha256, response.getStatusCode(),
+                                response.getContentRange(), response.getContentLength(), response.getSha256());
+                        try (InputStream input = response.getStream();
+                             FileOutputStream output = new FileOutputStream(temporary, decision.shouldAppend())) {
+                            long expectedResponseBytes = decision.getResponseEnd() - decision.getResponseStart() + 1L;
+                            copyStream(input, output, expectedResponseBytes);
+                            output.getFD().sync();
+                        }
+                    }
+                } else {
+                    if (offset > totalBytes) {
+                        throw new IOException("임시 다운로드 크기가 원본 파일 크기를 초과했습니다.");
+                    }
+                    if (offset < totalBytes) {
+                        java.util.Map<String, String> headers = offset > 0
+                                ? Collections.singletonMap("Range", "bytes=" + offset + "-")
+                                : null;
+                        try (RemoteFilesClient.FileDownloadResponse response =
+                                     RemoteFilesClient.openDownload(this, host, savedRootId, path, headers)) {
+                            RemoteDownloadResumePolicy.Decision decision = RemoteDownloadResumePolicy.validate(
+                                    offset, totalBytes, expectedSha256, response.getStatusCode(),
+                                    response.getContentRange(), response.getContentLength(), response.getSha256());
+                            try (InputStream input = response.getStream();
+                                 FileOutputStream output = new FileOutputStream(temporary, decision.shouldAppend())) {
+                                long expectedResponseBytes = decision.getResponseEnd() - decision.getResponseStart() + 1L;
+                                copyStream(input, output, expectedResponseBytes);
+                                output.getFD().sync();
+                            }
+                        }
+                    }
+                }
+
+                if (!temporary.isFile() || temporary.length() != totalBytes) {
+                    throw new IOException("다운로드가 중단되었습니다. 임시 파일은 보존했으며 다음 실행에서 이어 받을 수 있습니다.");
+                }
+                String actualSha256 = sha256File(temporary);
+                if (!MessageDigest.isEqual(actualSha256.getBytes(java.nio.charset.StandardCharsets.US_ASCII),
+                        expectedSha256.getBytes(java.nio.charset.StandardCharsets.US_ASCII))) {
                     throw new SecurityException("다운로드 파일 SHA-256이 PC Host 응답과 일치하지 않습니다.");
                 }
-                valid = true;
+
+                copyVerifiedDownloadToDestination(temporary, destination, totalBytes, expectedSha256);
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(KEY_PENDING_DOWNLOAD).commit();
+                if (!temporary.delete()) temporary.deleteOnExit();
+                String completedName = name;
                 runOnUiThread(() -> {
                     busy = false;
-                    status.setText("다운로드 완료 · " + pendingDownloadName);
+                    status.setText("다운로드 완료 · " + completedName);
                     Toast.makeText(this, "PC 파일 저장 완료", Toast.LENGTH_LONG).show();
                 });
             } catch (Exception error) {
-                runOnUiThread(() -> showError(error.getMessage()));
-            } finally {
-                if (!valid) {
-                    try { getContentResolver().delete(destination, null, null); } catch (Exception ignored) { }
-                }
+                runOnUiThread(() -> showError("다운로드가 중단됐습니다. 임시 파일은 보존됩니다. " + error.getMessage()));
             }
         }, "Wayward-Remote-File-Download").start();
+    }
+
+    private void copyVerifiedDownloadToDestination(File temporary, Uri destination,
+            long totalBytes, String expectedSha256) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        long copied = 0L;
+        try (InputStream input = new FileInputStream(temporary);
+             OutputStream output = getContentResolver().openOutputStream(destination, "w")) {
+            if (output == null) throw new IOException("저장 위치를 열 수 없습니다.");
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                if (read == 0) continue;
+                copied += read;
+                digest.update(buffer, 0, read);
+                output.write(buffer, 0, read);
+            }
+            output.flush();
+        }
+        String copiedSha256 = hex(digest.digest());
+        if (copied != totalBytes || !MessageDigest.isEqual(
+                copiedSha256.getBytes(java.nio.charset.StandardCharsets.US_ASCII),
+                expectedSha256.getBytes(java.nio.charset.StandardCharsets.US_ASCII))) {
+            throw new SecurityException("Android 저장 위치에 기록된 파일의 크기 또는 SHA-256 검증에 실패했습니다.");
+        }
+    }
+
+    private static long copyStream(InputStream input, OutputStream output, long maximumBytes) throws IOException {
+        if (maximumBytes < 0) throw new IOException("PC 응답의 Range 길이가 올바르지 않습니다.");
+        byte[] buffer = new byte[64 * 1024];
+        long total = 0L;
+        int read;
+        while ((read = input.read(buffer)) != -1) {
+            if (read == 0) continue;
+            if (read > maximumBytes - total) {
+                throw new IOException("PC 응답이 검증된 다운로드 범위를 초과했습니다.");
+            }
+            total += read;
+            output.write(buffer, 0, read);
+        }
+        return total;
+    }
+
+    private static String sha256File(File file) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        try (InputStream input = new FileInputStream(file)) {
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                if (read == 0) continue;
+                digest.update(buffer, 0, read);
+            }
+        }
+        return hex(digest.digest());
+    }
+
+    private File createDownloadTempFile() throws IOException {
+        File directory = new File(getFilesDir(), "remote-downloads");
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw new IOException("다운로드 임시 폴더를 만들 수 없습니다.");
+        }
+        return new File(directory, UUID.randomUUID().toString() + ".part");
+    }
+
+    private File getDownloadTempFile(String name) throws IOException {
+        if (name == null || !name.matches("(?i)[0-9a-f-]{36}\\.part")) {
+            throw new IOException("다운로드 임시 파일 이름이 올바르지 않습니다.");
+        }
+        File directory = new File(getFilesDir(), "remote-downloads");
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw new IOException("다운로드 임시 폴더를 만들 수 없습니다.");
+        }
+        File candidate = new File(directory, name).getCanonicalFile();
+        if (!candidate.getParentFile().equals(directory.getCanonicalFile())) {
+            throw new SecurityException("다운로드 임시 파일 경로가 앱 저장 영역을 벗어났습니다.");
+        }
+        return candidate;
+    }
+
+    private void savePendingDownload(JSONObject metadata) throws IOException {
+        if (!getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putString(KEY_PENDING_DOWNLOAD, metadata.toString()).commit()) {
+            throw new IOException("다운로드 재개 정보를 저장할 수 없습니다.");
+        }
+    }
+
+    private void discardPendingDownload(JSONObject metadata) {
+        try {
+            File temporary = getDownloadTempFile(metadata.getString("tempName"));
+            if (temporary.exists() && !temporary.delete()) {
+                throw new IOException("임시 다운로드 파일을 삭제할 수 없습니다.");
+            }
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(KEY_PENDING_DOWNLOAD).commit();
+            status.setText("중단된 다운로드를 삭제했습니다.");
+        } catch (Exception error) {
+            showError("중단된 다운로드 삭제 실패: " + error.getMessage());
+        }
     }
 
     private void uploadFrom(Uri uri) {
@@ -365,10 +580,13 @@ public final class RemotePcFileManagerActivity extends Activity {
 
     private void promptResumeUpload() {
         String pending = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_PENDING_UPLOAD, "");
-        if (pending == null || pending.isEmpty()) return;
+        if (pending == null || pending.isEmpty()) {
+            promptResumeDownload();
+            return;
+        }
         new AlertDialog.Builder(this).setTitle("미완료 업로드")
                 .setMessage("이전에 중단된 파일 업로드가 있습니다. PC Host가 확인한 업로드 위치부터 이어서 진행할까요?")
-                .setNegativeButton("나중에", null)
+                .setNegativeButton("나중에", (dialog, which) -> promptResumeDownload())
                 .setPositiveButton("이어 하기", (dialog, which) -> resumePendingUpload(pending)).show();
     }
 
@@ -386,6 +604,7 @@ public final class RemotePcFileManagerActivity extends Activity {
                 long offset = progress.getLong("nextOffset");
                 if (progress.getLong("totalBytes") != total) throw new SecurityException("PC 업로드 세션의 전체 크기가 저장된 원본과 다릅니다.");
                 transferUpload(uri, uploadId, path, total, checksum, max, offset);
+                runOnUiThread(this::promptResumeDownload);
             } catch (Exception error) {
                 runOnUiThread(() -> showError("업로드 재개 실패: " + error.getMessage()));
             }

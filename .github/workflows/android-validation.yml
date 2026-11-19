@@ -107,6 +107,14 @@ jobs:
       - name: Test Remote Play native bridge contract
         run: node tests/remote-play-contract.test.cjs
 
+      - name: Test resumable remote PC downloads
+        run: |
+          node tests/remote-download-resume.contract.test.cjs
+          test_dir="$RUNNER_TEMP/remote-download-resume-test"
+          mkdir -p "$test_dir"
+          javac -d "$test_dir" app/src/main/java/com/wayward/launcher/RemoteDownloadResumePolicy.java tests/RemoteDownloadResumePolicyTest.java
+          java -cp "$test_dir" com.wayward.launcher.RemoteDownloadResumePolicyTest
+
       - name: Test Google OAuth bridge contract
         run: node scripts/test-google-auth-bridge.cjs
 
