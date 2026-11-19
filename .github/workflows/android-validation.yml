@@ -305,8 +305,8 @@ jobs:
             sha256sum "$apk"
             stat -c '%n %s bytes' "$apk"
           done
-          grep -F "package: name='com.wayward.launcher.official.debug' versionCode='107' versionName='1.0.7-debug'" "$RUNNER_TEMP/debug-badging.txt"
-          grep -F "package: name='com.wayward.launcher.official' versionCode='107' versionName='1.0.7'" "$RUNNER_TEMP/release-badging.txt"
+          grep -F "package: name='com.wayward.launcher.official.debug' versionCode='108' versionName='1.0.8-debug'" "$RUNNER_TEMP/debug-badging.txt"
+          grep -F "package: name='com.wayward.launcher.official' versionCode='108' versionName='1.0.8'" "$RUNNER_TEMP/release-badging.txt"
 
       - name: Verify signed Release APK identity
         if: env.RELEASE_SIGNING_CONFIGURED == 'true'
