@@ -413,6 +413,7 @@ jobs:
           if [ -n "${GITHUB_HEAD_REF:-}" ]; then
             git fetch origin "$target_ref"
             git checkout -B wal-source-persist "origin/${target_ref}"
+            git reset --hard "origin/${target_ref}"
             git apply --check patches/wal-saf-source.patch
             git apply patches/wal-saf-source.patch
             git rm -f patches/wal-saf-source.patch
