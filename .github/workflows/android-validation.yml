@@ -64,6 +64,30 @@ jobs:
             -o "$RUNNER_TEMP/wayward-mods.zip"
           python3 scripts/embed_imagegen_backend.py "$RUNNER_TEMP/wayward-mods.zip"
 
+      - name: Verify NovelAI diagnostic patch in embedded backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/embed_imagegen_backend.py
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("app/src/main/assets/imagegen-backend/wayward-imagegen/src/comfy/jobRunner.ts")
+          text = source.read_text(encoding="utf-8")
+          required = (
+              "[novelai] generation_failed",
+              "errorType:",
+              "httpStatus:",
+              "model: config.naiModel",
+              "elapsedMs:",
+              "[PROMPT REDACTED]",
+              "Bearer [REDACTED]",
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit("NovelAI diagnostic patch missing: " + ", ".join(missing))
+          print("NovelAI diagnostic patch and redaction markers verified.")
+          PY
+
       - name: Check branch diff whitespace
         run: git diff --check origin/main...HEAD -- . ':!patches/wal-saf-source.patch'
 
