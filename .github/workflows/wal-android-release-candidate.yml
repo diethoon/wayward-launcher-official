@@ -58,13 +58,28 @@ jobs:
           gh api repos/wal-studio/WAL-Official-Releases --jq .full_name
           if ($LASTEXITCODE -ne 0) { throw "The runner cannot access WAL-Official-Releases." }
 
-      - name: Prepare existing Android signing identity from source repository secrets
+      - name: Decode existing source Release P12
+        shell: bash
+        run: |
+          set -euo pipefail
+          work_dir="$(cygpath -u "$RUNNER_TEMP")/wal-official-release-signing"
+          mkdir -p "$work_dir"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$work_dir/existing-release.p12"
+          actual_bytes="$(wc -c < "$work_dir/existing-release.p12" | tr -d '[:space:]')"
+          if [[ "$actual_bytes" != "2858" ]]; then
+            echo "Existing Release P12 size mismatch: $actual_bytes bytes (expected 2858)." >&2
+            exit 1
+          fi
+          echo "WAL_P12_PATH=$(cygpath -w "$work_dir/existing-release.p12")" >> "$GITHUB_ENV"
+          echo "Existing Release P12 decoded and size-checked: $actual_bytes bytes."
+
+      - name: Prepare existing Android signing identity
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          foreach ($name in @("ANDROID_KEYSTORE_BASE64","ANDROID_KEYSTORE_PASSWORD","ANDROID_KEY_ALIAS")) {
+          foreach ($name in @("WAL_P12_PATH","ANDROID_KEYSTORE_PASSWORD","ANDROID_KEY_ALIAS")) {
             if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
-              throw "Existing source-repository signing secret is missing: $name"
+              throw "Existing source-repository signing material is missing: $name"
             }
           }
           $opensslCommand = Get-Command openssl -ErrorAction SilentlyContinue
@@ -72,10 +87,8 @@ jobs:
             $gitOpenSsl = Join-Path $env:ProgramFiles "Git/usr/bin/openssl.exe"
             if (Test-Path $gitOpenSsl) { $opensslPath = $gitOpenSsl } else { throw "OpenSSL is unavailable." }
           } else { $opensslPath = $opensslCommand.Source }
-          $workDir = Join-Path $env:RUNNER_TEMP "wal-official-release-signing"
-          New-Item -ItemType Directory -Force -Path $workDir | Out-Null
-          $p12 = Join-Path $workDir "existing-release.p12"
-          [IO.File]::WriteAllBytes($p12,[Convert]::FromBase64String($env:ANDROID_KEYSTORE_BASE64))
+          $workDir = Split-Path -Parent $env:WAL_P12_PATH
+          $p12 = $env:WAL_P12_PATH
           & $opensslPath pkcs12 -in $p12 -info -noout -passin env:ANDROID_KEYSTORE_PASSWORD 2>$null
           if ($LASTEXITCODE -ne 0) { throw "Existing release P12 password verification failed." }
           $keyPem = Join-Path $workDir "release-key.pem"
