@@ -17,6 +17,8 @@ import java.util.UUID;
 /** Verified, public connection metadata for one Windows Remote Host. */
 final class RemoteHostConnection {
     final String baseUrl;
+    String lanBaseUrl;
+    String wanBaseUrl;
     final String hostId;
     final String publicKeyBase64;
     final String publicKeyFingerprint;
@@ -227,6 +229,8 @@ final class RemoteHostConnection {
         JSONObject value = new JSONObject();
         value.put("protocolVersion", 1);
         value.put("baseUrl", baseUrl);
+        if (lanBaseUrl != null && !lanBaseUrl.isEmpty()) value.put("lanBaseUrl", lanBaseUrl);
+        if (wanBaseUrl != null && !wanBaseUrl.isEmpty()) value.put("wanBaseUrl", wanBaseUrl);
         value.put("hostId", hostId);
         value.put("publicKeyBase64", publicKeyBase64);
         value.put("publicKeyFingerprint", publicKeyFingerprint);
@@ -238,7 +242,21 @@ final class RemoteHostConnection {
     }
 
     static RemoteHostConnection fromStoredJson(String json) throws Exception {
-        return fromQrJson(json);
+        JSONObject value = new JSONObject(json);
+        RemoteHostConnection connection = fromQrJson(json);
+        String lanEndpoint = value.optString("lanBaseUrl", "");
+        if (!lanEndpoint.trim().isEmpty()) connection.lanBaseUrl = normalizeBaseUrl(lanEndpoint);
+        String wanEndpoint = value.optString("wanBaseUrl", "");
+        if (!wanEndpoint.trim().isEmpty()) connection.wanBaseUrl = normalizeWanBaseUrl(wanEndpoint);
+        return connection;
+    }
+
+    void updateLanBaseUrl(String value) {
+        lanBaseUrl = normalizeBaseUrl(value);
+    }
+
+    void updateWanBaseUrl(String value) {
+        wanBaseUrl = normalizeWanBaseUrl(value);
     }
 
     private static void requireSignedLine(String payload, String line, boolean first) {
@@ -310,6 +328,50 @@ final class RemoteHostConnection {
         } catch (java.net.URISyntaxException error) {
             throw new IllegalArgumentException("Remote Host URL 형식이 올바르지 않습니다.", error);
         }
+    }
+
+    static String normalizeWanBaseUrl(String value) {
+        String trimmed = requireText(value, "WAN Host URL").trim();
+        try {
+            URI uri = new URI(trimmed);
+            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null ||
+                    uri.getRawUserInfo() != null || uri.getRawQuery() != null ||
+                    uri.getRawFragment() != null ||
+                    (uri.getRawPath() != null && !uri.getRawPath().isEmpty() && !"/".equals(uri.getRawPath())) ||
+                    uri.getPort() != 8765 ||
+                    !isPublicWanHost(uri.getHost())) {
+                throw new IllegalArgumentException("WAN endpoint must be a public HTTPS IPv4 address or DNS hostname with an explicit port.");
+            }
+            return trimmed.endsWith("/") ? trimmed : trimmed + "/";
+        } catch (java.net.URISyntaxException error) {
+            throw new IllegalArgumentException("WAN Remote Host URL 형식이 올바르지 않습니다.", error);
+        }
+    }
+
+    private static boolean isPublicWanHost(String host) {
+        if (host == null || host.equalsIgnoreCase("localhost") || host.toLowerCase(Locale.ROOT).endsWith(".local")) {
+            return false;
+        }
+        if (host.matches("[0-9]{1,3}(\\.[0-9]{1,3}){3}")) {
+            String[] octets = host.split("\\.", -1);
+            int[] values = new int[4];
+            for (int i = 0; i < 4; i++) {
+                try { values[i] = Integer.parseInt(octets[i]); }
+                catch (NumberFormatException error) { return false; }
+                if (values[i] < 0 || values[i] > 255 || (octets[i].length() > 1 && octets[i].startsWith("0"))) return false;
+            }
+            return values[0] != 0 && values[0] != 10 && values[0] != 127 && values[0] < 224 &&
+                    !(values[0] == 100 && values[1] >= 64 && values[1] <= 127) &&
+                    !(values[0] == 169 && values[1] == 254) &&
+                    !(values[0] == 172 && values[1] >= 16 && values[1] <= 31) &&
+                    !(values[0] == 192 && values[1] == 168) &&
+                    !(values[0] == 192 && values[1] == 0 && (values[2] == 0 || values[2] == 2)) &&
+                    !(values[0] == 198 && (values[1] == 18 || values[1] == 19)) &&
+                    !(values[0] == 198 && values[1] == 51 && values[2] == 100) &&
+                    !(values[0] == 203 && values[1] == 0 && values[2] == 113);
+        }
+        return host.length() <= 253 &&
+                host.matches("(?i)(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}");
     }
 
     private static boolean isPrivateLanIpv4(String host) {

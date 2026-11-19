@@ -22,7 +22,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: official-android-${{ github.ref }}
+  group: official-android-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -113,6 +113,51 @@ jobs:
 
       - name: Test CloudSave native account-selection policy
         run: node tests/cloudsave-native-auth-selection.test.cjs
+
+      - name: Inspect native Google OAuth package and client configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, re
+          from pathlib import Path
+          path = Path("app/src/main/java/com/wayward/launcher/MainActivity.java")
+          needles = (b"setServerClientId", b"serverClientId", b"AuthorizationRequest.builder",
+                     b"requestScopes", b"GoogleIdTokenRequest", b"getAuthorizationClient",
+                     b"clientId", b"CLIENT_ID", b"setPrompt", b"Prompt.SELECT_ACCOUNT")
+          found = []
+          offset = 0
+          overlap = b""
+          with path.open("rb") as source:
+              while True:
+                  chunk = source.read(4096)
+                  if not chunk:
+                      break
+                  window = overlap + chunk
+                  base = offset - len(overlap)
+                  for needle in needles:
+                      pos = 0
+                      while True:
+                          idx = window.find(needle, pos)
+                          if idx < 0:
+                              break
+                          absolute = base + idx
+                          if not any(x[0] == absolute for x in found):
+                              found.append((absolute, needle.decode("ascii")))
+                          pos = idx + 1
+                  overlap = window[-512:]
+                  print(f"CHUNK offset={offset} length={len(chunk)} sha256={hashlib.sha256(chunk).hexdigest()}")
+                  offset += len(chunk)
+          print(f"EOF bytes={offset}")
+          with path.open("rb") as source:
+              for absolute, needle in sorted(found):
+                  start, end = max(0, absolute - 700), min(offset, absolute + 1300)
+                  source.seek(start)
+                  snippet = source.read(end - start).decode("utf-8", "replace")
+                  snippet = re.sub(r"[0-9]+-[A-Za-z0-9_-]+\\.apps\\.googleusercontent\\.com",
+                                   "[GOOGLE_CLIENT_ID_REDACTED]", snippet)
+                  print(f"\nOAUTH_MATCH offset={absolute} token={needle}\n{snippet[:2000]}")
+          PY
 
       - name: Test Image Studio server/image-pack mode isolation
         run: node tests/imagegen-studio-mode.test.mjs
@@ -270,7 +315,7 @@ jobs:
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        run: gradle --no-daemon --stacktrace clean testDebugUnitTest assembleDebug assembleRelease
+        run: gradle --no-daemon --stacktrace clean testDebugUnitTest assembleDebug assembleRelease assembleOfficial -PwalOfficialVersionName=1.0.0
 
       - name: Verify WAL branding in Debug and Release APKs
         shell: bash
@@ -298,7 +343,7 @@ jobs:
             apk="app/build/outputs/apk/$variant/app-$variant.apk"
             test -s "$apk"
             "$aapt" dump badging "$apk" > "$RUNNER_TEMP/$variant-badging.txt"
-            grep -F "application-label:'WAL'" "$RUNNER_TEMP/$variant-badging.txt"
+            grep -F "application-label:'WAL Development'" "$RUNNER_TEMP/$variant-badging.txt"
             grep -F 'com.wayward.launcher.official' "$RUNNER_TEMP/$variant-badging.txt"
             "$aapt" dump --values resources "$apk" > "$RUNNER_TEMP/$variant-resources.txt"
             grep -F 'mipmap/ic_launcher' "$RUNNER_TEMP/$variant-resources.txt"
@@ -327,6 +372,30 @@ jobs:
           test "$actual_sha1" = "$expected_sha1"
           echo "Release APK signature matches the registered Android OAuth SHA-1." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Verify and package signed Official APK
+        if: env.RELEASE_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="app/build/outputs/apk/official/app-official.apk"
+          test -s "$apk"
+          aapt="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          apksigner="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          "$aapt" dump badging "$apk" > "$RUNNER_TEMP/official-badging.txt"
+          grep -F "package: name='com.wayward.launcher.official.wal' versionCode='1' versionName='1.0.0'" "$RUNNER_TEMP/official-badging.txt"
+          grep -F "application-label:'WAL Android Launcher'" "$RUNNER_TEMP/official-badging.txt"
+          "$apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/official-signing.txt"
+          actual_sha1="$(awk -F': ' '/Signer #1 certificate SHA-1 digest:/ {gsub(/:/, "", $2); gsub(/[[:space:]]/, "", $2); print toupper($2); exit}' "$RUNNER_TEMP/official-signing.txt")"
+          expected_sha1="D9BE7443EB247D27C958CC4250D7F5D1E078F740"
+          test "$actual_sha1" = "$expected_sha1"
+          mkdir -p dist/official
+          final_apk="WAL-Android-Launcher-1.0.0.apk"
+          cp "$apk" "dist/official/$final_apk"
+          (cd dist/official && sha256sum "$final_apk" > SHA256SUMS.txt)
+          sha256sum "dist/official/$final_apk"
+          stat -c '%n %s bytes' "dist/official/$final_apk"
+          echo "SIGNED_OFFICIAL_APK=true PACKAGE=com.wayward.launcher.official.wal VERSION=1.0.0 VERSION_CODE=1 SIGNER_SHA1=$actual_sha1" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload Debug and Release APKs
         uses: actions/upload-artifact@v7
         with:
@@ -334,6 +403,8 @@ jobs:
           path: |
             app/build/outputs/apk/debug/*.apk
             app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/official/*.apk
+            dist/official/*
           if-no-files-found: error
           retention-days: 14
 
@@ -372,6 +443,30 @@ jobs:
       - name: Report Android emulator smoke-test warning
         if: steps.android15_smoke.outcome == 'failure'
         run: echo "::warning::Android 15 launcher UI/SAF smoke test failed; native Keystore instrumentation is reported in its separate step."
+
+      - name: Android 15 Official and Development product split install smoke test
+        if: always() && env.RELEASE_SIGNING_CONFIGURED == 'true'
+        timeout-minutes: 12
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: python3 scripts/android15-product-split-smoke.py
+
+      - name: Upload Android 15 product split diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: wayward-launcher-android15-product-split-diagnostics
+          path: |
+            artifacts/android15-product-split-*.png
+            artifacts/android15-product-split-*.xml
+            artifacts/android15-product-split-failure-logcat.txt
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload Android 15 UI diagnostics
         if: always() && github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119' && github.ref != 'refs/heads/work/android-file-engine-v2.1-complete-20261119' && github.head_ref != 'work/android-file-engine-v2.1-complete-20261119' && github.ref != 'refs/heads/fix/saf-picker-promise-dispatch-20261119' && github.head_ref != 'fix/saf-picker-promise-dispatch-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119-validate2' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119-validate2'

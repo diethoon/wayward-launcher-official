@@ -1,0 +1,1 @@
+Run signed Development 1.0.9 and Official 1.0.0 validation, then download both signed APKs on the wal-android Windows runner. Detect SM-S938N, install without clearing app data, launch both package IDs, verify package-manager resolution and process liveness, and capture crash logs. Do not publish a stable release.

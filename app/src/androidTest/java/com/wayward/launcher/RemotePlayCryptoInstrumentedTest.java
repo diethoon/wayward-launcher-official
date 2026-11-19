@@ -262,6 +262,40 @@ public final class RemotePlayCryptoInstrumentedTest {
                 fingerprint, "C".repeat(64), "D".repeat(64), "payload", "signature"));
     }
 
+    @Test
+    public void pairedWanEndpointIsStoredSeparatelyAndKeepsTheOriginalCertificatePin() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        KeyPair keyPair = RemoteHostStore.getDeviceKeyPair(context);
+        String hostId = UUID.randomUUID().toString();
+        String fingerprint = RemoteHostConnection.sha256Hex(keyPair.getPublic().getEncoded());
+        RemoteHostConnection host = createSignedHostManifest(
+                keyPair, hostId, "https://192.168.1.78:8765/", fingerprint,
+                "B".repeat(64), "E".repeat(64),
+                System.currentTimeMillis() - 1_000L, System.currentTimeMillis() + 240_000L);
+
+        host.updateLanBaseUrl("https://192.168.1.88:8765/");
+        host.updateWanBaseUrl("https://1.1.1.1:8765/");
+        RemoteHostConnection restored = RemoteHostConnection.fromStoredJson(host.toJson().toString());
+        restored.verifyStoredIdentity();
+
+        assertEquals("https://192.168.1.78:8765/", restored.baseUrl);
+        assertEquals("https://192.168.1.88:8765/", restored.lanBaseUrl);
+        assertEquals("https://1.1.1.1:8765/", restored.wanBaseUrl);
+        assertEquals(host.certificateSha256, restored.certificateSha256);
+        assertArrayEquals(new String[] {
+                "https://1.1.1.1:8765/",
+                "https://192.168.1.88:8765/",
+                "https://192.168.1.78:8765/"
+        }, RemoteHostClient.endpointCandidates(restored));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> RemoteHostConnection.normalizeWanBaseUrl("https://192.168.1.88:8765/"));
+        assertThrows(IllegalArgumentException.class,
+                () -> RemoteHostConnection.normalizeWanBaseUrl("https://100.64.0.1:8765/"));
+        assertThrows(IllegalArgumentException.class,
+                () -> RemoteHostConnection.normalizeWanBaseUrl("http://1.1.1.1:8765/"));
+    }
+
     private static RemoteHostConnection createSignedHostManifest(KeyPair signer, String hostId,
             String baseUrl, String keyFingerprint, String certificatePin, String qrNonce,
             long issuedAt, long expiresAt) throws Exception {

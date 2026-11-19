@@ -1,0 +1,1 @@
+Run signed Official 1.0.0 using the exact proven step-scoped signing-secret workflow.

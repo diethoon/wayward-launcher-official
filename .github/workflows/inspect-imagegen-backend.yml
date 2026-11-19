@@ -1,0 +1,35 @@
+name: Inspect pinned ImageGen backend source
+
+on:
+  push:
+    branches:
+      - work/wal-android-wan-signed-validation-20261120
+    paths:
+      - .github/workflows/inspect-imagegen-backend.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Download and verify pinned mods archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error \
+            "https://raw.githubusercontent.com/diethoon/wayward/26d6c32e0b0abbb886e3029efd548b7ca6774401/mods.zip" \
+            -o "$RUNNER_TEMP/wayward-mods.zip"
+          python3 scripts/embed_imagegen_backend.py "$RUNNER_TEMP/wayward-mods.zip"
+          find app/src/main/assets/imagegen-backend -type f -printf '%P %s bytes\n' | sort
+      - name: Upload verified backend source for bounded inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: wayward-imagegen-backend-source-${{ github.sha }}
+          path: app/src/main/assets/imagegen-backend
+          if-no-files-found: error
+          retention-days: 3

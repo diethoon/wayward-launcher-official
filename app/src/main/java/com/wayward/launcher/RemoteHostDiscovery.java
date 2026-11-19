@@ -19,8 +19,8 @@ import java.util.concurrent.Executors;
  *
  * mDNS TXT records are discovery hints only. The candidate is accepted only when its
  * Host ID, public-key fingerprint and TLS certificate fingerprint match the saved QR
- * trust anchor. The new IP is then contacted with that old pin, and its fresh signed
- * connection manifest is validated before the stored endpoint is updated.
+ * trust anchor. The new IP is then contacted with that old pin, and its Host ID, public key and
+ * certificate identity are checked before only the stored LAN route is updated.
  */
 public final class RemoteHostDiscovery implements AutoCloseable {
     public interface Listener {
@@ -181,6 +181,12 @@ public final class RemoteHostDiscovery implements AutoCloseable {
             try {
                 RemoteHostConnection refreshed = RemoteHostClient.discoverHost(candidate, pinned);
                 RemoteHostStore.saveConnection(appContext, refreshed);
+                if (RemoteHostStore.isPaired(appContext)) {
+                    try { RemoteHostClient.refreshWanEndpoint(appContext, refreshed); }
+                    catch (Exception ignored) {
+                        // LAN discovery remains successful even when the router has no WAN mapping.
+                    }
+                }
                 synchronized (this) {
                     if (closed || !started) return;
                     trustedHost = refreshed;

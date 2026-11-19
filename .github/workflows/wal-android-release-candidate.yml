@@ -1,0 +1,229 @@
+name: WAL Android Official signed release candidate
+
+on:
+  push:
+    branches:
+      - work/wal-android-release-builder-20261120
+    paths:
+      - RUN_WAL_ANDROID_RELEASE_BUILD.txt
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wal-android-release-candidate
+  cancel-in-progress: true
+
+jobs:
+  signed-release-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: wal-studio/wayward-launcher-official
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      WAL_RELEASE_VERSION: 1.0.0
+      WAL_ANDROID_DEVELOPMENT_COMMIT: 83f2dbd
+
+    steps:
+      - name: Checkout mirrored Android product-split source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4.0.4
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+          cache-provider: basic
+
+      - name: Run product, Google OAuth and CloudSave contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check app/src/main/assets/wayward-google-auth-bridge.js
+          node scripts/test-google-auth-bridge.cjs
+          node tests/cloudsave-native-auth-selection.test.cjs
+          node scripts/test-official-scope.cjs
+          node - <<'NODE'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const gradle = fs.readFileSync('app/build.gradle', 'utf8');
+          const updater = fs.readFileSync('app/src/main/java/com/wayward/launcher/OfficialUpdateManager.java', 'utf8');
+          assert.ok(gradle.includes("applicationIdSuffix '.wal'"));
+          assert.ok(gradle.includes("walOfficialVersionName"));
+          assert.ok(updater.includes("WAL-Official-Releases/releases?per_page=30"));
+          assert.ok(updater.includes("wayward-launcher-official/releases?per_page=30"));
+          assert.ok(updater.includes("isAllowedReleaseUrl"));
+          assert.ok(updater.includes("D9BE7443EB247D27C958CC4250D7F5D1E078F740"));
+          console.log('Official package, dual release feeds and signer contract passed.');
+          NODE
+
+      - name: Prepare existing Android Release signing identity
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$KEYSTORE_BASE64" || -z "$KEYSTORE_PASSWORD" || -z "$KEY_ALIAS" ]]; then
+            echo "Existing Release signing secrets are incomplete." >&2
+            exit 1
+          fi
+          work_dir="$RUNNER_TEMP/wayward-release"
+          mkdir -p "$work_dir"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$work_dir/uploaded.p12"
+          chmod 600 "$work_dir/uploaded.p12"
+          actual_bytes="$(wc -c < "$work_dir/uploaded.p12" | tr -d '[:space:]')"
+          if [[ "$actual_bytes" != "2858" ]]; then
+            echo "Existing Release P12 size mismatch: $actual_bytes bytes (expected 2858)." >&2
+            exit 1
+          fi
+          openssl pkcs12 -in "$work_dir/uploaded.p12" -info -noout \
+            -passin env:KEYSTORE_PASSWORD >/dev/null 2>"$work_dir/p12-check.log" || {
+              echo "OpenSSL could not verify the existing Release P12 using ANDROID_KEYSTORE_PASSWORD." >&2
+              cat "$work_dir/p12-check.log" >&2
+              exit 1
+            }
+          openssl pkcs12 -in "$work_dir/uploaded.p12" -nocerts -nodes \
+            -passin env:KEYSTORE_PASSWORD -out "$work_dir/release-key.pem"
+          openssl pkcs12 -in "$work_dir/uploaded.p12" -clcerts -nokeys \
+            -passin env:KEYSTORE_PASSWORD -out "$work_dir/release-cert.pem"
+          chmod 600 "$work_dir/release-key.pem" "$work_dir/release-cert.pem"
+          openssl pkey -in "$work_dir/release-key.pem" -noout -check >/dev/null
+          key_public_hash="$(openssl pkey -in "$work_dir/release-key.pem" -pubout -outform DER | openssl dgst -sha256)"
+          cert_public_hash="$(openssl x509 -in "$work_dir/release-cert.pem" -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256)"
+          if [[ "$key_public_hash" != "$cert_public_hash" ]]; then
+            echo "Existing Release private key does not match its certificate." >&2
+            exit 1
+          fi
+          actual_sha1="$(openssl x509 -in "$work_dir/release-cert.pem" -noout -fingerprint -sha1 | sed 's/.*=//' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+          expected_sha1="D9BE7443EB247D27C958CC4250D7F5D1E078F740"
+          if [[ "$actual_sha1" != "$expected_sha1" ]]; then
+            echo "Existing Release certificate SHA-1 mismatch." >&2
+            echo "Expected: $expected_sha1; actual: ${actual_sha1:-missing}" >&2
+            exit 1
+          fi
+          openssl pkcs12 -export \
+            -inkey "$work_dir/release-key.pem" \
+            -in "$work_dir/release-cert.pem" \
+            -name "$KEY_ALIAS" \
+            -passout env:KEYSTORE_PASSWORD \
+            -keypbe PBE-SHA1-3DES \
+            -certpbe PBE-SHA1-3DES \
+            -macalg sha1 \
+            -out "$work_dir/java-compatible.p12"
+          chmod 600 "$work_dir/java-compatible.p12"
+          keytool -importkeystore -noprompt \
+            -srckeystore "$work_dir/java-compatible.p12" \
+            -srcstoretype PKCS12 \
+            -srcstorepass "$KEYSTORE_PASSWORD" \
+            -srcalias "$KEY_ALIAS" \
+            -destkeystore "$work_dir/release.jks" \
+            -deststoretype JKS \
+            -deststorepass "$KEYSTORE_PASSWORD" \
+            -destkeypass "$KEYSTORE_PASSWORD" \
+            -destalias "$KEY_ALIAS"
+          cert_info="$(keytool -list -v -keystore "$work_dir/release.jks" -storetype JKS -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS")"
+          jks_sha1="$(printf '%s\n' "$cert_info" | awk '/SHA1:/ {print $2; exit}' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+          if [[ "$jks_sha1" != "$expected_sha1" ]]; then
+            echo "Temporary JKS certificate SHA-1 mismatch." >&2
+            exit 1
+          fi
+          chmod 600 "$work_dir/release.jks"
+          echo "ANDROID_KEYSTORE_PATH=$work_dir/release.jks" >> "$GITHUB_ENV"
+          echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "Existing Release P12 validated (2858 bytes); private key matched its certificate and signer SHA-1." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build and test signed Android variants
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace clean testDebugUnitTest assembleDebug assembleRelease assembleOfficial \
+            -PwalOfficialVersionName="$WAL_RELEASE_VERSION"
+
+      - name: Package and verify Official release APK and checksum
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & ./scripts/build-official-release-v1.3.ps1 -Version $env:WAL_RELEASE_VERSION
+          if ($LASTEXITCODE -ne 0) { throw "Official signed release packaging failed." }
+          $apk = Join-Path $PWD "dist/official/WAL-Android-Launcher-$env:WAL_RELEASE_VERSION.apk"
+          $sum = Join-Path $PWD "dist/official/SHA256SUMS.txt"
+          if (-not (Test-Path $apk) -or -not (Test-Path $sum)) { throw "Signed APK or checksum file is missing." }
+          $hash = (Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "SIGNED OFFICIAL APK SHA256: $hash"
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "Signed Official APK created; SHA-256: $hash"
+
+      - name: Check physical device visibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          devices="$(adb devices | awk 'NR>1 && $2=="device" {print $1}')"
+          if [[ -z "$devices" ]]; then
+            echo "SM-S938N physical test: SKIPPED — GitHub-hosted runner has no attached Android device." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ADB devices visible to hosted runner: $devices" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Create or update draft signed release in source repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v$WAL_RELEASE_VERSION"
+          apk="dist/official/WAL-Android-Launcher-$WAL_RELEASE_VERSION.apk"
+          sums="dist/official/SHA256SUMS.txt"
+          if gh release view "$tag" --json isDraft --jq .isDraft >/tmp/wal-release-draft-state.txt 2>/dev/null; then
+            state="$(cat /tmp/wal-release-draft-state.txt)"
+            if [[ "$state" != "true" ]]; then
+              echo "Refusing to overwrite an already published stable release." >&2
+              exit 1
+            fi
+            gh release upload "$tag" "$apk" "$sums" --clobber
+          else
+            gh release create "$tag" "$apk" "$sums" \
+              --draft \
+              --target "$GITHUB_SHA" \
+              --title "WAL Android Launcher $WAL_RELEASE_VERSION" \
+              --notes "Draft signed release candidate mirrored from WAL-Android-Development commit $WAL_ANDROID_DEVELOPMENT_COMMIT. Not publicly published. Before publishing, verify Google OAuth Android client registration for package com.wayward.launcher.official.wal with signer SHA-1 D9BE7443EB247D27C958CC4250D7F5D1E078F740."
+          fi
+          echo "Signed APK and SHA256SUMS.txt staged in draft release $tag in $GITHUB_REPOSITORY." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload signed APK build artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: WAL-Android-Launcher-1.0.0-signed
+          path: |
+            dist/official/WAL-Android-Launcher-1.0.0.apk
+            dist/official/SHA256SUMS.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Remove temporary signing material
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/wayward-release"
