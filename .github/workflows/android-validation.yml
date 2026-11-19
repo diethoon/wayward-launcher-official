@@ -315,7 +315,7 @@ jobs:
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        run: gradle --no-daemon --stacktrace clean testDebugUnitTest assembleDebug assembleRelease
+        run: gradle --no-daemon --stacktrace clean testDebugUnitTest assembleDebug assembleRelease assembleOfficial -PwalOfficialVersionName=1.0.0
 
       - name: Verify WAL branding in Debug and Release APKs
         shell: bash
@@ -372,6 +372,30 @@ jobs:
           test "$actual_sha1" = "$expected_sha1"
           echo "Release APK signature matches the registered Android OAuth SHA-1." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Verify and package signed Official APK
+        if: env.RELEASE_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="app/build/outputs/apk/official/app-official.apk"
+          test -s "$apk"
+          aapt="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          apksigner="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          "$aapt" dump badging "$apk" > "$RUNNER_TEMP/official-badging.txt"
+          grep -F "package: name='com.wayward.launcher.official.wal' versionCode='1' versionName='1.0.0'" "$RUNNER_TEMP/official-badging.txt"
+          grep -F "application-label:'WAL Android Launcher'" "$RUNNER_TEMP/official-badging.txt"
+          "$apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/official-signing.txt"
+          actual_sha1="$(awk -F': ' '/Signer #1 certificate SHA-1 digest:/ {gsub(/:/, "", $2); gsub(/[[:space:]]/, "", $2); print toupper($2); exit}' "$RUNNER_TEMP/official-signing.txt")"
+          expected_sha1="D9BE7443EB247D27C958CC4250D7F5D1E078F740"
+          test "$actual_sha1" = "$expected_sha1"
+          mkdir -p dist/official
+          final_apk="WAL-Android-Launcher-1.0.0.apk"
+          cp "$apk" "dist/official/$final_apk"
+          (cd dist/official && sha256sum "$final_apk" > SHA256SUMS.txt)
+          sha256sum "dist/official/$final_apk"
+          stat -c '%n %s bytes' "dist/official/$final_apk"
+          echo "SIGNED_OFFICIAL_APK=true PACKAGE=com.wayward.launcher.official.wal VERSION=1.0.0 VERSION_CODE=1 SIGNER_SHA1=$actual_sha1" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload Debug and Release APKs
         uses: actions/upload-artifact@v7
         with:
@@ -379,6 +403,8 @@ jobs:
           path: |
             app/build/outputs/apk/debug/*.apk
             app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/official/*.apk
+            dist/official/*
           if-no-files-found: error
           retention-days: 14
 
