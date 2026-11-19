@@ -8,6 +8,7 @@ on:
       - RUN_WAL_ANDROID_RELEASE_BUILD.txt
 
 permissions:
+  actions: read
   contents: write
 
 concurrency:
@@ -78,6 +79,14 @@ jobs:
           assert.ok(updater.includes("D9BE7443EB247D27C958CC4250D7F5D1E078F740"));
           console.log('Official package, dual release feeds and signer contract passed.');
           NODE
+
+      - name: Inspect signing secret metadata only
+        shell: bash
+        continue-on-error: true
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/secrets?per_page=100" \
+            --jq '.secrets[] | select(.name | test("ANDROID|KEYSTORE|RELEASE|SIGN"; "i")) | "\(.name) updated=\(.updated_at)"' \
+            || echo "Repository secret metadata is not readable with the workflow token."
 
       - name: Prepare existing Android Release signing identity
         shell: bash
