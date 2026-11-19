@@ -75,11 +75,34 @@ Changes:
 
 This retains update discovery and user-directed update access but changes the final installation route. The new branch does not change the existing release package ID or signing key.
 
+## Rebuild and verification result
+
+CI: https://github.com/wal-studio/wayward-launcher-official/actions/runs/44618746978
+
+Passed on the security branch:
+- `git diff --check`
+- source/contract tests (Official scope, OAuth, CloudSave, Remote Play, Image Studio, SAF/file access and updater policy)
+- Gradle `testDebugUnitTest`
+- Debug, Development Release and Official Release APK builds
+- existing Release signing identity verification
+- Official package/version/label/signature verification
+- merged Official and Development APK permission audit
+- ZIP duplicate-entry and CRC/decompression audit
+- Android 15 Remote Play Keystore/crypto instrumentation
+
+Rebuilt Official candidate:
+- Size: 10,224,894 bytes
+- SHA-256: `b1a1e2029a639473fc245de4b68b08c733c2c085baf12642fee72b96fdaef725`
+- Package/version: `com.wayward.launcher.official.wal` / 1.0.0 (versionCode 1)
+- Release signer SHA-1 and SHA-256 remain unchanged from the original certificate.
+- Merged manifest no longer declares `REQUEST_INSTALL_PACKAGES` or the listed high-risk permissions.
+- Rebuilt Official DEX no longer contains the self-installer/unknown-source settings code strings.
+
 ## Remaining verification
 
-- CI build, unit tests, APK signing verification, and merged-manifest permission check are pending for PR #43.
-- The exact Play Protect classification cannot be confirmed from APK static analysis alone.
-- No Play Protect device scan has been run in this environment; no claim of clean classification is made.
-- No MobSF or VirusTotal result is claimed. Uploading a private APK to public multi-engine services requires a separate privacy/disclosure decision.
-- No physical Samsung SM-S938N install/upgrade test has been run.
+- Android 15 launcher UI/SAF emulator smoke test and Official/Development product-split install smoke test are still running in CI.
+- The exact Play Protect classification cannot be confirmed from APK static analysis alone. The verbal warning wording does not uniquely distinguish a PHA warning from an unknown-app scan flow.
+- No actual Play Protect scan result has been obtained; no clean classification is claimed.
+- No MobSF or VirusTotal result is claimed. The APK was not submitted to public multi-engine services because that would disclose the sample to a third party.
+- No physical Samsung SM-S938N install/upgrade or Play Protect screen capture has been completed. Earlier device-smoke attempts could not discover an authorized ADB device.
 - No Google Play Console access is available in the connected tool set; Play Console registration, Play App Signing, internal test track, and official Play Protect recognition remain external tasks.
