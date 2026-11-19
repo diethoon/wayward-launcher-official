@@ -49,8 +49,8 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { throw "Existing GitHub CLI is unavailable on the Android runner." }
-          Remove-Item Env:GH_TOKEN -ErrorAction SilentlyContinue
-          Remove-Item Env:GITHUB_TOKEN -ErrorAction SilentlyContinue
+          if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN)) { throw "One-shot runner did not inherit its scoped GitHub CLI token." }
+          Write-Output "::add-mask::$env:GH_TOKEN"
           gh auth status
           if ($LASTEXITCODE -ne 0) { throw "The runner's existing GitHub CLI authentication is unavailable." }
           gh api repos/wal-studio/WAL-Android-Development --jq .full_name
