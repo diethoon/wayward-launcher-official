@@ -47,7 +47,7 @@ public final class OfficialUpdateManager {
     private static final String PENDING_HASH = "pending_apk_sha256";
     private static final long CHECK_INTERVAL_MS = 6L * 60L * 60L * 1000L;
     private static final long MAX_APK_BYTES = 300L * 1024L * 1024L;
-    private static final Pattern STABLE_TAG = Pattern.compile("^v?(\\d+)\\.(\\d+)\\.(\\d+)$");
+    private static final Pattern STABLE_TAG = Pattern.compile("^v?([1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$");
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static final AtomicBoolean CHECKING = new AtomicBoolean(false);
 
