@@ -40,7 +40,7 @@ jobs:
       # PR head marker: workflow is intentionally identical in the staging base.
       # One-time bootstrap: patch the three source files before validation.
       - name: Apply staged WAL and SAF source patches
-        if: github.ref == 'refs/heads/work/wal-saf-deadlock-ui-20261119-retry' || github.head_ref == 'work/wal-saf-deadlock-ui-20261119-retry' && hashFiles('patches/wal-saf-source.patch') != ''
+        if: (github.ref == 'refs/heads/work/wal-saf-deadlock-ui-20261119-retry' || github.head_ref == 'work/wal-saf-deadlock-ui-20261119-retry') && hashFiles('patches/wal-saf-source.patch') != ''
         run: |
           set -euo pipefail
           git apply --check patches/wal-saf-source.patch
@@ -409,7 +409,7 @@ jobs:
         if: success() && (github.ref == 'refs/heads/work/wal-saf-deadlock-ui-20261119-retry' || github.head_ref == 'work/wal-saf-deadlock-ui-20261119-retry') && env.WAL_PATCH_APPLIED == 'true'
         run: |
           set -euo pipefail
-          git add app/src/main/java/com/wayward/launcher/MainActivity.java app/src/main/java/com/wayward/launcher/ImagePackDirectoryAccess.java app/src/main/assets/imagepack-folder-picker.js 
+          git add app/src/main/java/com/wayward/launcher/MainActivity.java app/src/main/java/com/wayward/launcher/ImagePackDirectoryAccess.java app/src/main/assets/imagepack-folder-picker.js
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'fix: persist validated WAL UI and SAF traversal source'
