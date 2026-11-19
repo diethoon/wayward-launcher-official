@@ -285,7 +285,7 @@ assert.ok(revokedClassifierStart >= 0,
   'the MainActivity revoked-device classifier must remain explicit and reviewable');
 const revokedClassifierEnd = main.indexOf("\n    }", revokedClassifierStart) + 6;
 const revokedClassifier = main.slice(revokedClassifierStart, revokedClassifierEnd);
-assert.match(revokedClassifier, /new org\\.json\\.JSONObject\\(message\\.substring\\(jsonStart\\)\\)/,
+assert.ok(revokedClassifier.includes('new org.json.JSONObject(message.substring(jsonStart))'),
   'revocation classification must parse the structured Host error body');
 assert.match(revokedClassifier, /DeviceRevoked/);
 assert.match(revokedClassifier, /device_not_paired/);
