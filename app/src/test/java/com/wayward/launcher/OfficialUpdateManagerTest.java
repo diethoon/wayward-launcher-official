@@ -66,6 +66,10 @@ public final class OfficialUpdateManagerTest {
         Pattern pattern = (Pattern) field.get(null);
         assertTrue(pattern.matcher("v1.0.0").matches());
         assertTrue(pattern.matcher("2.14.3").matches());
+        assertFalse(pattern.matcher("v01.0.0").matches());
+        assertFalse(pattern.matcher("v0.1.0").matches());
+        assertFalse(pattern.matcher("v1.01.0").matches());
+        assertFalse(pattern.matcher("v1.0.01").matches());
         assertFalse(pattern.matcher("v1.0.0-beta.1").matches());
         assertFalse(pattern.matcher("latest").matches());
         assertFalse(pattern.matcher("v1.0").matches());
