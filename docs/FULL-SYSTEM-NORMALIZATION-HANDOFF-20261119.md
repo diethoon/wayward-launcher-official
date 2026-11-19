@@ -192,3 +192,45 @@ PC 저장소의 `docs/FULL-SYSTEM-NORMALIZATION-HANDOFF-20261119.md`와 함께 �
 | Full ImageGen gateway | FAIL | Android client not connected |
 | WAN endpoint/fallback | FAIL | RFC1918-only |
 | API docs/OpenAPI | FAIL | OpenAPI incomplete, API catalog has two missing rows |
+
+
+## 10. Resumable Remote PC downloads and Android 15 SAF test correction
+
+### Implementation
+
+Code commit: 022bee32e4f48e6bd652fb311ffcc375bdeb5a27 (download-resume change was committed on this branch as 3283722c3ef98d97935090f32a9be6caf9136c12; subsequent test commits follow it).
+
+RemotePcFileManagerActivity now:
+- Writes interrupted downloads to an app-private temporary file.
+- Persists Host ID, root ID, relative path, SAF destination URI, temporary filename, total size and expected SHA-256.
+- Resumes with HTTP Range from the exact saved offset.
+- Validates 206 Content-Range, response length, Host file SHA-256 and final temporary-file SHA-256 before publishing to the selected SAF destination.
+- Restarts from byte zero if the server ignores Range and returns 200.
+- Preserves partial data on network/process failure and offers Resume or Discard on the next activity launch.
+- Enforces a 512 MiB ceiling and supports zero-byte files.
+
+Added:
+- RemoteDownloadResumePolicy.java
+- RemoteDownloadResumePolicyTest.java
+- tests/remote-download-resume.contract.test.cjs
+- Android validation workflow step for both Node contract and javac unit tests.
+
+### Validation
+
+- Node resumable-download contract: PASS
+- Java policy unit tests with javac -Xlint:all -Werror: PASS
+- Existing Android Node/Python contract tests: PASS
+- Android Release build and signing identity check: PASS
+- APK artifact from run 44441842384:
+  - ZIP SHA-256: c92b0b47b74cf2bd90b69068a0c01d6e1c28a0138d15a1c27d2b987e89ac40a9
+  - Release APK SHA-256: 137c40691ada565b347e97b6cc79ff2a5cfa0568380e47fa3b49ad678f0f7c3a
+  - Release APK size: 10,218,122 bytes
+
+### Android 15 SAF smoke-test forensic correction
+
+Run 44441842384 built and signed the APK successfully but the emulator smoke failed at GAME_SESSION_DIRECTORY_HANDLE. The diagnostic UI/logcat showed that the native SAF bridge correctly reported persistedWrite=false. The test page itself called showDirectoryPicker with mode='read' and then attempted createDirectory/createWritable operations. That was an invalid test: the production bridge correctly rejects writes on a read-only handle.
+
+Corrected scripts/android15-emulator-smoke.py to request mode='readwrite' for this write test. No production permission enforcement was weakened. The corrected emulator run is 44443495616 and was still in progress when this note was written; its final result must be recorded before claiming Android 15 smoke PASS.
+
+Cross-repository feature matrix:
+https://github.com/diethoon/wayward-remote-host/blob/work/full-system-normalization-20261119/docs/FULL-SYSTEM-FEATURE-MATRIX-20261119.md
