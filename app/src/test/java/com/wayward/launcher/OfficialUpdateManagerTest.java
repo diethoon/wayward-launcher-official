@@ -63,6 +63,20 @@ public final class OfficialUpdateManagerTest {
     }
 
     @Test
+    public void releasePageAllowlistRejectsLookalikeHostsAndNonReleasePages() throws Exception {
+        assertTrue((Boolean) invoke("isAllowedReleasePageUrl", new Class<?>[]{String.class},
+                "https://github.com/wal-studio/WAL-Official-Releases/releases/tag/v1.0.0"));
+        assertTrue((Boolean) invoke("isAllowedReleasePageUrl", new Class<?>[]{String.class},
+                "https://github.com/wal-studio/wayward-launcher-official/releases/tag/v1.0.0"));
+        assertFalse((Boolean) invoke("isAllowedReleasePageUrl", new Class<?>[]{String.class},
+                "http://github.com/wal-studio/WAL-Official-Releases/releases/tag/v1.0.0"));
+        assertFalse((Boolean) invoke("isAllowedReleasePageUrl", new Class<?>[]{String.class},
+                "https://github.com.evil.example/wal-studio/WAL-Official-Releases/releases/tag/v1.0.0"));
+        assertFalse((Boolean) invoke("isAllowedReleasePageUrl", new Class<?>[]{String.class},
+                "https://github.com/wal-studio/WAL-Official-Releases/blob/main/file.apk"));
+    }
+
+    @Test
     public void stableReleaseTagsRejectPrereleaseAndMalformedVersions() throws Exception {
         Class<?> type = Class.forName("com.wayward.launcher.OfficialUpdateManager");
         Field field = type.getDeclaredField("STABLE_TAG");
