@@ -190,14 +190,14 @@ public final class MainActivity extends Activity {
         Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setTextSize(13);
         b.setTextColor(Color.rgb(48,66,84));
         b.setPadding(dp(12),dp(5),dp(12),dp(5));b.setMinHeight(dp(42));
-        NeumorphicButtonStyle.bind(this,b,false,12f);
+        GlassButtonStyle.bind(this,b,false,12f);
         b.setOnClickListener(v->run.run());return b;
     }
     private Button compactButton(String label,boolean primary,Runnable action){
         Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setTextSize(12);
         b.setTextColor(Color.rgb(48,66,84));b.setPadding(dp(9),dp(3),dp(9),dp(3));
         b.setMinHeight(dp(36));
-        NeumorphicButtonStyle.bind(this,b,false,10f);
+        GlassButtonStyle.bind(this,b,false,10f);
         b.setOnClickListener(v->action.run());return b;
     }
     private void showHome(){
@@ -240,6 +240,7 @@ public final class MainActivity extends Activity {
         LinearLayout imageCard=uiCard();
         imageCard.setClipChildren(false);
         imageCard.setClipToPadding(false);
+        imageCard.setBackground(uiShape(Color.rgb(239,241,243),Color.rgb(225,228,231),16));
         LinearLayout.LayoutParams imageCardParams=new LinearLayout.LayoutParams(-1,-2);
         imageCardParams.topMargin=dp(14);
         page.addView(imageCard,imageCardParams);
@@ -275,43 +276,48 @@ public final class MainActivity extends Activity {
         return state.isReady()||state.isAvailable()||state.isStarting();
     }
 
-    private View glassModeTile(String title,String subtitle,boolean selected,boolean prominent,Runnable action){
+    private View glassModeTile(String title,String subtitle,boolean selected,
+            Runnable settingsAction,Runnable action){
         LinearLayout tile=new LinearLayout(this);
-        tile.setOrientation(LinearLayout.VERTICAL);
+        tile.setOrientation(LinearLayout.HORIZONTAL);
         tile.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        tile.setPadding(dp(13),dp(11),dp(13),dp(11));
-        NeumorphicButtonStyle.bind(this,tile,selected,17f);
+        tile.setPadding(dp(14),dp(8),dp(9),dp(8));
+        GlassButtonStyle.bind(this,tile,selected,17f);
         tile.setClickable(true);
         tile.setFocusable(true);
-        TextView state=uiText(selected?"● 선택됨":(prominent?"○ 대기":"설정 열기"),9,
-                selected?Color.rgb(43,111,145):Color.rgb(119,132,145),true);
-        state.setLetterSpacing(0.05f);
-        TextView heading=uiText(title,14,Color.rgb(34,51,66),true);
-        heading.setMaxLines(2);
-        TextView detail=uiText(subtitle,10,Color.rgb(91,110,127),false);
-        detail.setMaxLines(2);
-        LinearLayout.LayoutParams headParams=new LinearLayout.LayoutParams(-1,-2);
-        headParams.topMargin=dp(5);
-        tile.addView(state);
-        tile.addView(heading,headParams);
+
+        LinearLayout labels=new LinearLayout(this);
+        labels.setOrientation(LinearLayout.VERTICAL);
+        labels.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        TextView state=uiText(selected?"● 선택됨":"○ 대기",9,
+                selected?Color.rgb(83,91,98):Color.rgb(126,133,139),true);
+        TextView heading=uiText(title,14,Color.rgb(43,49,54),true);
+        heading.setMaxLines(1);
+        TextView detail=uiText(subtitle,10,Color.rgb(103,111,117),false);
+        detail.setMaxLines(1);
+        labels.addView(state);
+        LinearLayout.LayoutParams headingParams=new LinearLayout.LayoutParams(-1,-2);
+        headingParams.topMargin=dp(3);
+        labels.addView(heading,headingParams);
         LinearLayout.LayoutParams detailParams=new LinearLayout.LayoutParams(-1,-2);
-        detailParams.topMargin=dp(4);
-        tile.addView(detail,detailParams);
+        detailParams.topMargin=dp(2);
+        labels.addView(detail,detailParams);
+        tile.addView(labels,new LinearLayout.LayoutParams(0,-1,1f));
+
+        if(settingsAction!=null){
+            TextView gear=uiText("⚙",21,Color.rgb(91,99,105),false);
+            gear.setGravity(android.view.Gravity.CENTER);
+            gear.setContentDescription("NovelAI 토큰 설정");
+            gear.setMinWidth(dp(48));
+            gear.setMinHeight(dp(48));
+            gear.setClickable(true);
+            gear.setFocusable(true);
+            gear.setOnClickListener(view->settingsAction.run());
+            tile.addView(gear,new LinearLayout.LayoutParams(dp(48),-1));
+        }
+        tile.setContentDescription(title);
         tile.setOnClickListener(view->action.run());
         return tile;
-    }
-
-    private View glassSettingsButton(Runnable action){
-        TextView gear=uiText("⚙",23,Color.rgb(62,88,107),true);
-        gear.setGravity(android.view.Gravity.CENTER);
-        gear.setContentDescription("NovelAI 토큰 설정");
-        gear.setMinimumWidth(dp(54));
-        gear.setMinimumHeight(dp(54));
-        gear.setClickable(true);
-        gear.setFocusable(true);
-        NeumorphicButtonStyle.bind(this,gear,false,16f);
-        gear.setOnClickListener(view->action.run());
-        return gear;
     }
 
     private void renderImageModePanel(){
@@ -336,30 +342,22 @@ public final class MainActivity extends Activity {
             else message="이미지팩 전용 · 외부 생성 서버를 호출하지 않고 선택한 게임 폴더의 로컬 이미지만 탐색합니다.";
             imageModeStatus.setText(message);
         }
-        LinearLayout row=new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        row.setClipChildren(false);
-        row.setClipToPadding(false);
-        LinearLayout.LayoutParams rowParams=new LinearLayout.LayoutParams(-1,-2);
-        imageModePanel.addView(row,rowParams);
+
         View server=glassModeTile(generationSelected?"이미지 생성 서버 실행 중":"이미지 생성 서버 실행",
                 generationSelected?"NovelAI 연결됨 · 다시 터치하면 종료":(tokenReady?"토큰 등록됨 · 터치해 서버 실행":"토큰 미등록 · 눌러 계정 연결"),
-                generationSelected,true,()->{
+                generationSelected,this::openNovelAiSettings,()->{
                     if(IMAGE_MODE_GENERATION.equals(currentImageMode())&&localImageServerActive()) switchToImagePacksOnly();
                     else switchToImageGenerationMode();
                 });
-        row.addView(server,new LinearLayout.LayoutParams(0,dp(112),1f));
-        View settings=glassSettingsButton(this::openNovelAiSettings);
-        LinearLayout.LayoutParams settingsParams=new LinearLayout.LayoutParams(dp(54),dp(54));
-        settingsParams.leftMargin=dp(8);
-        row.addView(settings,settingsParams);
-        LinearLayout.LayoutParams packsParams=new LinearLayout.LayoutParams(-1,dp(76));
-        packsParams.topMargin=dp(10);
-        packsParams.bottomMargin=dp(8);
+        LinearLayout.LayoutParams serverParams=new LinearLayout.LayoutParams(-1,dp(76));
+        imageModePanel.addView(server,serverParams);
+
         View packs=glassModeTile(packsSelected?"이미지팩만 사용 · 활성":"이미지팩만 사용",
                 "모든 서버 종료 · 로컬 이미지팩만 탐색 · 외부 생성 주소 차단",
-                packsSelected,false,this::switchToImagePacksOnly);
+                packsSelected,null,this::switchToImagePacksOnly);
+        LinearLayout.LayoutParams packsParams=new LinearLayout.LayoutParams(-1,dp(76));
+        packsParams.topMargin=dp(9);
+        packsParams.bottomMargin=dp(4);
         imageModePanel.addView(packs,packsParams);
     }
 

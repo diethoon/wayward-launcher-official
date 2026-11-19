@@ -190,7 +190,7 @@ public final class NovelAiSettingsActivity extends Activity {
         button.setAllCaps(false);
         button.setTextSize(13);
         button.setTextColor(Color.rgb(48, 66, 84));
-        NeumorphicButtonStyle.bind(this, button, false, 12f);
+        GlassButtonStyle.bind(this, button, false, 12f);
         return button;
     }
 
