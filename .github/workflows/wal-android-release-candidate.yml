@@ -70,12 +70,12 @@ jobs:
           const fs = require('node:fs');
           const gradle = fs.readFileSync('app/build.gradle', 'utf8');
           const updater = fs.readFileSync('app/src/main/java/com/wayward/launcher/OfficialUpdateManager.java', 'utf8');
-          assert.match(gradle, /applicationIdSuffix '\\.wal'/);
-          assert.match(gradle, /walOfficialVersionName/);
-          assert.match(updater, /WAL-Official-Releases\\/releases\\?per_page=30/);
-          assert.match(updater, /wayward-launcher-official\\/releases\\?per_page=30/);
-          assert.match(updater, /isAllowedReleaseUrl/);
-          assert.match(updater, /D9BE7443EB247D27C958CC4250D7F5D1E078F740/);
+          assert.ok(gradle.includes("applicationIdSuffix '.wal'"));
+          assert.ok(gradle.includes("walOfficialVersionName"));
+          assert.ok(updater.includes("WAL-Official-Releases/releases?per_page=30"));
+          assert.ok(updater.includes("wayward-launcher-official/releases?per_page=30"));
+          assert.ok(updater.includes("isAllowedReleaseUrl"));
+          assert.ok(updater.includes("D9BE7443EB247D27C958CC4250D7F5D1E078F740"));
           console.log('Official package, dual release feeds and signer contract passed.');
           NODE
 
