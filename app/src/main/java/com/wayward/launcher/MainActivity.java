@@ -302,7 +302,9 @@ public class MainActivity extends Activity {
                         success ? "info" : "error", details);
                 String message = success
                         ? (retrying ? "이전 진단 ZIP 재전송 완료" : "진단 로그 자동 전송 완료")
-                        : "진단 로그 자동 전송 실패 · 다음 진단 버튼 터치 시 같은 ZIP 재전송";
+                                + " · " + (result == null ? "제출 확인됨" : result)
+                        : "진단 로그 전송 실패 (" + (result == null ? "unknown" : result)
+                                + ") · ZIP 보존됨, 다음 진단 버튼에서 재시도";
                 Toast.makeText(this, message, Toast.LENGTH_LONG).show();
             });
             // Preserve the existing Android share sheet using the exact same ZIP.
