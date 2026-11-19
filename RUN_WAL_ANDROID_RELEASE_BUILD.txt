@@ -1,1 +1,1 @@
-Run signed Official v1.0.0 build using the proven Git Bash P12 decode path.
+Run signed Official 1.0.0 hosted build; publish a private draft release in this public source repository.
