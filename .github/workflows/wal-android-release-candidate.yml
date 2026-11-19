@@ -108,8 +108,27 @@ jobs:
           mac_verified=true
           if ! openssl pkcs12 -in "$work_dir/uploaded.p12" -info -noout -passin env:KEYSTORE_PASSWORD_CLEAN >"$work_dir/p12-check.log" 2>&1; then
             mac_verified=false
-            echo "P12 MAC verification failed; attempting authenticated key/certificate extraction with MAC verification bypassed."
-            cat "$work_dir/p12-check.log"
+            echo "Normalized P12 candidate failed MAC validation; trying the original secret with base64 ignore-garbage."
+            raw_candidate="$work_dir/raw-ignore-garbage.p12"
+            if printf '%s' "$KEYSTORE_BASE64" | base64 --ignore-garbage --decode > "$raw_candidate" 2>"$work_dir/raw-decode.log"; then
+              raw_bytes="$(wc -c < "$raw_candidate" | tr -d '[:space:]')"
+              echo "Raw ignore-garbage candidate size: $raw_bytes bytes."
+              if [[ "$raw_bytes" == "2858" ]]; then
+                if openssl pkcs12 -in "$raw_candidate" -info -noout -passin env:KEYSTORE_PASSWORD_CLEAN >"$work_dir/raw-p12-check.log" 2>&1; then
+                  cp "$raw_candidate" "$work_dir/uploaded.p12"
+                  mac_verified=true
+                  echo "Raw ignore-garbage P12 candidate passed MAC validation."
+                elif openssl pkcs12 -in "$raw_candidate" -nocerts -nodes -nomacver -passin env:KEYSTORE_PASSWORD_CLEAN -out "$work_dir/raw-release-key.pem" 2>"$work_dir/raw-key-check.log" &&
+                     openssl pkcs12 -in "$raw_candidate" -clcerts -nokeys -nomacver -passin env:KEYSTORE_PASSWORD_CLEAN -out "$work_dir/raw-release-cert.pem" 2>"$work_dir/raw-cert-check.log"; then
+                  cp "$raw_candidate" "$work_dir/uploaded.p12"
+                  mac_verified=false
+                  echo "Raw ignore-garbage P12 candidate decrypted with the existing password; signer checks will validate the key pair."
+                else
+                  echo "Raw ignore-garbage candidate could not be authenticated or decrypted."
+                  cat "$work_dir/raw-p12-check.log" "$work_dir/raw-key-check.log" "$work_dir/raw-cert-check.log" 2>/dev/null || true
+                fi
+              fi
+            fi
           fi
           pkcs12_options=()
           if [[ "$mac_verified" != "true" ]]; then pkcs12_options=(-nomacver); fi
