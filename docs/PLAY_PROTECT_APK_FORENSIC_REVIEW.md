@@ -1,6 +1,6 @@
 # WAL Android Launcher — Play Protect APK forensic review
 
-Date: 2026-11-20  
+Date: 2026-11-20
 Scope: signed Official 1.0.0 vs signed Development 1.0.9 APKs supplied by the existing Actions artifact. No APK was re-uploaded by the user.
 
 ## Artifact identity
@@ -62,7 +62,7 @@ The Official package ID is new/different from Development, so an unknown-package
 
 ## Change prepared on a separate branch
 
-Branch: `security/play-protect-review-20261120`  
+Branch: `security/play-protect-review-20261120`
 PR: https://github.com/wal-studio/wayward-launcher-official/pull/43
 
 Changes:
