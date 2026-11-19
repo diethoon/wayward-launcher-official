@@ -9,11 +9,13 @@ final class DirectoryBatchAcknowledgement {
     private CountDownLatch latch;
     private boolean pending;
     private boolean cancelled;
+    private int acknowledgedBatchIndex = -1;
     private long deadlineNanos;
 
     synchronized CountDownLatch begin(int batchIndex, long timeout, TimeUnit unit) {
         if (cancelled || pending || batchIndex < 0 || timeout <= 0 || unit == null) return null;
         awaitingBatchIndex = batchIndex;
+        acknowledgedBatchIndex = -1;
         latch = new CountDownLatch(1);
         pending = true;
         deadlineNanos = System.nanoTime() + unit.toNanos(timeout);
@@ -26,20 +28,25 @@ final class DirectoryBatchAcknowledgement {
             closePendingLocked();
             return false;
         }
-        CountDownLatch current = latch;
+        acknowledgedBatchIndex = batchIndex;
         closePendingLocked();
-        current.countDown();
         return true;
     }
 
     synchronized boolean expire(int batchIndex) {
         if (!pending || awaitingBatchIndex != batchIndex) return false;
+        acknowledgedBatchIndex = -1;
         closePendingLocked();
         return true;
     }
 
+    synchronized boolean wasAcknowledged(int batchIndex) {
+        return !cancelled && acknowledgedBatchIndex == batchIndex;
+    }
+
     synchronized void cancel() {
         cancelled = true;
+        acknowledgedBatchIndex = -1;
         closePendingLocked();
     }
 

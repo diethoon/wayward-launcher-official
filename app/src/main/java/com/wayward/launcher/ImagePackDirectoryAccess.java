@@ -522,16 +522,17 @@ final class ImagePackDirectoryAccess {
                         details("entryCount", entries.length(), "done", done));
             }
             dispatchDirectoryPacket(task, packet);
-            boolean acknowledged = acknowledgement.await(
+            boolean released = acknowledgement.await(
                     DIRECTORY_BATCH_ACK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            if (!acknowledged) {
-                task.expireBatch(batchIndex);
-                diagnostic("native_directory_batch_ack_timeout", task.requestId, "error",
-                        details("batchIndex", batchIndex, "timeoutSeconds", DIRECTORY_BATCH_ACK_TIMEOUT_SECONDS));
-                task.cancel();
+            if (!released || task.cancelled || !task.wasBatchAcknowledged(batchIndex)) {
+                if (!task.cancelled) {
+                    task.expireBatch(batchIndex);
+                    diagnostic("native_directory_batch_ack_timeout", task.requestId, "error",
+                            details("batchIndex", batchIndex, "timeoutSeconds", DIRECTORY_BATCH_ACK_TIMEOUT_SECONDS));
+                    task.cancel();
+                }
                 return false;
             }
-            if (task.cancelled) return false;
             return true;
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
@@ -1339,6 +1340,10 @@ final class ImagePackDirectoryAccess {
 
         void expireBatch(int batchIndex) {
             batchAcknowledgement.expire(batchIndex);
+        }
+
+        boolean wasBatchAcknowledged(int batchIndex) {
+            return batchAcknowledgement.wasAcknowledged(batchIndex);
         }
 
         void cancel() {

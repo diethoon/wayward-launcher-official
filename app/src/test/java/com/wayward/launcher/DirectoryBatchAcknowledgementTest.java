@@ -17,13 +17,16 @@ public final class DirectoryBatchAcknowledgementTest {
         assertNotNull(first);
         assertFalse(gate.acknowledge(1));
         assertTrue(gate.acknowledge(0));
+        assertTrue(gate.wasAcknowledged(0));
         assertTrue(first.await(10, TimeUnit.MILLISECONDS));
         assertFalse("duplicate ACK must not be accepted", gate.acknowledge(0));
 
         CountDownLatch second = gate.begin(1, 1, TimeUnit.SECONDS);
         assertNotNull(second);
+        assertFalse(gate.wasAcknowledged(1));
         assertFalse("stale ACK must not release the next batch", gate.acknowledge(0));
         assertTrue(gate.acknowledge(1));
+        assertTrue(gate.wasAcknowledged(1));
     }
 
     @Test public void timeoutClosesTheAckWindowAndReleasesTheWorker() throws Exception {
@@ -33,6 +36,7 @@ public final class DirectoryBatchAcknowledgementTest {
         Thread.sleep(10);
         assertFalse("late ACK after deadline must be rejected", gate.acknowledge(7));
         assertTrue("expired wait must be released", waiting.await(10, TimeUnit.MILLISECONDS));
+        assertFalse("late ACK must not be reported as successful to the waiting worker", gate.wasAcknowledged(7));
         assertFalse(gate.expire(7));
         assertFalse(gate.acknowledge(7));
     }
@@ -43,6 +47,7 @@ public final class DirectoryBatchAcknowledgementTest {
         assertNotNull(waiting);
         assertTrue(gate.expire(3));
         assertTrue(waiting.await(10, TimeUnit.MILLISECONDS));
+        assertFalse(gate.wasAcknowledged(3));
         assertFalse(gate.acknowledge(3));
         assertFalse(gate.acknowledge(3));
     }
@@ -53,6 +58,7 @@ public final class DirectoryBatchAcknowledgementTest {
         assertNotNull(waiting);
         gate.cancel();
         assertTrue(waiting.await(10, TimeUnit.MILLISECONDS));
+        assertFalse(gate.wasAcknowledged(2));
         assertFalse(gate.acknowledge(2));
         assertNull(gate.begin(3, 1, TimeUnit.SECONDS));
         gate.cancel();
