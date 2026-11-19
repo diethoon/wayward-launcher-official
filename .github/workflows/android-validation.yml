@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: official-android-${{ github.ref }}
@@ -35,25 +35,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
-      - name: Materialize SAF picker hotfix payload
-        if: ${{ hashFiles('.saf-hotfix-payload/*.gz') != '' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          gzip -dc .saf-hotfix-payload/app-build.gradle.gz > app/build.gradle
-          gzip -dc .saf-hotfix-payload/imagepack-folder-picker.js.gz > app/src/main/assets/imagepack-folder-picker.js
-          gzip -dc .saf-hotfix-payload/ImagePackDirectoryAccess.java.gz > app/src/main/java/com/wayward/launcher/ImagePackDirectoryAccess.java
-          gzip -dc .saf-hotfix-payload/MainActivity.java.gz > app/src/main/java/com/wayward/launcher/MainActivity.java
-          gzip -dc .saf-hotfix-payload/saf-picker-promise-resume-regression.test.mjs.gz > tests/saf-picker-promise-resume-regression.test.mjs
-          rm -rf .saf-hotfix-payload
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/build.gradle app/src/main/assets/imagepack-folder-picker.js app/src/main/java/com/wayward/launcher/ImagePackDirectoryAccess.java app/src/main/java/com/wayward/launcher/MainActivity.java tests/saf-picker-promise-resume-regression.test.mjs .saf-hotfix-payload
-          if ! git diff --cached --quiet; then
-            git commit -m "fix(android): materialize SAF picker lifecycle patch"
-            git push origin "HEAD:${GITHUB_REF_NAME}"
-          fi
 
       - name: Set up Java 17
         uses: actions/setup-java@v6
