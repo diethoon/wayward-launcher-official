@@ -1,1 +1,1 @@
-Retry signed WAL Android 1.0.0 release candidate build with inherited runner GitHub token.
+Run signed Official v1.0.0 build using the proven Git Bash P12 decode path.
