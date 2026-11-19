@@ -198,7 +198,7 @@ PC 저장소의 `docs/FULL-SYSTEM-NORMALIZATION-HANDOFF-20261119.md`와 함께 �
 
 ### Implementation
 
-Code commit: 022bee32e4f48e6bd652fb311ffcc375bdeb5a27 (download-resume change was committed on this branch as 3283722c3ef98d97935090f32a9be6caf9136c12; subsequent test commits follow it).
+Download-resume implementation commit: 3283722c3ef98d97935090f32a9be6caf9136c12. The contract-test assertion and SAF smoke-script correction are later commits on the same branch.
 
 RemotePcFileManagerActivity now:
 - Writes interrupted downloads to an app-private temporary file.
