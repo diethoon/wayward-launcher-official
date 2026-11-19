@@ -149,3 +149,46 @@ PC 저장소의 `docs/FULL-SYSTEM-NORMALIZATION-HANDOFF-20261119.md`와 함께 �
 | Direct ComfyUI workflow UI | FAIL | client methods exist; UI call-site absent |
 | GitHub Releases updater | FAIL | 미구현 |
 | PC↔Android 통합 진단 | PARTIAL | 개별 logger/exporter; common request ID 없음 |
+
+
+## 9. API 계약 전수 대조 — 1차 결과
+
+### Android 실제 호출 surface
+
+- PC Host Program.cs에는 53개의 mapped endpoint와 middleware route /v1/imagegen/{**path}가 있다.
+- Android 실제 호출 코드는 다음으로 분류된다.
+  - Host identity / QR / pairing manifest, pairing request/proof/status, auth challenge/complete: RemoteHostClient 및 RemotePairingActivity
+  - roots/list/download/upload session/chunks/complete/cancel: RemoteHostClient 및 RemoteFilesClient
+  - game static resources: RemoteGameResourceBridge
+  - legacy game image generation: ImageGenProxy → RemoteGameImageApiClient
+  - ComfyUI: RemoteComfyClient는 존재하지만 call-site scan에서 MainActivity의 getStatus()만 호출됨
+- Android call-site가 확인되지 않은 Host endpoints: /v1/host/status, /v1/auth/session, /v1/auth/session/revoke, file text edit/SHA/media/folder create/move/delete, Manager control APIs. Manager control은 loopback-only이므로 Android 미사용이 의도된 경계다.
+- RemoteComfyClient의 object-info/queue/jobs/cancel/images 메서드는 구현되어 있지만 UI call-site가 확인되지 않았다. 이를 실제 ComfyUI workflow UI가 작동한다고 판정하지 않는다.
+
+### HTTP / permission / transfer 정합성
+
+- Android의 QR trust, P-256 challenge/proof, bearer session 및 401 재인증 경로는 Host 계약과 일치한다. PC session은 Host 프로세스 재시작 시 폐기되지만 durable device pairing은 유지되며 Android는 다음 401에서 다시 challenge를 수행하는 구조다.
+- Android file manager는 PC가 승인한 root ID만 사용한다. PC permission middleware와 Android 화면은 Browse/List/Download/Upload 권한을 분리한다. 기본 ReadOnly pairing은 Browse/List/Read/Download만 허용하므로 업로드는 PC Manager에서 별도 승인해야 한다.
+- 업로드는 512 MiB / 1 MiB chunk / Upload-Offset / SHA-256 기준으로 Host와 일치한다. Host는 durable metadata를 저장하고 시작 시 2시간 이내 upload session을 복구한다. Android는 pending upload ID/URI/hash를 저장해 Host가 보고한 offset부터 이어간다.
+- 다운로드 client는 Range 요청 header를 전달할 수 있지만 현재 RemotePcFileManagerActivity.downloadTo()는 Range 없이 전체 파일을 받고, 실패 시 destination을 삭제한다. 따라서 download resume는 미구현이다.
+- Android Remote Host client의 read timeout은 20초이고, local ImageGen proxy timeout은 15분이다. legacy game image route는 비동기 enqueue/status 형태로 설계되어야 하며 실제 PC↔Android latency에서 polling/timeout을 확인해야 한다.
+
+### 문서 정합성
+
+- PC docs/protocol/API-v1.md에는 52개 API 표 행이 있으나 /healthz와 /v1/host/pairing-manifest/{nonce}가 빠져 있다.
+- PC docs/protocol/openapi-v1.yaml은 Host status/identity/stop 세 경로만 정의한다. pairing/auth/files/game/game-image-api/comfy/imagegen 계약을 표현하지 못한다.
+- **API-01:** 두 문서를 실제 53 mapped routes + ImageGen middleware route에 맞춰 갱신해야 한다. OpenAPI의 3개 path만으로 클라이언트 구현을 생성하거나 호환성 판정을 해서는 안 된다.
+
+### 2차 판정
+
+| 범주 | 판정 | 설명 |
+|---|---|---|
+| Pairing/auth wire schema | PARTIAL | source-level match; real HTTP transcript 없음 |
+| File roots/list/download/upload | PARTIAL | code/contract match; real SAF transfer 없음 |
+| Upload resume incl. Host restart | PARTIAL | durable recovery code + Android pending metadata; 실제 restart transfer 없음 |
+| Download resume | FAIL | UI-level resume absent |
+| ComfyUI direct workflow | FAIL | Android UI call-site absent; status only |
+| Legacy game ImageGen | PARTIAL | allowlisted API; 실제 generation unverified |
+| Full ImageGen gateway | FAIL | Android client not connected |
+| WAN endpoint/fallback | FAIL | RFC1918-only |
+| API docs/OpenAPI | FAIL | OpenAPI incomplete, API catalog has two missing rows |
