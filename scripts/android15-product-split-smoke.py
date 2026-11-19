@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import time
@@ -74,6 +75,41 @@ def dump_ui(prefix: str) -> tuple[str, pathlib.Path]:
     return payload, local_path
 
 
+def dismiss_pixel_launcher_anr(xml: str, package: str, prefix: str) -> str:
+    if "Pixel Launcher isn't responding" not in xml:
+        return xml
+
+    root = ET.fromstring(xml)
+    close_button = next(
+        (node for node in root.iter("node")
+         if node.attrib.get("text", "").strip() in ("Close app", "앱 닫기")),
+        None,
+    )
+    if close_button is not None:
+        numbers = [int(value) for value in re.findall(r"\d+", close_button.attrib.get("bounds", ""))]
+        if len(numbers) != 4:
+            raise RuntimeError("Pixel Launcher ANR dialog Close app button had invalid bounds.")
+        x = (numbers[0] + numbers[2]) // 2
+        y = (numbers[1] + numbers[3]) // 2
+        adb("shell", "input", "tap", str(x), str(y))
+    else:
+        adb("shell", "input", "keyevent", "4", check=False, capture=True)
+
+    # This is an emulator system-launcher ANR overlay, not a Wayward crash.
+    # Close only the dialog's launcher process; never force-stop Android's system UI.
+    time.sleep(2)
+    adb("shell", "am", "start", "-W", "-n", package + "/" + ACTIVITY_CLASS)
+    pid = wait_for_process(package)
+    time.sleep(5)
+    refreshed, _ = dump_ui(prefix + "-after-system-dialog")
+    if "Pixel Launcher isn't responding" in refreshed:
+        raise RuntimeError(
+            "Pixel Launcher ANR overlay remained after dismissal; Wayward process is alive with pid " + pid
+        )
+    print("ANDROID_EMULATOR_SYSTEM_ANR_DISMISSED package=" + package + " wayward_pid=" + pid)
+    return refreshed
+
+
 def visible_text(xml: str) -> set[str]:
     root = ET.fromstring(xml)
     values: set[str] = set()
@@ -98,6 +134,7 @@ def install_and_launch(package: str, apk: pathlib.Path, prefix: str) -> set[str]
     pid = wait_for_process(package)
     time.sleep(4)
     xml, _ = dump_ui(prefix)
+    xml = dismiss_pixel_launcher_anr(xml, package, prefix)
     screenshot_device = "/sdcard/wal-product-split-" + prefix + ".png"
     screenshot_local = ARTIFACTS / ("android15-product-split-" + prefix + ".png")
     adb("shell", "screencap", "-p", screenshot_device)
