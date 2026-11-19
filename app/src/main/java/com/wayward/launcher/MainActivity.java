@@ -318,6 +318,35 @@ public final class MainActivity extends Activity {
         return tile;
     }
 
+    private View glassSettingsButton(Runnable action){
+        TextView gear=uiText("⚙",23,Color.rgb(62,88,107),true);
+        gear.setGravity(android.view.Gravity.CENTER);
+        gear.setContentDescription("NovelAI 토큰 설정");
+        gear.setMinimumWidth(dp(54));
+        gear.setMinimumHeight(dp(54));
+        android.graphics.drawable.GradientDrawable glass=new android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                new int[]{Color.argb(248,255,255,255),Color.argb(226,232,243,249)});
+        glass.setCornerRadius(dp(16));
+        glass.setStroke(dp(1),Color.argb(165,255,255,255));
+        gear.setBackground(new android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Color.argb(65,85,145,180)),glass,null));
+        gear.setElevation(dp(6));
+        gear.setClickable(true);
+        gear.setFocusable(true);
+        gear.setOnTouchListener((view,event)->{
+            int actionCode=event.getActionMasked();
+            if(actionCode==android.view.MotionEvent.ACTION_DOWN){
+                view.animate().translationY(dp(2)).setDuration(70).start();
+            }else if(actionCode==android.view.MotionEvent.ACTION_UP||actionCode==android.view.MotionEvent.ACTION_CANCEL){
+                view.animate().translationY(0).setDuration(110).start();
+            }
+            return false;
+        });
+        gear.setOnClickListener(view->action.run());
+        return gear;
+    }
+
     private void renderImageModePanel(){
         if(imageModePanel==null)return;
         imageModePanel.removeAllViews();
@@ -342,21 +371,20 @@ public final class MainActivity extends Activity {
         }
         LinearLayout row=new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams rowParams=new LinearLayout.LayoutParams(-1,-2);
         imageModePanel.addView(row,rowParams);
         View server=glassModeTile(generationSelected?"이미지 생성 서버 실행 중":"이미지 생성 서버 실행",
-                generationSelected?"NovelAI 연결 · 다시 터치하면 종료":(tokenReady?"토큰 등록됨 · 터치해 서버 실행":"먼저 NAI 토큰 등록 필요"),
+                generationSelected?"NovelAI 연결됨 · 다시 터치하면 종료":(tokenReady?"토큰 등록됨 · 터치해 서버 실행":"토큰 미등록 · 눌러 계정 연결"),
                 generationSelected,true,()->{
                     if(IMAGE_MODE_GENERATION.equals(currentImageMode())&&localImageServerActive()) switchToImagePacksOnly();
                     else switchToImageGenerationMode();
                 });
         row.addView(server,new LinearLayout.LayoutParams(0,dp(112),1f));
-        View nai=glassModeTile("NAI 설정",
-                tokenReady?"개인 토큰 등록됨 · 연결 검증":"Persistent API Token 등록",
-                false,false,this::openNovelAiSettings);
-        LinearLayout.LayoutParams naiParams=new LinearLayout.LayoutParams(0,dp(112),0.78f);
-        naiParams.leftMargin=dp(8);
-        row.addView(nai,naiParams);
+        View settings=glassSettingsButton(this::openNovelAiSettings);
+        LinearLayout.LayoutParams settingsParams=new LinearLayout.LayoutParams(dp(54),dp(54));
+        settingsParams.leftMargin=dp(8);
+        row.addView(settings,settingsParams);
         LinearLayout.LayoutParams packsParams=new LinearLayout.LayoutParams(-1,dp(76));
         packsParams.topMargin=dp(8);
         View packs=glassModeTile(packsSelected?"이미지팩만 사용 · 활성":"이미지팩만 사용",
