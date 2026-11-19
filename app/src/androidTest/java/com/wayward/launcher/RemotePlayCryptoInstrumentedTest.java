@@ -230,11 +230,6 @@ public final class RemotePlayCryptoInstrumentedTest {
     }
 
     @Test
-    @Test
-    @Test
-    @Test
-    @Test
-    @Test
     public void signedHostIdentityRemainsVerifiableAfterQrExpiryButFreshQrDoesNot() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         KeyPair keyPair = RemoteHostStore.getDeviceKeyPair(context);
