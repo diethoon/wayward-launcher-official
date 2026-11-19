@@ -53,15 +53,54 @@ jobs:
           gradle-version: '8.9'
           cache-provider: basic
 
-      - name: Run OAuth, CloudSave and WAN contracts
+      - name: Embed pinned NovelAI image-generation backend
         shell: bash
         run: |
           set -euo pipefail
+          source_commit="26d6c32e0b0abbb886e3029efd548b7ca6774401"
+          curl --fail --location --silent --show-error \
+            "https://raw.githubusercontent.com/diethoon/wayward/\${source_commit}/mods.zip" \
+            -o "$RUNNER_TEMP/wayward-mods.zip"
+          python3 scripts/embed_imagegen_backend.py "$RUNNER_TEMP/wayward-mods.zip"
+
+      - name: Run full Android source contract suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
           node --check app/src/main/assets/wayward-google-auth-bridge.js
+          node --check app/src/main/assets/imagegen-studio-bridge.js
+          node --check app/src/main/assets/imagepack-folder-picker.js
+          node --check app/src/main/assets/wayward-download-bridge.js
           node scripts/test-google-auth-bridge.cjs
           node tests/cloudsave-native-auth-selection.test.cjs
           node scripts/test-official-scope.cjs
           node tests/remote-play-contract.test.cjs
+          node tests/imagegen-studio-mode.test.mjs
+          node tests/novelai-provider-lock.test.mjs
+          node tests/novelai-token-persistence.test.mjs
+          node tests/web-file-chooser-contract.test.mjs
+          node tests/wayward-source-contract.test.mjs
+          node tests/imagepack-folder-picker-contract.test.mjs
+          node tests/saf-picker-promise-resume-regression.test.mjs
+          node tests/saf-directory-deadlock-regression.test.mjs
+          node tests/wal-home-branding-contract.test.mjs
+          node tests/file-access-engine-batch.test.mjs
+          node tests/file-access-engine-policy.test.mjs
+          node tests/faith-imagepack-upload-contract.test.mjs
+          node tests/saf-image-fast-path.contract.test.cjs
+          python3 -m py_compile scripts/check-glass-ui-layout.py
+          python3 tests/android15-recents-parser.test.py
+          test_dir="$RUNNER_TEMP/android-contract-tests"
+          mkdir -p "$test_dir"
+          javac -d "$test_dir" app/src/main/java/com/wayward/launcher/ImageServerModeCoordinator.java tests/ImageServerModeCoordinatorTest.java
+          java -cp "$test_dir" com.wayward.launcher.ImageServerModeCoordinatorTest
+          javac -d "$test_dir" app/src/main/java/com/wayward/launcher/WebFileChooserRequestPolicy.java tests/WebFileChooserRequestPolicyTest.java
+          java -cp "$test_dir" com.wayward.launcher.WebFileChooserRequestPolicyTest
+          javac -d "$test_dir" app/src/main/java/com/wayward/launcher/DiagnosticsUploadPolicy.java tests/DiagnosticsUploadPolicyTest.java
+          java -cp "$test_dir" com.wayward.launcher.DiagnosticsUploadPolicyTest
+          javac -d "$test_dir" app/src/main/java/com/wayward/launcher/SafImageDocumentResolver.java tests/SafImageDocumentResolverTest.java
+          java -cp "$test_dir" com.wayward.launcher.SafImageDocumentResolverTest
           node - <<'NODE'
           const assert = require('node:assert/strict');
           const fs = require('node:fs');
