@@ -1,1 +1,1 @@
-Retry signed Official 1.0.0 build with normalized signing-secret decoding.
+Retry signed Official 1.0.0 build with corrected shell variable expansion and base64 normalization.
