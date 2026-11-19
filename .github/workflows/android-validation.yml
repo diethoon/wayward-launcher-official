@@ -39,12 +39,13 @@ jobs:
       # WAL_PATCH_APPLY_START
       # One-time bootstrap: patch the three source files before validation.
       - name: Apply staged WAL and SAF source patches
-        if: github.ref == 'refs/heads/work/wal-saf-deadlock-ui-20261119-retry' || github.head_ref == 'work/wal-saf-deadlock-ui-20261119-retry'
+        if: github.ref == 'refs/heads/work/wal-saf-deadlock-ui-20261119-retry' || github.head_ref == 'work/wal-saf-deadlock-ui-20261119-retry' && hashFiles('patches/wal-saf-source.patch') != ''
         run: |
           set -euo pipefail
           git apply --check patches/wal-saf-source.patch
           git apply patches/wal-saf-source.patch
           git rm -f patches/wal-saf-source.patch
+          echo "WAL_PATCH_APPLIED=true" >> "$GITHUB_ENV"
       # WAL_PATCH_APPLY_END
 
       - name: Set up Java 17
@@ -404,26 +405,10 @@ jobs:
           retention-days: 14
       # WAL_PATCH_PERSIST_START
       - name: Persist validated WAL and SAF source changes
-        if: success() && (github.ref == 'refs/heads/work/wal-saf-deadlock-ui-20261119-retry' || github.head_ref == 'work/wal-saf-deadlock-ui-20261119-retry')
+        if: success() && (github.ref == 'refs/heads/work/wal-saf-deadlock-ui-20261119-retry' || github.head_ref == 'work/wal-saf-deadlock-ui-20261119-retry') && env.WAL_PATCH_APPLIED == 'true'
         run: |
           set -euo pipefail
-          python3 - <<'PY_CLEANUP'
-          from pathlib import Path
-          workflow = Path('.github/workflows/android-validation.yml')
-          content = workflow.read_text()
-          for start, end in (
-              ('      # WAL_PATCH_APPLY_START\n', '      # WAL_PATCH_APPLY_END\n'),
-              ('      # WAL_PATCH_PERSIST_START\n', '      # WAL_PATCH_PERSIST_END\n'),
-          ):
-              begin = content.index(start)
-              finish = content.index(end, begin) + len(end)
-              content = content[:begin] + content[finish:]
-          content = content.replace('permissions:\n  contents: write\n', 'permissions:\n  contents: read\n', 1)
-          content = content.replace("git diff --check origin/main...HEAD -- . ':!patches/wal-saf-source.patch'", "git diff --check origin/main...HEAD", 1)
-          content = content.replace('fetch-depth: 0\n\n\n      - name: Set up Java 17', 'fetch-depth: 0\n\n      - name: Set up Java 17', 1)
-          workflow.write_text(content)
-          PY_CLEANUP
-          git add app/src/main/java/com/wayward/launcher/MainActivity.java app/src/main/java/com/wayward/launcher/ImagePackDirectoryAccess.java app/src/main/assets/imagepack-folder-picker.js .github/workflows/android-validation.yml
+          git add app/src/main/java/com/wayward/launcher/MainActivity.java app/src/main/java/com/wayward/launcher/ImagePackDirectoryAccess.java app/src/main/assets/imagepack-folder-picker.js 
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'fix: persist validated WAL UI and SAF traversal source'
