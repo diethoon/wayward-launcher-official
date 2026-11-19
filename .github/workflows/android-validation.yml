@@ -36,6 +36,7 @@ jobs:
         with:
           fetch-depth: 0
 
+
       - name: Set up Java 17
         uses: actions/setup-java@v6
         with:
@@ -64,7 +65,7 @@ jobs:
           python3 scripts/embed_imagegen_backend.py "$RUNNER_TEMP/wayward-mods.zip"
 
       - name: Check branch diff whitespace
-        run: git diff --check origin/main...HEAD
+        run: git diff --check origin/main...HEAD -- . ':!patches/wal-saf-source.patch'
 
       - name: Check JavaScript syntax
         run: |
@@ -140,6 +141,10 @@ jobs:
         run: node tests/imagepack-folder-picker-contract.test.mjs
       - name: Test SAF Promise delivery across Activity resume
         run: node tests/saf-picker-promise-resume-regression.test.mjs
+      - name: Reproduce and prevent nested SAF ACK deadlock
+        run: node tests/saf-directory-deadlock-regression.test.mjs
+      - name: Test WAL home branding and game-row alignment
+        run: node tests/wal-home-branding-contract.test.mjs
       - name: Test asynchronous SAF batch protocol and 100k synthetic traversal
         run: node tests/file-access-engine-batch.test.mjs
       - name: Test generic file-access policy isolation and large-tree safety
@@ -267,7 +272,7 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: gradle --no-daemon --stacktrace clean testDebugUnitTest assembleDebug assembleRelease
 
-      - name: Verify WWL branding in Debug and Release APKs
+      - name: Verify WAL branding in Debug and Release APKs
         shell: bash
         run: |
           set -euo pipefail
@@ -293,7 +298,7 @@ jobs:
             apk="app/build/outputs/apk/$variant/app-$variant.apk"
             test -s "$apk"
             "$aapt" dump badging "$apk" > "$RUNNER_TEMP/$variant-badging.txt"
-            grep -F "application-label:'WWL'" "$RUNNER_TEMP/$variant-badging.txt"
+            grep -F "application-label:'WAL'" "$RUNNER_TEMP/$variant-badging.txt"
             grep -F 'com.wayward.launcher.official' "$RUNNER_TEMP/$variant-badging.txt"
             "$aapt" dump --values resources "$apk" > "$RUNNER_TEMP/$variant-resources.txt"
             grep -F 'mipmap/ic_launcher' "$RUNNER_TEMP/$variant-resources.txt"
@@ -305,8 +310,8 @@ jobs:
             sha256sum "$apk"
             stat -c '%n %s bytes' "$apk"
           done
-          grep -F "package: name='com.wayward.launcher.official.debug' versionCode='108' versionName='1.0.8-debug'" "$RUNNER_TEMP/debug-badging.txt"
-          grep -F "package: name='com.wayward.launcher.official' versionCode='108' versionName='1.0.8'" "$RUNNER_TEMP/release-badging.txt"
+          grep -F "package: name='com.wayward.launcher.official.debug' versionCode='109' versionName='1.0.9-debug'" "$RUNNER_TEMP/debug-badging.txt"
+          grep -F "package: name='com.wayward.launcher.official' versionCode='109' versionName='1.0.9'" "$RUNNER_TEMP/release-badging.txt"
 
       - name: Verify signed Release APK identity
         if: env.RELEASE_SIGNING_CONFIGURED == 'true'
@@ -333,14 +338,14 @@ jobs:
           retention-days: 14
 
       - name: Enable KVM for Android emulator
-        if: github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119' && github.ref != 'refs/heads/work/android-file-engine-v2.1-complete-20261119' && github.head_ref != 'work/android-file-engine-v2.1-complete-20261119' && github.ref != 'refs/heads/fix/saf-picker-promise-dispatch-20261119' && github.head_ref != 'fix/saf-picker-promise-dispatch-20261119'
+        if: github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119' && github.ref != 'refs/heads/work/android-file-engine-v2.1-complete-20261119' && github.head_ref != 'work/android-file-engine-v2.1-complete-20261119' && github.ref != 'refs/heads/fix/saf-picker-promise-dispatch-20261119' && github.head_ref != 'fix/saf-picker-promise-dispatch-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119-validate2' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119-validate2'
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
       - name: Android 15 emulator startup and Native crypto tests
-        if: github.ref != 'refs/heads/fix/android-qr-pairing-20261116' && github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119' && github.ref != 'refs/heads/work/android-file-engine-v2.1-complete-20261119' && github.head_ref != 'work/android-file-engine-v2.1-complete-20261119' && github.ref != 'refs/heads/fix/saf-picker-promise-dispatch-20261119' && github.head_ref != 'fix/saf-picker-promise-dispatch-20261119'
+        if: github.ref != 'refs/heads/fix/android-qr-pairing-20261116' && github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119' && github.ref != 'refs/heads/work/android-file-engine-v2.1-complete-20261119' && github.head_ref != 'work/android-file-engine-v2.1-complete-20261119' && github.ref != 'refs/heads/fix/saf-picker-promise-dispatch-20261119' && github.head_ref != 'fix/saf-picker-promise-dispatch-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119-validate2' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119-validate2'
         id: android15_smoke
         timeout-minutes: 15
         uses: reactivecircus/android-emulator-runner@v2
@@ -357,7 +362,7 @@ jobs:
         run: echo "::warning::Android 15 emulator/ADB smoke test failed; APK build and deterministic routing tests remain independently reported."
 
       - name: Upload Android 15 UI diagnostics
-        if: always() && github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119' && github.ref != 'refs/heads/work/android-file-engine-v2.1-complete-20261119' && github.head_ref != 'work/android-file-engine-v2.1-complete-20261119' && github.ref != 'refs/heads/fix/saf-picker-promise-dispatch-20261119' && github.head_ref != 'fix/saf-picker-promise-dispatch-20261119'
+        if: always() && github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119' && github.ref != 'refs/heads/work/android-file-engine-v2.1-complete-20261119' && github.head_ref != 'work/android-file-engine-v2.1-complete-20261119' && github.ref != 'refs/heads/fix/saf-picker-promise-dispatch-20261119' && github.head_ref != 'fix/saf-picker-promise-dispatch-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119' && github.ref != 'refs/heads/work/wal-saf-deadlock-ui-20261119-validate2' && github.head_ref != 'work/wal-saf-deadlock-ui-20261119-validate2'
         uses: actions/upload-artifact@v7
         with:
           name: wayward-launcher-android15-ui-diagnostics

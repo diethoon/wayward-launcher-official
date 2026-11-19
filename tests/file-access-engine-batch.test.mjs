@@ -53,6 +53,7 @@ const host={listImagePackDirectoryForRequest(_cap,command,id){
 const context=vm.createContext({window,host,nativeCapability:"test",pendingDirectoryLists:new Map(),nextDirectoryListId:0,
   Promise,Map,Set,String,Number,Array,Date,Error,setTimeout,clearTimeout,
   domError(n,m){const e=new Error(m);e.name=n;return e;},
+  noteUploadProgressActivity(){},
   parseResult(raw){const v=typeof raw==="string"?JSON.parse(raw):raw;if(!v||v.ok!==true){const e=new Error(v?.message||"native error");e.name=v?.name||"NotReadableError";throw e;}return v;},
   checkUploadCancelled(c){if(c?.cancelled){const e=new Error("cancelled");e.name="AbortError";throw e;}}
 });
