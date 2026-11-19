@@ -146,7 +146,7 @@ public class MainActivity extends Activity {
         activeGameLaunchRequestId=requestId==null?"":requestId;
         logGameLifecycle("INFO","activity_create",sessionId,activeGameLaunchRequestId,
                 sessionId==null?"launcher_intent":"game_session_intent");
-        registerRemotePcControl();
+        if(!BuildConfig.WAL_OFFICIAL)registerRemotePcControl();
         zipMods=new ZipModStore(getFilesDir());
         loadProfiles();
         showHome();
@@ -167,8 +167,30 @@ public class MainActivity extends Activity {
         if(home!=null&&home.getVisibility()==View.VISIBLE){
             renderProfiles();refreshStatus();refreshImageGenStatus();renderImageModePanel();
             updatePairingButtonState();
-            startRemoteHostDiscoveryIfNeeded();
-            reconnectRemoteHostInBackground();
+            if(!BuildConfig.WAL_OFFICIAL){
+                startRemoteHostDiscoveryIfNeeded();
+                reconnectRemoteHostInBackground();
+            }
+        }
+        if(BuildConfig.WAL_OFFICIAL){
+            OfficialUpdateManager.installPendingIfAllowed(this);
+            if(home!=null&&home.getVisibility()==View.VISIBLE){
+                OfficialUpdateManager.checkForUpdate(this, update -> {
+                    if(isFinishing()||isDestroyed())return;
+                    String message="새 WAL Android Launcher 업데이트 "+update.versionName+"이 있습니다.";
+                    if(!update.notes.trim().isEmpty()){
+                        String notes=update.notes.trim();
+                        if(notes.length()>600)notes=notes.substring(0,600)+"…";
+                        message+="\n\n"+notes;
+                    }
+                    new AlertDialog.Builder(this)
+                            .setTitle("업데이트 확인")
+                            .setMessage(message)
+                            .setNegativeButton("나중에",null)
+                            .setPositiveButton("업데이트",(dialog,which)->OfficialUpdateManager.install(this,update))
+                            .show();
+                });
+            }
         }
     }
     @Override protected void onPause(){
@@ -307,21 +329,27 @@ public class MainActivity extends Activity {
         title.setSingleLine(true);
         title.setHorizontallyScrolling(true);
         top.addView(title,new LinearLayout.LayoutParams(0,-2,1f));
-        Button pcFolder=compactButton("+ PC 폴더",false,this::chooseRemotePcFolder);
-        LinearLayout.LayoutParams pcFolderParams=new LinearLayout.LayoutParams(dp(76),dp(38));
-        pcFolderParams.leftMargin=dp(4);top.addView(pcFolder,pcFolderParams);
-        Button addFolder=compactButton("+ 현재 기기 폴더",true,this::chooseFolder);
-        LinearLayout.LayoutParams addFolderParams=new LinearLayout.LayoutParams(dp(112),dp(38));
-        addFolderParams.leftMargin=dp(4);top.addView(addFolder,addFolderParams);
-        pairingButton=compactButton("페어링",false,this::openRemotePairing);
-        LinearLayout.LayoutParams pairingParams=new LinearLayout.LayoutParams(dp(76),dp(38));
-        pairingParams.leftMargin=dp(4);top.addView(pairingButton,pairingParams);
+        if(!BuildConfig.WAL_OFFICIAL){
+            Button pcFolder=compactButton("+ PC 폴더",false,this::chooseRemotePcFolder);
+            LinearLayout.LayoutParams pcFolderParams=new LinearLayout.LayoutParams(dp(76),dp(38));
+            pcFolderParams.leftMargin=dp(4);top.addView(pcFolder,pcFolderParams);
+            Button addFolder=compactButton("+ 현재 기기 폴더",true,this::chooseFolder);
+            LinearLayout.LayoutParams addFolderParams=new LinearLayout.LayoutParams(dp(112),dp(38));
+            addFolderParams.leftMargin=dp(4);top.addView(addFolder,addFolderParams);
+            pairingButton=compactButton("페어링",false,this::openRemotePairing);
+            LinearLayout.LayoutParams pairingParams=new LinearLayout.LayoutParams(dp(76),dp(38));
+            pairingParams.leftMargin=dp(4);top.addView(pairingButton,pairingParams);
+        }else{
+            Button addFolder=compactButton("+ 현재 기기 폴더",true,this::chooseFolder);
+            LinearLayout.LayoutParams addFolderParams=new LinearLayout.LayoutParams(dp(112),dp(38));
+            addFolderParams.leftMargin=dp(4);top.addView(addFolder,addFolderParams);
+        }
         Button diagnostics=compactButton("진단",false,this::shareDiagnosticsZip);
         LinearLayout.LayoutParams diagnosticsParams=new LinearLayout.LayoutParams(dp(48),dp(38));
         diagnosticsParams.leftMargin=dp(4);top.addView(diagnostics,diagnosticsParams);
         LinearLayout.LayoutParams topParams=new LinearLayout.LayoutParams(-1,-2);topParams.bottomMargin=dp(3);
         page.addView(top,topParams);
-        TextView subtitle=uiText("Wayward Android Launcher",11,Color.rgb(111,118,125),false);
+        TextView subtitle=uiText(BuildConfig.WAL_OFFICIAL?"WAL Android Launcher":"Wayward Android Launcher",11,Color.rgb(111,118,125),false);
         subtitle.setLetterSpacing(0.025f);
         subtitle.setSingleLine(true);
         subtitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -369,10 +397,12 @@ public class MainActivity extends Activity {
         imageModePanel.setClipToPadding(false);
         imageCard.addView(imageModePanel,new LinearLayout.LayoutParams(-1,-2));
 
-        Button remoteFileManager=compactButton("원격 PC 파일매니저",false,this::openRemotePcFileManager);
-        LinearLayout.LayoutParams remoteFileManagerParams=new LinearLayout.LayoutParams(-1,dp(46));
-        remoteFileManagerParams.topMargin=dp(12);
-        page.addView(remoteFileManager,remoteFileManagerParams);
+        if(!BuildConfig.WAL_OFFICIAL){
+            Button remoteFileManager=compactButton("원격 PC 파일매니저",false,this::openRemotePcFileManager);
+            LinearLayout.LayoutParams remoteFileManagerParams=new LinearLayout.LayoutParams(-1,dp(46));
+            remoteFileManagerParams.topMargin=dp(12);
+            page.addView(remoteFileManager,remoteFileManagerParams);
+        }
 
         home=page;root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));setContentView(root);applySystemBarInsets(root);
         renderProfiles();refreshStatus();renderImageModePanel();refreshImageGenStatus();updatePairingButtonState();
@@ -380,7 +410,9 @@ public class MainActivity extends Activity {
 
 
     private String currentImageMode(){
-        return getSharedPreferences(PREFS,MODE_PRIVATE).getString(KEY_IMAGE_MODE,IMAGE_MODE_PACKS_ONLY);
+        String mode=getSharedPreferences(PREFS,MODE_PRIVATE).getString(KEY_IMAGE_MODE,IMAGE_MODE_PACKS_ONLY);
+        if(BuildConfig.WAL_OFFICIAL&&IMAGE_MODE_REMOTE_PC.equals(mode))return IMAGE_MODE_PACKS_ONLY;
+        return mode;
     }
 
     private boolean localImageServerActive(){
@@ -464,17 +496,19 @@ public class MainActivity extends Activity {
                     if(IMAGE_MODE_GENERATION.equals(currentImageMode())&&localImageServerActive()) switchToImagePacksOnly();
                     else switchToImageGenerationMode();
                 });
-        LinearLayout.LayoutParams serverParams=new LinearLayout.LayoutParams(0,dp(82),1f);
+        LinearLayout.LayoutParams serverParams=BuildConfig.WAL_OFFICIAL?new LinearLayout.LayoutParams(-1,dp(82)):new LinearLayout.LayoutParams(0,dp(82),1f);
         serverRow.addView(server,serverParams);
 
-        boolean remotePaired=RemoteHostStore.isPaired(this);
-        boolean comfySelected=IMAGE_MODE_REMOTE_PC.equals(mode)&&remotePaired;
-        View comfy=glassModeTile(comfySelected?"ComfyUI 연결됨":"ComfyUI 서버 실행",
-                remotePaired?"PC Host 인증 · ComfyUI 권한 필요":"PC 페어링 필요",
-                comfySelected,null,this::switchToRemoteComfyMode);
-        LinearLayout.LayoutParams comfyParams=new LinearLayout.LayoutParams(0,dp(82),1f);
-        comfyParams.leftMargin=dp(8);
-        serverRow.addView(comfy,comfyParams);
+        if(!BuildConfig.WAL_OFFICIAL){
+            boolean remotePaired=RemoteHostStore.isPaired(this);
+            boolean comfySelected=IMAGE_MODE_REMOTE_PC.equals(mode)&&remotePaired;
+            View comfy=glassModeTile(comfySelected?"ComfyUI 연결됨":"ComfyUI 서버 실행",
+                    remotePaired?"PC Host 인증 · ComfyUI 권한 필요":"PC 페어링 필요",
+                    comfySelected,null,this::switchToRemoteComfyMode);
+            LinearLayout.LayoutParams comfyParams=new LinearLayout.LayoutParams(0,dp(82),1f);
+            comfyParams.leftMargin=dp(8);
+            serverRow.addView(comfy,comfyParams);
+        }
         imageModePanel.addView(serverRow,new LinearLayout.LayoutParams(-1,-2));
 
         View packs=glassModeTile(packsSelected?"이미지팩만 사용 · 활성":"이미지팩만 사용",
@@ -489,7 +523,7 @@ public class MainActivity extends Activity {
 
 
     private void updatePairingButtonState(){
-        if(pairingButton==null)return;
+        if(BuildConfig.WAL_OFFICIAL||pairingButton==null)return;
         boolean paired=RemoteHostStore.isPaired(this);
         pairingButton.setText(paired?"페어링 완료":"페어링");
         pairingButton.setEnabled(!paired);
@@ -498,6 +532,7 @@ public class MainActivity extends Activity {
     }
 
     private void openRemotePairing(){
+        if(BuildConfig.WAL_OFFICIAL)return;
         if(RemoteHostStore.isPaired(this)){
             Toast.makeText(this,"이미 PC와 페어링되어 있습니다.",Toast.LENGTH_SHORT).show();
             updatePairingButtonState();
@@ -516,6 +551,7 @@ public class MainActivity extends Activity {
     }
 
     private void chooseRemotePcFolder(){
+        if(BuildConfig.WAL_OFFICIAL)return;
         if(!RemoteHostStore.isPaired(this)){
             showPcPairingRequired("folder");
             return;
