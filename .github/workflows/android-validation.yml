@@ -114,6 +114,51 @@ jobs:
       - name: Test CloudSave native account-selection policy
         run: node tests/cloudsave-native-auth-selection.test.cjs
 
+      - name: Inspect native Google OAuth package and client configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, re
+          from pathlib import Path
+          path = Path("app/src/main/java/com/wayward/launcher/MainActivity.java")
+          needles = (b"setServerClientId", b"serverClientId", b"AuthorizationRequest.builder",
+                     b"requestScopes", b"GoogleIdTokenRequest", b"getAuthorizationClient",
+                     b"clientId", b"CLIENT_ID", b"setPrompt", b"Prompt.SELECT_ACCOUNT")
+          found = []
+          offset = 0
+          overlap = b""
+          with path.open("rb") as source:
+              while True:
+                  chunk = source.read(4096)
+                  if not chunk:
+                      break
+                  window = overlap + chunk
+                  base = offset - len(overlap)
+                  for needle in needles:
+                      pos = 0
+                      while True:
+                          idx = window.find(needle, pos)
+                          if idx < 0:
+                              break
+                          absolute = base + idx
+                          if not any(x[0] == absolute for x in found):
+                              found.append((absolute, needle.decode("ascii")))
+                          pos = idx + 1
+                  overlap = window[-512:]
+                  print(f"CHUNK offset={offset} length={len(chunk)} sha256={hashlib.sha256(chunk).hexdigest()}")
+                  offset += len(chunk)
+          print(f"EOF bytes={offset}")
+          with path.open("rb") as source:
+              for absolute, needle in sorted(found):
+                  start, end = max(0, absolute - 700), min(offset, absolute + 1300)
+                  source.seek(start)
+                  snippet = source.read(end - start).decode("utf-8", "replace")
+                  snippet = re.sub(r"[0-9]+-[A-Za-z0-9_-]+\\.apps\\.googleusercontent\\.com",
+                                   "[GOOGLE_CLIENT_ID_REDACTED]", snippet)
+                  print(f"\nOAUTH_MATCH offset={absolute} token={needle}\n{snippet[:2000]}")
+          PY
+
       - name: Test Image Studio server/image-pack mode isolation
         run: node tests/imagegen-studio-mode.test.mjs
       - name: Test managed NovelAI provider lock
