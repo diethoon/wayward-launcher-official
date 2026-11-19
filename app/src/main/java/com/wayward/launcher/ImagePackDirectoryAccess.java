@@ -6,6 +6,9 @@ import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
+import android.os.CancellationSignal;
+import android.os.OperationCanceledException;
+import android.os.SystemClock;
 import android.util.Log;
 import android.provider.DocumentsContract;
 import android.util.Base64;
@@ -24,6 +27,12 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 /**
  * On-demand SAF access for the image-pack directory chooser.
@@ -49,6 +58,16 @@ final class ImagePackDirectoryAccess {
     private String pendingRequestId;
     private String pendingMode;
     private final Map<String, NativeFileStream> openFileStreams = new HashMap<>();
+    private static final int DIRECTORY_BATCH_SIZE = 32;
+    private static final long DIRECTORY_BATCH_ACK_TIMEOUT_SECONDS = 30L;
+    private static final String DIRECTORY_START_PREFIX = "__WAYWARD_DIR_START__:";
+    private static final String DIRECTORY_ACK_PREFIX = "__WAYWARD_DIR_ACK__:";
+    private static final String DIRECTORY_CANCEL_PREFIX = "__WAYWARD_DIR_CANCEL__:";
+    private static final String DIRECTORY_RELEASE_PREFIX = "__WAYWARD_DIR_RELEASE__:";
+    private final ExecutorService directoryExecutor = Executors.newFixedThreadPool(2);
+    private final Map<String, DirectoryTask> directoryTasks = new ConcurrentHashMap<>();
+    private final Map<String, Uri> directoryTreeByRootRequestId = new ConcurrentHashMap<>();
+
 
     ImagePackDirectoryAccess(Activity activity, WebView webView, String profileId) {
         this(activity, webView, profileId, "");
@@ -283,6 +302,7 @@ final class ImagePackDirectoryAccess {
     }
 
     void cancelPending() {
+        cancelAllDirectoryLists();
         if (pendingRequestId != null) {
             finishPending(failure("AbortError", "The page was closed."));
         }
@@ -308,14 +328,237 @@ final class ImagePackDirectoryAccess {
         }
     }
 
+
+    String startListDirectory(String documentUri, String requestId) {
+        if (requestId == null || requestId.trim().isEmpty()) {
+            return failure("TypeError", "A directory request ID is required.").toString();
+        }
+        try {
+            requireTree();
+            String rootRequestId = rootDirectoryRequestId(requestId);
+            Uri currentTree = treeUri;
+            Uri selectedTree = directoryTreeByRootRequestId.get(rootRequestId);
+            if (selectedTree == null) {
+                Uri previousTree = directoryTreeByRootRequestId.putIfAbsent(rootRequestId, currentTree);
+                selectedTree = previousTree == null ? currentTree : previousTree;
+            }
+            final Uri requestTree = selectedTree;
+            Uri directory = requireDocumentUriReference(documentUri, requestTree);
+            DirectoryTask task = new DirectoryTask(requestId);
+            if (directoryTasks.putIfAbsent(requestId, task) != null) {
+                return failure("InvalidStateError", "The directory request ID is already active.").toString();
+            }
+            try {
+                task.future = directoryExecutor.submit(() -> runDirectoryList(task, requestTree, directory));
+            } catch (RuntimeException rejected) {
+                directoryTasks.remove(requestId, task);
+                return failure("AbortError", "The SAF directory worker is unavailable.").toString();
+            }
+            JSONObject result = new JSONObject();
+            result.put("ok", true);
+            result.put("requestId", requestId);
+            return result.toString();
+        } catch (Exception error) {
+            return failure(error instanceof SecurityException ? "SecurityError" : "NotReadableError",
+                    error.getMessage() == null ? "The SAF directory request could not start." : error.getMessage()).toString();
+        }
+    }
+
+    boolean acknowledgeDirectoryBatch(String requestId, int batchIndex) {
+        DirectoryTask task = directoryTasks.get(requestId);
+        return task != null && task.acknowledge(batchIndex);
+    }
+
+    boolean cancelDirectoryList(String requestId) {
+        DirectoryTask task = directoryTasks.get(requestId);
+        if (task == null) return false;
+        task.cancel();
+        return true;
+    }
+
+    private void cancelAllDirectoryLists() {
+        for (DirectoryTask task : directoryTasks.values()) task.cancel();
+        directoryTasks.clear();
+        directoryExecutor.shutdownNow();
+        directoryTreeByRootRequestId.clear();
+    }
+
+    private static String rootDirectoryRequestId(String requestId) {
+        int separator = requestId.lastIndexOf("-dir-");
+        return separator > 0 ? requestId.substring(0, separator) : requestId;
+    }
+
+    private void releaseDirectoryTree(String rootRequestId) {
+        if (rootRequestId != null && !rootRequestId.isEmpty()) {
+            directoryTreeByRootRequestId.remove(rootRequestId);
+        }
+    }
+
+    void releaseDirectoryTreeForRequest(String requestId) {
+        if (requestId != null && !requestId.isEmpty()) {
+            releaseDirectoryTree(rootDirectoryRequestId(requestId));
+        }
+    }
+
+    private void runDirectoryList(DirectoryTask task, Uri selectedTree, Uri directoryUri) {
+        int batchIndex = 0;
+        try {
+            Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+                    selectedTree, DocumentsContract.getDocumentId(directoryUri));
+            String[] projection = {
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    DocumentsContract.Document.COLUMN_SIZE,
+                    DocumentsContract.Document.COLUMN_LAST_MODIFIED
+            };
+            JSONArray batch = new JSONArray();
+            String sortOrder = DocumentsContract.Document.COLUMN_DISPLAY_NAME + " ASC";
+            Cursor providerCursor;
+            try {
+                providerCursor = activity.getContentResolver().query(
+                        childrenUri, projection, null, null, sortOrder, task.cancellationSignal);
+            } catch (IllegalArgumentException unsupportedSortOrder) {
+                if (task.cancelled || task.cancellationSignal.isCanceled()) {
+                    throw new OperationCanceledException("Directory listing cancelled.");
+                }
+                providerCursor = activity.getContentResolver().query(
+                        childrenUri, projection, null, null, null, task.cancellationSignal);
+            }
+            try (Cursor cursor = providerCursor) {
+                if (cursor == null) throw new IllegalStateException("Document provider returned no directory cursor.");
+                task.attachCursor(cursor);
+                int idColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
+                int nameColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
+                int mimeColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE);
+                int sizeColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE);
+                int modifiedColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED);
+                while (cursor.moveToNext()) {
+                    if (task.cancelled || Thread.currentThread().isInterrupted()) {
+                        throw new OperationCanceledException("Directory listing cancelled.");
+                    }
+                    String id = idColumn >= 0 ? cursor.getString(idColumn) : null;
+                    String name = nameColumn >= 0 ? cursor.getString(nameColumn) : null;
+                    if (id == null || name == null) continue;
+                    String mime = mimeColumn >= 0 ? cursor.getString(mimeColumn) : null;
+                    long size = sizeColumn >= 0 && !cursor.isNull(sizeColumn) ? cursor.getLong(sizeColumn) : -1L;
+                    long modified = modifiedColumn >= 0 && !cursor.isNull(modifiedColumn) ? cursor.getLong(modifiedColumn) : -1L;
+                    JSONObject item = new JSONObject();
+                    item.put("name", name);
+                    item.put("kind", DocumentsContract.Document.MIME_TYPE_DIR.equals(mime) ? "directory" : "file");
+                    item.put("uri", DocumentsContract.buildDocumentUriUsingTree(selectedTree, id).toString());
+                    item.put("size", size);
+                    item.put("mimeType", mime);
+                    item.put("lastModified", modified);
+                    batch.put(item);
+                    if (batch.length() >= DIRECTORY_BATCH_SIZE) {
+                        if (!dispatchDirectoryBatchAndAwaitAck(task, batch, batchIndex, false)) return;
+                        batchIndex++;
+                        batch = new JSONArray();
+                    }
+                }
+            }
+            if (!task.cancelled) dispatchDirectoryBatchAndAwaitAck(task, batch, batchIndex, true);
+        } catch (OperationCanceledException cancelled) {
+            if (!task.cancelled) dispatchDirectoryError(task, batchIndex, "AbortError", "The SAF directory provider cancelled the query.");
+        } catch (Exception error) {
+            if (!task.cancelled) {
+                String name = error instanceof SecurityException ? "SecurityError" : "NotReadableError";
+                dispatchDirectoryError(task, batchIndex, name,
+                        error.getMessage() == null ? "The selected SAF directory could not be listed." : error.getMessage());
+            }
+        } finally {
+            task.clearCursor();
+            directoryTasks.remove(task.requestId, task);
+        }
+    }
+
+    private boolean dispatchDirectoryBatchAndAwaitAck(
+            DirectoryTask task, JSONArray entries, int batchIndex, boolean done) {
+        if (task.cancelled) return false;
+        try {
+            JSONObject packet = new JSONObject();
+            packet.put("ok", true);
+            packet.put("batchIndex", batchIndex);
+            packet.put("done", done);
+            packet.put("entries", entries);
+            CountDownLatch acknowledgement = task.beginBatch(batchIndex);
+            dispatchDirectoryPacket(task, packet);
+            boolean acknowledged = acknowledgement.await(
+                    DIRECTORY_BATCH_ACK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (!acknowledged || task.cancelled) {
+                task.cancel();
+                return false;
+            }
+            return true;
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            task.cancel();
+            return false;
+        } catch (Exception error) {
+            task.cancel();
+            return false;
+        }
+    }
+
+    private void dispatchDirectoryError(DirectoryTask task, int batchIndex, String name, String message) {
+        try {
+            JSONObject packet = new JSONObject();
+            packet.put("ok", false);
+            packet.put("batchIndex", batchIndex);
+            packet.put("done", true);
+            packet.put("entries", new JSONArray());
+            packet.put("name", name);
+            packet.put("message", message);
+            dispatchDirectoryPacket(task, packet);
+        } catch (Exception ignored) {}
+    }
+
+    private void dispatchDirectoryPacket(DirectoryTask task, JSONObject packet) {
+        String script = "(function(){if(typeof window.__waywardNativeImagePackDirectoryBatch==='function')"
+                + "window.__waywardNativeImagePackDirectoryBatch("
+                + JSONObject.quote(task.requestId) + "," + packet.toString() + ");})()";
+        activity.runOnUiThread(() -> {
+            if (task.cancelled || activity.isFinishing()) {
+                task.cancel();
+                return;
+            }
+            webView.evaluateJavascript(script, null);
+        });
+    }
+
     String listDirectoryJson(String documentUri, String requestId) {
+        if (documentUri != null && documentUri.startsWith(DIRECTORY_START_PREFIX)) {
+            return startListDirectory(documentUri.substring(DIRECTORY_START_PREFIX.length()), requestId);
+        }
+        if (documentUri != null && documentUri.startsWith(DIRECTORY_ACK_PREFIX)) {
+            try {
+                boolean accepted = acknowledgeDirectoryBatch(requestId,
+                        Integer.parseInt(documentUri.substring(DIRECTORY_ACK_PREFIX.length())));
+                return accepted ? "{\"ok\":true}" : failure("AbortError", "The SAF batch is no longer active.").toString();
+            } catch (Exception error) {
+                return failure("TypeError", "The SAF batch acknowledgement is invalid.").toString();
+            }
+        }
+        if (documentUri != null && documentUri.equals(DIRECTORY_CANCEL_PREFIX)) {
+            cancelDirectoryList(requestId);
+            return "{\"ok\":true}";
+        }
+        if (documentUri != null && documentUri.equals(DIRECTORY_RELEASE_PREFIX)) {
+            releaseDirectoryTree(rootDirectoryRequestId(requestId));
+            return "{\"ok\":true}";
+        }
         diagnostic("native_directory_list_started", requestId, "info",
                 details("method", "listImagePackDirectory", "uriBased", true));
         try {
             Uri directoryUri = requireDocumentUri(documentUri, true);
             String documentId = DocumentsContract.getDocumentId(directoryUri);
+            long queryStartedAt = SystemClock.elapsedRealtime();
+            List<Node> children = queryChildren(documentId);
+            long queryElapsedMs = SystemClock.elapsedRealtime() - queryStartedAt;
+            long metadataStartedAt = SystemClock.elapsedRealtime();
             JSONArray entries = new JSONArray();
-            for (Node node : queryChildren(documentId)) {
+            for (Node node : children) {
                 JSONObject item = new JSONObject();
                 item.put("name", node.name);
                 item.put("kind", node.directory ? "directory" : "file");
@@ -329,9 +572,16 @@ final class ImagePackDirectoryAccess {
             result.put("ok", true);
             result.put("uri", directoryUri.toString());
             result.put("entries", entries);
+            long metadataElapsedMs = SystemClock.elapsedRealtime() - metadataStartedAt;
+            long serializationStartedAt = SystemClock.elapsedRealtime();
+            String payload = result.toString();
+            long serializationElapsedMs = SystemClock.elapsedRealtime() - serializationStartedAt;
             diagnostic("native_directory_list_succeeded", requestId, "info",
-                    details("entryCount", entries.length(), "uriBased", true));
-            return result.toString();
+                    details("entryCount", entries.length(), "uriBased", true,
+                            "safQueryMs", queryElapsedMs,
+                            "metadataJsonBuildMs", metadataElapsedMs,
+                            "jsonSerializationMs", serializationElapsedMs));
+            return payload;
         } catch (Exception error) {
             ImagePackDiagnostics.error(activity, diagnosticSessionId, requestId,
                     "native_directory_list_failed", error);
@@ -829,6 +1079,22 @@ final class ImagePackDirectoryAccess {
         return DocumentsContract.buildDocumentUriUsingTree(treeUri, node.documentId);
     }
 
+
+    private Uri requireDocumentUriReference(String documentUri, Uri selectedTree) {
+        if (selectedTree == null) throw new SecurityException("No SAF tree is selected.");
+        Uri candidate = Uri.parse(documentUri == null ? "" : documentUri);
+        if (!"content".equals(candidate.getScheme()) || !DocumentsContract.isDocumentUri(activity, candidate)) {
+            throw new SecurityException("The requested SAF document URI is invalid.");
+        }
+        String requestedTreeId = DocumentsContract.getTreeDocumentId(candidate);
+        String activeTreeId = DocumentsContract.getTreeDocumentId(selectedTree);
+        if (requestedTreeId == null || !requestedTreeId.equals(activeTreeId)) {
+            throw new SecurityException("The document URI is outside the selected SAF tree.");
+        }
+        return DocumentsContract.buildDocumentUriUsingTree(
+                selectedTree, DocumentsContract.getDocumentId(candidate));
+    }
+
     private Node queryDocument(Uri documentUri) throws Exception {
         String documentId = DocumentsContract.getDocumentId(documentUri);
         String[] projection = {
@@ -967,6 +1233,56 @@ final class ImagePackDirectoryAccess {
             try { result.put(String.valueOf(values[i]), values[i + 1]); } catch (Exception ignored) {}
         }
         return result;
+    }
+
+
+    private static final class DirectoryTask {
+        final String requestId;
+        final CancellationSignal cancellationSignal = new CancellationSignal();
+        volatile Future<?> future;
+        volatile boolean cancelled;
+        private int awaitingBatchIndex = -1;
+        private CountDownLatch acknowledgement;
+        private volatile Cursor activeCursor;
+
+        DirectoryTask(String requestId) { this.requestId = requestId; }
+
+        void attachCursor(Cursor cursor) {
+            activeCursor = cursor;
+            if (cancelled && cursor != null) {
+                try { cursor.close(); } catch (RuntimeException ignored) {}
+            }
+        }
+
+        void clearCursor() {
+            activeCursor = null;
+        }
+
+        synchronized CountDownLatch beginBatch(int batchIndex) {
+            awaitingBatchIndex = batchIndex;
+            acknowledgement = new CountDownLatch(1);
+            return acknowledgement;
+        }
+
+        synchronized boolean acknowledge(int batchIndex) {
+            if (cancelled || acknowledgement == null || awaitingBatchIndex != batchIndex) return false;
+            acknowledgement.countDown();
+            return true;
+        }
+
+        void cancel() {
+            cancelled = true;
+            try { cancellationSignal.cancel(); } catch (RuntimeException ignored) {}
+            Cursor cursor = activeCursor;
+            if (cursor != null) {
+                try { cursor.close(); } catch (RuntimeException ignored) {}
+            }
+            Future<?> current = future;
+            if (current != null) current.cancel(true);
+            synchronized (this) {
+                if (acknowledgement != null) acknowledgement.countDown();
+            }
+        }
     }
 
     private static JSONObject failure(String name, String message) {

@@ -16,7 +16,29 @@
 
   let nextId = 0;
   const pending = new Map();
+  const pendingDirectoryLists = new Map();
+  let nextDirectoryListId = 0;
   const rootByHandle = new WeakMap();
+
+  window.__waywardNativeImagePackDirectoryBatch = function(requestId, packet) {
+    const state = pendingDirectoryLists.get(String(requestId || ""));
+    if (!state) {
+      try { host.listImagePackDirectoryForRequest(nativeCapability, "__WAYWARD_DIR_CANCEL__:", String(requestId || "")); } catch (_) {}
+      return false;
+    }
+    if (state.waiter) {
+      const resolve = state.waiter;
+      state.waiter = null;
+      resolve(packet);
+    } else if (!state.packet) {
+      state.packet = packet;
+    } else {
+      try { host.listImagePackDirectoryForRequest(nativeCapability, "__WAYWARD_DIR_CANCEL__:", String(requestId || "")); } catch (_) {}
+      return false;
+    }
+    return true;
+  };
+
 
   function domError(name, message) {
     try { return new DOMException(message || name, name); }
@@ -214,17 +236,129 @@
   }
 
   function listEntries(directoryUri, requestId) {
+    const startedAt = Date.now();
     diagnose("directory_entries_native_call", requestId, { method: "listImagePackDirectory", uriBased: true });
     const entries = nativeJson("listImagePackDirectory", requestId, directoryUri).entries || [];
-    diagnose("directory_entries_returned", requestId, { entryCount: entries.length });
+    diagnose("directory_entries_returned", requestId, {
+      entryCount: entries.length, bridgeElapsedMs: Date.now() - startedAt
+    });
     return entries;
   }
 
   // FAITH 3.0.0 uses <input type="file" webkitdirectory multiple>.
   // This is deliberately a FileList adapter, not a DirectoryHandle alias.
-  const MAX_UPLOAD_FILES = 50000;
+  // Hard safety ceilings are deliberately independent of any caller policy.
+  // A request without data-wayward-file-policy always receives every file.
+  const MAX_UPLOAD_FILES = 100000;
+  const MAX_UPLOAD_ENTRIES = 200000;
   const MAX_UPLOAD_DEPTH = 128;
-  let uploadPickerBusy = false;
+  const ENUMERATION_YIELD_INTERVAL = 256;
+  // The OS picker itself is single-flight, but completed selections may be
+  // enumerated concurrently. Each enumeration owns an independent control.
+  let nativePickerBusy = false;
+  const activeUploadControls = new Set();
+
+  function readRequestFilePolicy(input) {
+    const raw = input && input.getAttribute
+      ? input.getAttribute("data-wayward-file-policy") : null;
+    if (raw == null || raw === "") return null;
+    let value;
+    try { value = JSON.parse(raw); }
+    catch (_) { throw domError("TypeError", "The requested file policy is not valid JSON."); }
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw domError("TypeError", "The requested file policy must be an object.");
+    }
+    const allowed = new Set(["includeExtensions", "excludeExtensions", "includePathPrefixes", "excludePathPrefixes", "maxFiles"]);
+    for (const key of Object.keys(value)) {
+      if (!allowed.has(key)) throw domError("TypeError", "The requested file policy contains an unsupported condition.");
+    }
+    function stringList(key, validate) {
+      if (value[key] == null) return null;
+      if (!Array.isArray(value[key]) || value[key].length < 1 || value[key].length > 128) {
+        throw domError("TypeError", "The requested file policy contains an invalid list.");
+      }
+      return value[key].map(item => {
+        if (typeof item !== "string" || item.length > 128 || !validate(item)) {
+          throw domError("TypeError", "The requested file policy contains an invalid value.");
+        }
+        return item;
+      });
+    }
+    const validExtension = item => /^[a-zA-Z0-9][a-zA-Z0-9._+-]{0,31}$/.test(item.replace(/^\./, ""));
+    const validPathPrefix = item => item.length > 0 && !item.startsWith("/") &&
+      !item.includes("\\") && !/[\0-\x1f]/.test(item) &&
+      item.split("/").every(segment => segment && segment !== "." && segment !== "..");
+    const policy = {
+      includeExtensions: stringList("includeExtensions", validExtension),
+      excludeExtensions: stringList("excludeExtensions", validExtension),
+      includePathPrefixes: stringList("includePathPrefixes", validPathPrefix),
+      excludePathPrefixes: stringList("excludePathPrefixes", validPathPrefix),
+      maxFiles: value.maxFiles == null ? MAX_UPLOAD_FILES : value.maxFiles
+    };
+    if (!Number.isInteger(policy.maxFiles) || policy.maxFiles < 1 || policy.maxFiles > MAX_UPLOAD_FILES) {
+      throw domError("TypeError", "The requested file policy maxFiles value is outside the supported range.");
+    }
+    for (const key of ["includeExtensions", "excludeExtensions"]) {
+      if (policy[key]) policy[key] = policy[key].map(item => item.toLowerCase().replace(/^\./, ""));
+    }
+    return Object.freeze(policy);
+  }
+
+  function matchesFilePolicy(relativePath, name, policy) {
+    if (!policy) return true;
+    const path = String(relativePath || "");
+    const lowerName = String(name || "").toLowerCase();
+    const dot = lowerName.lastIndexOf(".");
+    const extension = dot > 0 ? lowerName.slice(dot + 1) : "";
+    if (policy.includeExtensions && !policy.includeExtensions.includes(extension)) return false;
+    if (policy.excludeExtensions && policy.excludeExtensions.includes(extension)) return false;
+    if (policy.includePathPrefixes && !policy.includePathPrefixes.some(prefix =>
+      path === prefix || path.startsWith(prefix + "/"))) return false;
+    if (policy.excludePathPrefixes && policy.excludePathPrefixes.some(prefix =>
+      path === prefix || path.startsWith(prefix + "/"))) return false;
+    return true;
+  }
+
+  function checkUploadCancelled(control) {
+    if (control && control.cancelled) throw domError("AbortError", "The folder processing request was cancelled.");
+  }
+
+  async function yieldUploadWork(control) {
+    checkUploadCancelled(control);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    checkUploadCancelled(control);
+  }
+
+  // Optional cancellation API. The request ID is scoped to the active picker
+  // operation; cancellation never changes policy or state for a later request.
+  window.cancelWaywardDirectoryUpload = function(requestId) {
+    let active = null;
+    if (requestId) {
+      for (const candidate of activeUploadControls) {
+        if (candidate.requestId && String(requestId) === candidate.requestId) {
+          active = candidate;
+          break;
+        }
+      }
+    } else if (activeUploadControls.size === 1) {
+      active = activeUploadControls.values().next().value;
+    }
+    if (!active) return false;
+    active.cancelled = true;
+    if (active.nativeDirectoryIds && typeof pendingDirectoryLists !== "undefined") {
+      for (const directoryRequestId of active.nativeDirectoryIds) {
+        const state = pendingDirectoryLists.get(directoryRequestId);
+        if (state && state.waiter) {
+          const resolve = state.waiter;
+          state.waiter = null;
+          resolve({ ok: false, name: "AbortError", message: "The folder processing request was cancelled.",
+            batchIndex: state.expectedBatch, done: true, entries: [] });
+        }
+        try { host.listImagePackDirectoryForRequest(nativeCapability, "__WAYWARD_DIR_CANCEL__:", directoryRequestId); } catch (_) {}
+      }
+    }
+    return true;
+  };
 
   function safePathSegment(value) {
     const name = String(value || "");
@@ -401,14 +535,75 @@
     Object.setPrototypeOf(SafBackedFile.prototype, File.prototype);
     return new SafBackedFile(0, metadata.size, metadata.type);
   }
-  async function enumerateSafTree(rootUri, rootName, requestId) {
+
+  async function* iterateDirectoryEntries(directoryUri, requestId, control) {
+    const directoryRequestId = String(requestId || "saf") + "-dir-" + (++nextDirectoryListId);
+    const state = { packet: null, waiter: null, expectedBatch: 0 };
+    pendingDirectoryLists.set(directoryRequestId, state);
+    if (control && control.nativeDirectoryIds) control.nativeDirectoryIds.add(directoryRequestId);
+    let completed = false;
+    try {
+      parseResult(host.listImagePackDirectoryForRequest(
+        nativeCapability, "__WAYWARD_DIR_START__:" + directoryUri, directoryRequestId));
+      while (true) {
+        checkUploadCancelled(control);
+        const packet = state.packet || await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            if (state.waiter === receivePacket) state.waiter = null;
+            reject(domError("TimeoutError", "The native SAF directory batch timed out."));
+          }, 35000);
+          const receivePacket = value => {
+            clearTimeout(timeout);
+            resolve(value);
+          };
+          state.waiter = receivePacket;
+        });
+        state.packet = null;
+        if (!packet || packet.batchIndex !== state.expectedBatch) {
+          throw domError("NotReadableError", "The native SAF directory batch sequence is invalid.");
+        }
+        if (packet.ok !== true) {
+          throw domError(packet.name || "NotReadableError",
+            packet.message || "The SAF provider could not list this directory.");
+        }
+        const entries = Array.isArray(packet.entries) ? packet.entries : [];
+        for (const entry of entries) {
+          checkUploadCancelled(control);
+          yield entry;
+        }
+        const done = packet.done === true;
+        parseResult(host.listImagePackDirectoryForRequest(
+          nativeCapability, "__WAYWARD_DIR_ACK__:" + String(packet.batchIndex), directoryRequestId));
+        state.expectedBatch++;
+        if (done) {
+          completed = true;
+          return;
+        }
+      }
+    } finally {
+      pendingDirectoryLists.delete(directoryRequestId);
+      if (control && control.nativeDirectoryIds) control.nativeDirectoryIds.delete(directoryRequestId);
+      if (!completed) {
+        try { host.listImagePackDirectoryForRequest(nativeCapability, "__WAYWARD_DIR_CANCEL__:", directoryRequestId); } catch (_) {}
+      }
+    }
+  }
+
+  async function enumerateSafTree(rootUri, rootName, requestId, policy, control) {
     const rootSegment = safePathSegment(rootName);
     const visited = new Set();
     const visitedFileUris = new Set();
     const files = [];
     let entryCount = 0;
+    let directoryCount = 0;
+    let scannedFileCount = 0;
+    let fileObjectBuildMs = 0;
+    let excludedCount = 0;
+    let sinceYield = 0;
+    const startedAt = Date.now();
 
     async function visit(directoryUri, prefix, depth) {
+      checkUploadCancelled(control);
       if (depth > MAX_UPLOAD_DEPTH) {
         throw domError("QuotaExceededError", "The selected folder is nested too deeply.");
       }
@@ -416,11 +611,14 @@
         throw domError("NotReadableError", "The SAF provider returned a repeated directory URI.");
       }
       visited.add(directoryUri);
-      const children = listEntries(directoryUri, requestId).slice().sort((left, right) =>
-        String(left.name || "").localeCompare(String(right.name || "")));
-      for (const child of children) {
+      directoryCount++;
+      // Sort the parsed result in place; cloning the provider's entire entry
+      // array doubled peak references for large directories.
+      for await (const child of iterateDirectoryEntries(directoryUri, requestId, control)) {
+        checkUploadCancelled(control);
         entryCount++;
-        if (entryCount > MAX_UPLOAD_FILES * 2) {
+        sinceYield++;
+        if (entryCount > MAX_UPLOAD_ENTRIES) {
           throw domError("QuotaExceededError", "The selected folder contains too many entries.");
         }
         const name = safePathSegment(child.name);
@@ -431,7 +629,8 @@
           }
           await visit(String(child.uri), relativePath, depth + 1);
         } else if (child.kind === "file") {
-          if (files.length >= MAX_UPLOAD_FILES) {
+          scannedFileCount++;
+          if (scannedFileCount > MAX_UPLOAD_FILES) {
             throw domError("QuotaExceededError", "The selected folder contains too many files.");
           }
           const fileUri = String(child.uri || "");
@@ -442,15 +641,42 @@
             throw domError("NotReadableError", "The SAF provider returned a repeated file URI.");
           }
           visitedFileUris.add(fileUri);
-          files.push(makeSafBackedFile(child, relativePath, requestId));
+          if (matchesFilePolicy(relativePath, name, policy)) {
+            const limit = policy ? policy.maxFiles : MAX_UPLOAD_FILES;
+            if (files.length >= limit) {
+              throw domError("QuotaExceededError", "The selected folder exceeds the requested file-count limit.");
+            }
+            const fileBuildStartedAt = Date.now();
+            files.push(makeSafBackedFile(child, relativePath, requestId));
+            fileObjectBuildMs += Date.now() - fileBuildStartedAt;
+          } else {
+            excludedCount++;
+          }
         } else {
           throw domError("NotReadableError", "The SAF provider returned an unknown entry kind.");
         }
+        if (sinceYield >= ENUMERATION_YIELD_INTERVAL) {
+          sinceYield = 0;
+          await yieldUploadWork(control);
+        }
       }
+      // Let WebView input, paint, and cancellation tasks run between provider
+      // directory queries, even when each directory is small.
+      await yieldUploadWork(control);
     }
 
+    try {
     await visit(rootUri, rootSegment, 0);
+    checkUploadCancelled(control);
+    diagnose("directory_enumeration_completed", requestId, {
+      directoryCount, entryCount, scannedFileCount, fileCount: files.length,
+      fileObjectBuildMs, excludedCount, policyApplied: !!policy,
+      elapsedMs: Date.now() - startedAt
+    });
     return files;
+    } finally {
+      try { host.listImagePackDirectoryForRequest(nativeCapability, "__WAYWARD_DIR_RELEASE__:", requestId); } catch (_) {}
+    }
   }
 
   function makeFileList(files) {
@@ -544,32 +770,39 @@
   }
 
   async function chooseDirectoryForFileInput(input) {
-    if (uploadPickerBusy) {
+    if (nativePickerBusy) {
       diagnose("webkitdirectory_upload_rejected_busy", "", { result: "invalid_state" });
       return;
     }
-    uploadPickerBusy = true;
+    nativePickerBusy = true;
     let requestId = "";
+    const control = { requestId: "", cancelled: false, nativeDirectoryIds: new Set() };
+    activeUploadControls.add(control);
     try {
+      const policy = readRequestFilePolicy(input);
       diagnose("webkitdirectory_upload_started", "", {
         multiple: input.multiple === true,
         frameOrigin: String(location.origin || ""),
         isTopFrame: window === window.top
       });
       const selection = await nativeRequest("read", "");
+      // The OS picker is closed. The independent SAF tree scans can now overlap.
+      nativePickerBusy = false;
       requestId = String(selection.requestId || "");
+      control.requestId = requestId;
+      checkUploadCancelled(control);
       if (!selection.documentUri || !selection.uri) {
         throw domError("NotReadableError", "Android did not return a SAF tree and root document URI.");
       }
       const files = await enumerateSafTree(
-        String(selection.documentUri), String(selection.name || "Image packs"), requestId);
+        String(selection.documentUri), String(selection.name || "Image packs"), requestId, policy, control);
       if (!files.length) {
         throw domError("NotFoundError", "The selected folder contains no files.");
       }
       dispatchDirectoryFileList(input, files);
       diagnose("webkitdirectory_upload_dispatched", requestId, {
         fileCount: files.length, rootName: String(selection.name || ""),
-        multiple: input.multiple === true
+        policyApplied: !!policy, multiple: input.multiple === true
       });
     } catch (error) {
       const name = error && error.name || "NotReadableError";
@@ -583,7 +816,8 @@
         }));
       } catch (_) {}
     } finally {
-      uploadPickerBusy = false;
+      activeUploadControls.delete(control);
+      nativePickerBusy = false;
     }
   }
 

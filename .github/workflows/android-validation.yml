@@ -75,6 +75,30 @@ jobs:
           node --check app/src/main/assets/imagepack-folder-picker.js
           node --check app/src/main/assets/wayward-download-bridge.js
 
+      - name: Sequential 4096-byte source forensic scan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          for name in (
+              "app/src/main/assets/imagepack-folder-picker.js",
+              "app/src/main/java/com/wayward/launcher/ImagePackDirectoryAccess.java",
+              "app/src/main/java/com/wayward/launcher/MainActivity.java",
+          ):
+              offset = 0
+              print(f"FILE {name}")
+              with Path(name).open("rb") as source:
+                  while True:
+                      chunk = source.read(4096)
+                      if not chunk:
+                          break
+                      print(f"CHUNK offset={offset} length={len(chunk)} sha256={hashlib.sha256(chunk).hexdigest()}")
+                      offset += len(chunk)
+              print(f"EOF bytes={offset}")
+          PY
+
       - name: Test official launcher scope
         run: |
           node scripts/test-official-scope.cjs
@@ -114,6 +138,10 @@ jobs:
 
       - name: Test native image-pack SAF folder bridge contract
         run: node tests/imagepack-folder-picker-contract.test.mjs
+      - name: Test asynchronous SAF batch protocol and 100k synthetic traversal
+        run: node tests/file-access-engine-batch.test.mjs
+      - name: Test generic file-access policy isolation and large-tree safety
+        run: node tests/file-access-engine-policy.test.mjs
       - name: Test FAITH 3.0.0 webkitdirectory FileList adapter
         run: node tests/faith-imagepack-upload-contract.test.mjs
 
@@ -237,6 +265,47 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: gradle --no-daemon --stacktrace clean testDebugUnitTest assembleDebug assembleRelease
 
+      - name: Verify WWL branding in Debug and Release APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum -c <<'SHA256'
+          f1332d676a412aa554c510ca5a8bb72971b3a1dba159ab49da9d075c45cfc02d  app/src/main/res/drawable-hdpi-v4/ic_launcher_foreground.png
+          6ce8f396b3685fb027cfbf45afb2b336540506b809ed384b7851f8676f250518  app/src/main/res/drawable-mdpi-v4/ic_launcher_foreground.png
+          195ea6bee122f5c9a1af7d4d9c4c7932497294953cb19a0b74d5a350d2c96928  app/src/main/res/drawable-xhdpi-v4/ic_launcher_foreground.png
+          a293a94f7d85940b24c947bb43dc506faa6fe4d0b2274395fb696fca9610fef7  app/src/main/res/drawable-xxhdpi-v4/ic_launcher_foreground.png
+          cbc15823cc9d7b7b15194058023b1428430b2ff2ecc4b9e03a85b8ed00ca9508  app/src/main/res/drawable-xxxhdpi-v4/ic_launcher_foreground.png
+          94fb235fcee0ebcd7b19d6b57634408448dfc56079cb0db9517d3b5af7623d5b  app/src/main/res/mipmap-hdpi-v4/ic_launcher.png
+          2b52881865e45f1bc01d8b347e7323192898ad1d7983d00da725b7f38ed272c5  app/src/main/res/mipmap-mdpi-v4/ic_launcher.png
+          d7e9ed3737679e811c1a28c414a48727d480c11b7e768f1557b8e07ed122d8dc  app/src/main/res/mipmap-xhdpi-v4/ic_launcher.png
+          6674e7e4f3cdac3112137daefd464128e6798f321c7588f0e5dac7089933e347  app/src/main/res/mipmap-xxhdpi-v4/ic_launcher.png
+          06b56917bf8427cc49030781d1763fc06ec26317c907955ad97bf38c18549d18  app/src/main/res/mipmap-xxxhdpi-v4/ic_launcher.png
+          94fb235fcee0ebcd7b19d6b57634408448dfc56079cb0db9517d3b5af7623d5b  app/src/main/res/mipmap-hdpi-v4/ic_launcher_round.png
+          2b52881865e45f1bc01d8b347e7323192898ad1d7983d00da725b7f38ed272c5  app/src/main/res/mipmap-mdpi-v4/ic_launcher_round.png
+          d7e9ed3737679e811c1a28c414a48727d480c11b7e768f1557b8e07ed122d8dc  app/src/main/res/mipmap-xhdpi-v4/ic_launcher_round.png
+          6674e7e4f3cdac3112137daefd464128e6798f321c7588f0e5dac7089933e347  app/src/main/res/mipmap-xxhdpi-v4/ic_launcher_round.png
+          06b56917bf8427cc49030781d1763fc06ec26317c907955ad97bf38c18549d18  app/src/main/res/mipmap-xxxhdpi-v4/ic_launcher_round.png
+          SHA256
+          aapt="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          for variant in debug release; do
+            apk="app/build/outputs/apk/$variant/app-$variant.apk"
+            test -s "$apk"
+            "$aapt" dump badging "$apk" > "$RUNNER_TEMP/$variant-badging.txt"
+            grep -F "application-label:'WWL'" "$RUNNER_TEMP/$variant-badging.txt"
+            grep -F 'com.wayward.launcher.official' "$RUNNER_TEMP/$variant-badging.txt"
+            "$aapt" dump --values resources "$apk" > "$RUNNER_TEMP/$variant-resources.txt"
+            grep -F 'mipmap/ic_launcher' "$RUNNER_TEMP/$variant-resources.txt"
+            grep -F 'mipmap/ic_launcher_round' "$RUNNER_TEMP/$variant-resources.txt"
+            grep -i -F '24170f' "$RUNNER_TEMP/$variant-resources.txt"
+            "$aapt" dump xmltree "$apk" AndroidManifest.xml > "$RUNNER_TEMP/$variant-manifest.txt"
+            grep -F 'android:icon' "$RUNNER_TEMP/$variant-manifest.txt"
+            grep -F 'android:roundIcon' "$RUNNER_TEMP/$variant-manifest.txt"
+            sha256sum "$apk"
+            stat -c '%n %s bytes' "$apk"
+          done
+          grep -F "package: name='com.wayward.launcher.official.debug' versionCode='107' versionName='1.0.7-debug'" "$RUNNER_TEMP/debug-badging.txt"
+          grep -F "package: name='com.wayward.launcher.official' versionCode='107' versionName='1.0.7'" "$RUNNER_TEMP/release-badging.txt"
+
       - name: Verify signed Release APK identity
         if: env.RELEASE_SIGNING_CONFIGURED == 'true'
         shell: bash
@@ -262,14 +331,14 @@ jobs:
           retention-days: 14
 
       - name: Enable KVM for Android emulator
-        if: github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119'
+        if: github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119' && github.ref != 'refs/heads/work/android-file-engine-v2.1-complete-20261119' && github.head_ref != 'work/android-file-engine-v2.1-complete-20261119'
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
       - name: Android 15 emulator startup and Native crypto tests
-        if: github.ref != 'refs/heads/fix/android-qr-pairing-20261116' && github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119'
+        if: github.ref != 'refs/heads/fix/android-qr-pairing-20261116' && github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119' && github.ref != 'refs/heads/work/android-file-engine-v2.1-complete-20261119' && github.head_ref != 'work/android-file-engine-v2.1-complete-20261119'
         id: android15_smoke
         timeout-minutes: 15
         uses: reactivecircus/android-emulator-runner@v2
@@ -286,7 +355,7 @@ jobs:
         run: echo "::warning::Android 15 emulator/ADB smoke test failed; APK build and deterministic routing tests remain independently reported."
 
       - name: Upload Android 15 UI diagnostics
-        if: always() && github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119'
+        if: always() && github.ref != 'refs/heads/work/android-faith-finalize-20261119' && github.head_ref != 'work/android-faith-finalize-20261119' && github.ref != 'refs/heads/work/android-file-engine-v2.1-complete-20261119' && github.head_ref != 'work/android-file-engine-v2.1-complete-20261119'
         uses: actions/upload-artifact@v7
         with:
           name: wayward-launcher-android15-ui-diagnostics

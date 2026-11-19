@@ -1,0 +1,108 @@
+name: Restore original WWL launcher branding assets
+on:
+  push:
+    branches:
+      - work/android-file-engine-v2.1-complete-20261119
+    paths:
+      - .recovery/restore-wwl-branding-assets.trigger
+permissions:
+  contents: write
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          persist-credentials: true
+      - name: Recover byte-exact icons from original debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml ]; then
+            echo "Original WWL icon resources are already restored; nothing to do."
+            exit 0
+          fi
+          git fetch origin apk-official-1.0.0-r3
+          apk="$RUNNER_TEMP/Wayward-Launcher-1.0.0-Debug.apk"
+          git show FETCH_HEAD:Wayward-Launcher-1.0.0-Debug.apk > "$apk"
+          test "$(stat -c %s "$apk")" -eq 8047377
+          echo "3df80b2e5ed149ae6201307887d9db75ac569fd23f2f1f0c23d98baa8a82c833  $apk" | sha256sum -c -
+          extract() {
+            local entry="$1" target="$2"
+            mkdir -p "$(dirname "$target")"
+            unzip -p "$apk" "$entry" > "$target"
+            test -s "$target"
+          }
+          for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            extract "res/mipmap-${density}-v4/ic_launcher.png" "app/src/main/res/mipmap-${density}-v4/ic_launcher.png"
+            extract "res/mipmap-${density}-v4/ic_launcher_round.png" "app/src/main/res/mipmap-${density}-v4/ic_launcher_round.png"
+            extract "res/drawable-${density}-v4/ic_launcher_foreground.png" "app/src/main/res/drawable-${density}-v4/ic_launcher_foreground.png"
+          done
+          sha256sum -c <<'SHA256'
+          f1332d676a412aa554c510ca5a8bb72971b3a1dba159ab49da9d075c45cfc02d  app/src/main/res/drawable-hdpi-v4/ic_launcher_foreground.png
+          6ce8f396b3685fb027cfbf45afb2b336540506b809ed384b7851f8676f250518  app/src/main/res/drawable-mdpi-v4/ic_launcher_foreground.png
+          195ea6bee122f5c9a1af7d4d9c4c7932497294953cb19a0b74d5a350d2c96928  app/src/main/res/drawable-xhdpi-v4/ic_launcher_foreground.png
+          a293a94f7d85940b24c947bb43dc506faa6fe4d0b2274395fb696fca9610fef7  app/src/main/res/drawable-xxhdpi-v4/ic_launcher_foreground.png
+          cbc15823cc9d7b7b15194058023b1428430b2ff2ecc4b9e03a85b8ed00ca9508  app/src/main/res/drawable-xxxhdpi-v4/ic_launcher_foreground.png
+          94fb235fcee0ebcd7b19d6b57634408448dfc56079cb0db9517d3b5af7623d5b  app/src/main/res/mipmap-hdpi-v4/ic_launcher.png
+          2b52881865e45f1bc01d8b347e7323192898ad1d7983d00da725b7f38ed272c5  app/src/main/res/mipmap-mdpi-v4/ic_launcher.png
+          d7e9ed3737679e811c1a28c414a48727d480c11b7e768f1557b8e07ed122d8dc  app/src/main/res/mipmap-xhdpi-v4/ic_launcher.png
+          6674e7e4f3cdac3112137daefd464128e6798f321c7588f0e5dac7089933e347  app/src/main/res/mipmap-xxhdpi-v4/ic_launcher.png
+          06b56917bf8427cc49030781d1763fc06ec26317c907955ad97bf38c18549d18  app/src/main/res/mipmap-xxxhdpi-v4/ic_launcher.png
+          SHA256
+          mkdir -p app/src/main/res/mipmap-anydpi-v26 app/src/main/res/values
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'XML'
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/launcher_icon_background" />
+              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          XML
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml <<'XML'
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/launcher_icon_background" />
+              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          XML
+          cat > app/src/main/res/values/colors.xml <<'XML'
+          <resources>
+              <color name="launcher_icon_background">#24170F</color>
+          </resources>
+          XML
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("app/src/main/AndroidManifest.xml")
+          s=p.read_text()
+          assert 'android:label="WWL"' in s, "WWL app label must already be set"
+          if 'android:icon="@mipmap/ic_launcher"' not in s:
+              s=s.replace('android:label="WWL"', 'android:label="WWL" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round"', 1)
+          assert 'android:roundIcon="@mipmap/ic_launcher_round"' in s
+          p.write_text(s)
+          PY
+          cat > docs/WWL-BRANDING-RESTORE.md <<'MD'
+          # WWL launcher branding provenance
+
+          - App label: WWL
+          - Source APK: `apk-official-1.0.0-r3:Wayward-Launcher-1.0.0-Debug.apk`
+          - Source APK size: 8,047,377 bytes
+          - Source APK SHA-256: `3df80b2e5ed149ae6201307887d9db75ac569fd23f2f1f0c23d98baa8a82c833`
+          - Extracted PNGs are verified against the original recovered icon manifest; the normal and round density icons are byte-identical where the source APK defines them.
+          - Adaptive icon background: `#24170F`
+          - Adaptive icon foreground: original density-specific `ic_launcher_foreground.png` assets.
+          - Manifest connects both `android:icon` and `android:roundIcon`.
+          - Application ID, versionCode/versionName, activity/task configuration, backup rules, and signing configuration are unchanged.
+          MD
+          git diff --check
+          git diff -- app/build.gradle
+          git diff -- app/src/main/AndroidManifest.xml
+      - name: Commit restored branding resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/res app/src/main/AndroidManifest.xml docs/WWL-BRANDING-RESTORE.md
+          git diff --cached --check
+          git commit -m "branding(android): restore original WWL launcher icons"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
