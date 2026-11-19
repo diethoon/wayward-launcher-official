@@ -85,7 +85,13 @@ jobs:
           set -euo pipefail
           work_dir="$RUNNER_TEMP/wayward-release"
           mkdir -p "$work_dir"
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$work_dir/uploaded.p12"
+          raw_length="\${#KEYSTORE_BASE64}"
+          normalized="$(printf '%s' "$KEYSTORE_BASE64" | tr -d '\r\n\t ' | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//" -e 's/\\\\n//g' -e 's/\\\\r//g')"
+          if [[ "$normalized" == data:*base64,* ]]; then normalized="\${normalized#*,}"; fi
+          normalized="$(printf '%s' "$normalized" | tr '_-' '/+' | tr -cd 'A-Za-z0-9+/=')"
+          while (( \${#normalized} % 4 != 0 )); do normalized="\${normalized}="; done
+          echo "Signing secret encoded length: raw=$raw_length normalized=\${#normalized}." >> "$GITHUB_STEP_SUMMARY"
+          printf '%s' "$normalized" | base64 --decode > "$work_dir/uploaded.p12"
           chmod 600 "$work_dir/uploaded.p12"
           actual_bytes="$(wc -c < "$work_dir/uploaded.p12" | tr -d '[:space:]')"
           if [[ "$actual_bytes" != "2858" ]]; then
