@@ -1044,7 +1044,7 @@ document.getElementById('single-file-input').addEventListener('change', event =>
 window.pickImagePackFolder = async function() {
   const report = parent.document.getElementById('result');
   try {
-    const directory = await window.showDirectoryPicker({mode: 'read'});
+    const directory = await window.showDirectoryPicker({mode: 'readwrite'});
     if (!directory || directory.kind !== 'directory' ||
         typeof directory.getFileHandle !== 'function' ||
         typeof directory.entries !== 'function') {
