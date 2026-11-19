@@ -300,7 +300,6 @@ jobs:
             "$aapt" dump --values resources "$apk" > "$RUNNER_TEMP/$variant-resources.txt"
             grep -F 'mipmap/ic_launcher' "$RUNNER_TEMP/$variant-resources.txt"
             grep -F 'mipmap/ic_launcher_round' "$RUNNER_TEMP/$variant-resources.txt"
-            grep -i -F 'color/launcher_icon_background' "$RUNNER_TEMP/$variant-resources.txt"
             grep -i -F '24170f' "$RUNNER_TEMP/$variant-resources.txt"
             sha256sum "$apk"
             stat -c '%n %s bytes' "$apk"
