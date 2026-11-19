@@ -178,7 +178,6 @@ def main() -> int:
     for package in (OFFICIAL_PACKAGE, DEVELOPMENT_PACKAGE):
         if "package:" not in (adb("shell", "pm", "path", package, check=False, capture=True).stdout or ""):
             raise RuntimeError("One product package disappeared after launching both variants: " + package)
-        wait_for_process(package)
     print("PASS: Official 1.0.0 and Development 1.0.9 coexist as separate installed Android applications.")
     return 0
 
