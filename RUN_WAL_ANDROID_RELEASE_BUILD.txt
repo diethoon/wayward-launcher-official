@@ -1,1 +1,1 @@
-Retry signed build using authenticated key/certificate extraction if only the P12 MAC is damaged.
+Run signed build with normalized signing credentials exported to OpenSSL environment.
