@@ -161,6 +161,44 @@ jobs:
           gradle --no-daemon --stacktrace clean testDebugUnitTest assembleDebug assembleRelease assembleOfficial \
             -PwalOfficialVersionName="$WAL_RELEASE_VERSION"
 
+      - name: Verify and package signed Development WAN APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "$ANDROID_HOME" ]]; then
+            sdk="$ANDROID_HOME"
+          else
+            sdk="$ANDROID_SDK_ROOT"
+          fi
+          aapt="$sdk/build-tools/35.0.0/aapt"
+          apksigner="$sdk/build-tools/35.0.0/apksigner"
+          apk="app/build/outputs/apk/release/app-release.apk"
+          if [[ ! -x "$aapt" || ! -x "$apksigner" || ! -f "$apk" ]]; then
+            echo "Development Release APK or Android Build Tools are missing." >&2
+            exit 1
+          fi
+          badging="$("$aapt" dump badging "$apk")"
+          expected_identity="package: name='com.wayward.launcher.official' versionCode='109' versionName='1.0.9'"
+          if ! grep -Fq "$expected_identity" <<< "$badging"; then
+            echo "Development APK package/version mismatch." >&2
+            printf '%s\n' "$badging" | head -n 8 >&2
+            exit 1
+          fi
+          signature="$("$apksigner" verify --verbose --print-certs "$apk")"
+          actual_sha1="$(printf '%s\n' "$signature" | awk -F': ' '/Signer #1 certificate SHA-1 digest:/ {gsub(/:/,"",$2); print toupper($2); exit}')"
+          expected_sha1="D9BE7443EB247D27C958CC4250D7F5D1E078F740"
+          if [[ "$actual_sha1" != "$expected_sha1" ]]; then
+            echo "Development APK signer SHA-1 mismatch." >&2
+            exit 1
+          fi
+          mkdir -p dist/development
+          final_apk="WAL-Android-Launcher-Development-1.0.9.apk"
+          cp "$apk" "dist/development/$final_apk"
+          hash="$(sha256sum "dist/development/$final_apk" | awk '{print $1}')"
+          printf '%s  %s\n' "$hash" "$final_apk" > dist/development/SHA256SUMS.txt
+          echo "Signed Development WAN APK verified; SHA-256: $hash" >> "$GITHUB_STEP_SUMMARY"
+          echo "PACKAGE=com.wayward.launcher.official VERSION=1.0.9 SIGNER_SHA1=$actual_sha1 SHA256=$hash"
+
       - name: Verify and package signed Official WAN APK
         shell: bash
         run: |
@@ -211,7 +249,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: WAL-Android-Launcher-WAN-signed-${{ github.sha }}
-          path: dist/official/*
+          path: dist/**/*
           if-no-files-found: error
           retention-days: 7
 
