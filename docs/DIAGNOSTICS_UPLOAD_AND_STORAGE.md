@@ -127,7 +127,7 @@ Only the tail is read. Missing or empty logs are omitted. Bearer credentials, NA
 
 For local `GET /api/image/status/:promptId` responses, the launcher records a filtered `image_job_status` event containing only promptId, workflow, provider, normalized status (completed/error/queued/processing, otherwise unknown), sanitized error, HTTP status, and elapsed milliseconds. It does not persist raw status JSON or generation prompt. HTTP 200 is recorded separately from job status and is not treated as generation success.
 
-The pinned NovelAI backend bundle patch records a `[novelai] generation_failed` line in the existing ImageGen server log with error type, parsed HTTP status when present, sanitized/truncated error message, model, and elapsed milliseconds. It never writes the token or Authorization header. This diagnostic line is collected by the same bounded server-log tail.
+The pinned NovelAI backend bundle patch records a `[novelai] generation_failed` line in the existing ImageGen server log with error type, parsed HTTP status when present, sanitized/truncated error message (including redaction of positive and negative prompt text), model, and elapsed milliseconds. It never writes the token or Authorization header. This diagnostic line is collected by the same bounded server-log tail.
 
 On upload success, the existing Toast includes the Worker's `submissionId`. On failure, the safe error code is shown and the same ZIP remains pending for retry. The D1 `error_count` field remains non-authoritative.
 
