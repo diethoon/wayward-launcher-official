@@ -49,12 +49,14 @@ assert.match(connection, /certificateSha256/,
   'the signed Host manifest must bind the TLS certificate fingerprint');
 assert.match(connection, /isPrivateLanIpv4\(uri\.getHost\(\)\)/,
   'every signed Host URL must be restricted to an RFC1918 LAN IPv4 address');
-assert.match(client, /return new String\[\] \{host\.baseUrl\}/,
-  'Remote Host requests must use the single LAN endpoint without external fallback');
+assert.ok(client.includes("candidates.add(host.wanBaseUrl)") &&
+  client.includes("candidates.add(host.lanBaseUrl)") &&
+  client.includes("candidates.add(host.baseUrl)"),
+  'Remote Host requests must use only the authenticated WAN route, discovered LAN route and original signed QR route');
 assert.doesNotMatch(connection, /normalizeExternalBaseUrl|isGloballyRoutableIpv4|externalTestEndpoint|externalBaseUrl|portMapping/,
   'public IPv4 and external QR implementation must be removed');
 assert.doesNotMatch(client, /externalBaseUrl/,
-  'the client must not retain an external endpoint fallback');
+  'the client must not accept an untrusted external endpoint outside the authenticated WAN metadata path');
 assert.match(client, /SSLException/,
   'TLS or certificate-pin failures must not trigger a fallback to another endpoint');
 assert.match(client, /writeRequestBody/,
@@ -262,13 +264,17 @@ assert.ok(signatureCheck >= 0 && identityCheck > signatureCheck && hostStore > i
   'Host signature and identity checks must complete before storing Host data');
 
 assert.ok(instrumented.includes("remoteHostRejectsNonPrivateOrCleartextQrUrls") &&
+  instrumented.includes("pairedWanEndpointIsStoredSeparatelyAndKeepsTheOriginalCertificatePin") &&
   connection.includes("!isPrivateLanIpv4(uri.getHost())") &&
-  client.includes("return new String[] {host.baseUrl}"),
-  'Android must reject non-LAN QR endpoints and retain one direct LAN endpoint only');
+  connection.includes("normalizeWanBaseUrl") &&
+  client.includes("candidates.add(host.wanBaseUrl)") &&
+  client.includes("candidates.add(host.lanBaseUrl)") &&
+  client.includes("candidates.add(host.baseUrl)"),
+  'Android must keep first-pairing QR LAN-only and store a separate authenticated WAN route with the same certificate pin');
 assert.doesNotMatch(connection, /externalBaseUrl|externalTestEndpoint|normalizeExternalBaseUrl|isGloballyRoutableIpv4|portMapping/,
-  'external endpoint parsing and public IPv4 validation code must be absent');
+  'only the explicit paired-device WAN validator is allowed; generic external QR/port-mapping fallback must remain absent');
 assert.doesNotMatch(client, /externalBaseUrl/,
-  'the client must not contain an external endpoint fallback');
+  'the client must not accept an unauthenticated externalBaseUrl field');
 
 assert.match(pairingActivity, /BitmapFactory\.Options[\s\S]*?inJustDecodeBounds = true[\s\S]*?inSampleSize = sampleSize/,
   'the developer QR importer must inspect dimensions and downsample before allocating the bitmap');
