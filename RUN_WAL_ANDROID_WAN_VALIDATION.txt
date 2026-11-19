@@ -1,0 +1,1 @@
+Build and sign the WAN reconnect integration using the existing Android Release signing identity. Keep the result as a validation artifact only; do not publish a release.
