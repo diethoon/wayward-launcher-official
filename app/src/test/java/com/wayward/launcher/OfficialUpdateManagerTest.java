@@ -53,6 +53,10 @@ public final class OfficialUpdateManagerTest {
         assertFalse((Boolean) invoke("isAllowedReleaseUrl", new Class<?>[]{String.class},
                 "http://github.com/wal-studio/WAL-Official-Releases/releases/download/v1.0.0/file.apk"));
         assertFalse((Boolean) invoke("isAllowedReleaseUrl", new Class<?>[]{String.class},
+                "https://github.com/wal-studio/WAL-Official-Releases/blob/main/file.apk"));
+        assertFalse((Boolean) invoke("isAllowedReleaseUrl", new Class<?>[]{String.class},
+                "https://github.com/wal-studio/WAL-Official-Releases/releases/tag/v1.0.0"));
+        assertFalse((Boolean) invoke("isAllowedReleaseUrl", new Class<?>[]{String.class},
                 "https://github.com.evil.example/wal-studio/WAL-Official-Releases/file.apk"));
         assertFalse((Boolean) invoke("isAllowedReleaseUrl", new Class<?>[]{String.class},
                 "https://github.com/wal-studio/WAL-Official-Releases.evil/file.apk"));
