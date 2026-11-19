@@ -112,8 +112,8 @@ jobs:
           fi
           pkcs12_options=()
           if [[ "$mac_verified" != "true" ]]; then pkcs12_options=(-nomacver); fi
-          openssl pkcs12 -in "$work_dir/uploaded.p12" "\${pkcs12_options[@]}" -nocerts -nodes -passin env:KEYSTORE_PASSWORD_CLEAN -out "$work_dir/release-key.pem"
-          openssl pkcs12 -in "$work_dir/uploaded.p12" "\${pkcs12_options[@]}" -clcerts -nokeys -passin env:KEYSTORE_PASSWORD_CLEAN -out "$work_dir/release-cert.pem"
+          openssl pkcs12 -in "$work_dir/uploaded.p12" "${pkcs12_options[@]}" -nocerts -nodes -passin env:KEYSTORE_PASSWORD_CLEAN -out "$work_dir/release-key.pem"
+          openssl pkcs12 -in "$work_dir/uploaded.p12" "${pkcs12_options[@]}" -clcerts -nokeys -passin env:KEYSTORE_PASSWORD_CLEAN -out "$work_dir/release-cert.pem"
           chmod 600 "$work_dir/release-key.pem" "$work_dir/release-cert.pem"
           openssl pkey -in "$work_dir/release-key.pem" -noout -check >/dev/null
           key_public_hash="$(openssl pkey -in "$work_dir/release-key.pem" -pubout -outform DER | openssl dgst -sha256)"
