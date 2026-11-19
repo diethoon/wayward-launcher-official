@@ -183,8 +183,8 @@ public final class OfficialUpdateManager {
 
     private static boolean isAllowedReleaseUrl(String url) {
         return url != null && (
-                url.startsWith("https://github.com/wal-studio/WAL-Official-Releases/") ||
-                url.startsWith("https://github.com/wal-studio/wayward-launcher-official/")
+                url.startsWith("https://github.com/wal-studio/WAL-Official-Releases/releases/download/") ||
+                url.startsWith("https://github.com/wal-studio/wayward-launcher-official/releases/download/")
         );
     }
 
