@@ -210,10 +210,10 @@ def extract(archive: Path, output: Path) -> None:
             await this.finalize(job, [{ filename: 'novelai.png', subfolder: '', type: 'output' }], [], undefined, result.bytes)
           } catch (error) {
             const rawMessage = error instanceof Error ? error.message : String(error)
-            const safeMessage = rawMessage
+            const promptRedacted = job.prompt ? rawMessage.split(job.prompt).join('[PROMPT REDACTED]') : rawMessage
+            const negativeRedacted = job.negativePrompt ? promptRedacted.split(job.negativePrompt).join('[PROMPT REDACTED]') : promptRedacted
+            const safeMessage = negativeRedacted
               .split(config.naiToken).join('[REDACTED]')
-              .split(job.prompt).join('[PROMPT REDACTED]')
-              .split(job.negativePrompt || '__NO_NEGATIVE_PROMPT__').join('[PROMPT REDACTED]')
               .replace(/Bearer\\s+[A-Za-z0-9._~+/-]+=*/gi, 'Bearer [REDACTED]')
               .replace(/(NAI_TOKEN|TOKEN|API[_-]?KEY|APIKEY|AUTHORIZATION|PASSWORD|SECRET)\\s*[=:]\\s*[^\\s,;]+/gi, '$1=[REDACTED]')
               .slice(0, 500)
