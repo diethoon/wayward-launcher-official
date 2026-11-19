@@ -40,7 +40,7 @@ jobs:
       # PR head marker: workflow is intentionally identical in the staging base.
       # One-time bootstrap: patch the three source files before validation.
       - name: Apply staged WAL and SAF source patches
-        if: (github.ref == 'refs/heads/work/wal-saf-deadlock-ui-20261119-retry' || github.head_ref == 'work/wal-saf-deadlock-ui-20261119-retry') && hashFiles('patches/wal-saf-source.patch') != ''
+        if: (github.ref == 'refs/heads/work/wal-saf-deadlock-ui-20261119-retry' || github.head_ref == 'work/wal-saf-deadlock-ui-20261119-retry')
         run: |
           set -euo pipefail
           git apply --check patches/wal-saf-source.patch
