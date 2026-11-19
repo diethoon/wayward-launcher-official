@@ -5,3 +5,4 @@ Validation rerun: OfficialUpdateManager JVM checksum, allowlist and stable-tag t
 Validation rerun: strict SemVer parser and regression tests.
 Validation rerun: embed pinned NovelAI backend and run full Android source contract suite before signed builds.
 Validation rerun: fix pinned NovelAI source URL expansion.
+Validation rerun: tighten GitHub release asset URL allowlist and regression tests.
