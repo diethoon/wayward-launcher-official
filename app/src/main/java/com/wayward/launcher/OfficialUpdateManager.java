@@ -10,11 +10,9 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
-import android.provider.Settings;
 import android.util.Log;
 import android.widget.Toast;
 
-import androidx.core.content.FileProvider;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -43,8 +41,6 @@ public final class OfficialUpdateManager {
     private static final String SIGNER_SHA1 = "D9BE7443EB247D27C958CC4250D7F5D1E078F740";
     private static final String PREFS = "wal_official_update_state";
     private static final String LAST_CHECK = "last_check_ms";
-    private static final String PENDING_APK = "pending_apk_path";
-    private static final String PENDING_HASH = "pending_apk_sha256";
     private static final long CHECK_INTERVAL_MS = 6L * 60L * 60L * 1000L;
     private static final long MAX_APK_BYTES = 300L * 1024L * 1024L;
     private static final Pattern STABLE_TAG = Pattern.compile("^v?([1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$");
@@ -56,18 +52,18 @@ public final class OfficialUpdateManager {
     public interface Listener { void onUpdateAvailable(Update update); }
 
     public static final class Update {
-        public final File apkFile;
         public final String versionName;
         public final long versionCode;
         public final String sha256;
         public final String notes;
+        public final String releaseUrl;
 
-        Update(File file, String name, long code, String hash, String body) {
-            apkFile = file;
+        Update(String name, long code, String hash, String body, String pageUrl) {
             versionName = name;
             versionCode = code;
             sha256 = hash;
             notes = body == null ? "" : body;
+            releaseUrl = pageUrl;
         }
     }
 
@@ -166,9 +162,18 @@ public final class OfficialUpdateManager {
 
             File dir = new File(context.getCacheDir(), "updates");
             if (!dir.exists() && !dir.mkdirs()) throw new IllegalStateException("Cannot create update cache.");
+            String releasePageUrl = release.optString("html_url", "");
+            if (!isAllowedReleasePageUrl(releasePageUrl)) {
+                throw new SecurityException("Release page URL is outside the approved WAL release repositories.");
+            }
             File apk = new File(dir, "wal-update-" + tag.group(1) + "-" + tag.group(2) + "-" + tag.group(3) + ".apk");
             download(apkUrl, apk);
-            Update update = verifyApk(context, apk, expected, release.optString("body", ""));
+            Update update;
+            try {
+                update = verifyApk(context, apk, expected, release.optString("body", ""), releasePageUrl);
+            } finally {
+                if (apk.exists() && !apk.delete()) Log.w(TAG, "Could not remove verified update cache file.");
+            }
             String tagVersion = tag.group(1) + "." + tag.group(2) + "." + tag.group(3);
             if (!tagVersion.equals(update.versionName)) throw new SecurityException("Release tag/APK version mismatch.");
             PackageInfo installed = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
@@ -181,6 +186,13 @@ public final class OfficialUpdateManager {
         return null;
     }
 
+    private static boolean isAllowedReleasePageUrl(String url) {
+        return url != null && (
+                url.startsWith("https://github.com/wal-studio/WAL-Official-Releases/releases/tag/") ||
+                url.startsWith("https://github.com/wal-studio/wayward-launcher-official/releases/tag/")
+        );
+    }
+
     private static boolean isAllowedReleaseUrl(String url) {
         return url != null && (
                 url.startsWith("https://github.com/wal-studio/WAL-Official-Releases/releases/download/") ||
@@ -189,59 +201,19 @@ public final class OfficialUpdateManager {
     }
 
     public static void install(Context context, Update update) {
-        if (context == null || update == null || !BuildConfig.WAL_OFFICIAL) return;
-        SharedPreferences prefs = context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        prefs.edit().putString(PENDING_APK, update.apkFile.getAbsolutePath())
-                .putString(PENDING_HASH, update.sha256).apply();
-        if (Build.VERSION.SDK_INT >= 26 && !context.getPackageManager().canRequestPackageInstalls()) {
-            try {
-                Intent settings = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                        Uri.parse("package:" + context.getPackageName()));
-                if (!(context instanceof android.app.Activity)) settings.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                context.startActivity(settings);
-            } catch (Exception error) {
-                Toast.makeText(context, "앱 설치 권한 설정을 열 수 없습니다.", Toast.LENGTH_LONG).show();
-                Log.e(TAG, "Cannot open install permission settings", error);
-            }
-            return;
-        }
-        installPendingIfAllowed(context);
-    }
-
-    public static void installPendingIfAllowed(Context context) {
-        if (context == null || !BuildConfig.WAL_OFFICIAL) return;
-        if (Build.VERSION.SDK_INT >= 26 && !context.getPackageManager().canRequestPackageInstalls()) return;
-        Context app = context.getApplicationContext();
-        SharedPreferences prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        String path = prefs.getString(PENDING_APK, null);
-        String hash = prefs.getString(PENDING_HASH, null);
-        if (path == null || hash == null) return;
+        if (context == null || update == null || !BuildConfig.WAL_OFFICIAL
+                || !isAllowedReleasePageUrl(update.releaseUrl)) return;
         try {
-            File apk = new File(path);
-            Update verified = verifyApk(app, apk, hash, "");
-            PackageInfo installed = app.getPackageManager().getPackageInfo(app.getPackageName(), 0);
-            if (verified.versionCode <= installed.getLongVersionCode()) {
-                clearPending(prefs);
-                return;
-            }
-            Uri uri = FileProvider.getUriForFile(app, app.getPackageName() + ".diagnostics", apk);
-            Intent installer = new Intent(Intent.ACTION_VIEW);
-            installer.setDataAndType(uri, "application/vnd.android.package-archive");
-            installer.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
-            clearPending(prefs);
-            app.startActivity(installer);
+            Intent browser = new Intent(Intent.ACTION_VIEW, Uri.parse(update.releaseUrl));
+            if (!(context instanceof android.app.Activity)) browser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(browser);
         } catch (Exception error) {
-            clearPending(prefs);
-            Log.e(TAG, "Verified APK could not be passed to Android installer", error);
-            Toast.makeText(app, "업데이트 설치 준비에 실패했습니다: " + safeMessage(error), Toast.LENGTH_LONG).show();
+            Log.e(TAG, "Could not open the verified official release page", error);
+            Toast.makeText(context, "공식 업데이트 페이지를 열 수 없습니다.", Toast.LENGTH_LONG).show();
         }
     }
 
-    private static void clearPending(SharedPreferences prefs) {
-        prefs.edit().remove(PENDING_APK).remove(PENDING_HASH).apply();
-    }
-
-    private static Update verifyApk(Context context, File apk, String expectedHash, String notes) throws Exception {
+    private static Update verifyApk(Context context, File apk, String expectedHash, String notes, String releasePageUrl) throws Exception {
         if (!apk.isFile() || apk.length() <= 0 || apk.length() > MAX_APK_BYTES) {
             throw new SecurityException("Downloaded APK is missing or has an invalid size.");
         }
@@ -257,7 +229,7 @@ public final class OfficialUpdateManager {
         if (signers == null || signers.length != 1 || !SIGNER_SHA1.equals(sha1(signers[0].toByteArray()))) {
             throw new SecurityException("APK signer does not match the registered Official certificate.");
         }
-        return new Update(apk, info.versionName, info.getLongVersionCode(), actualHash, notes);
+        return new Update(info.versionName, info.getLongVersionCode(), actualHash, notes, releasePageUrl);
     }
 
     private static String digestFromAsset(String digest) {
