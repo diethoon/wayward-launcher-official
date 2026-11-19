@@ -182,22 +182,27 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
     }
 
     private final class TestWmlHost {
+        private boolean hasCapability(String capability) {
+            return ImagePackFolderPickerScript.matchesCapability(folderPickerCapability, capability);
+        }
+
+        private String denied() {
+            return "{\\"ok\\":false,\\"name\\":\\"SecurityError\\",\\"message\\":\\"The native folder bridge capability is invalid.\\"}";
+        }
+
         @JavascriptInterface public void chooseImagePackFolder(String requestId, String capability, String mode, String initialUri) {
-            // Mirror production: do not call WebView methods on the JavascriptInterface thread.
             runOnUiThread(() -> chooseImagePackFolderOnUiThread(requestId, capability, mode, initialUri));
         }
+
         private void chooseImagePackFolderOnUiThread(String requestId, String capability, String mode, String initialUri) {
             try {
                 boolean trustedOrigin = webView != null
                         && ImagePackFolderPickerScript.isSameOrigin(verifiedTestPageUrl, TEST_ORIGIN);
+                boolean trustedCapability = hasCapability(capability);
                 Log.i(TAG, "BRIDGE_ORIGIN verified=" + safeOrigin(verifiedTestPageUrl)
                         + " webView=" + safeOrigin(webView == null ? null : webView.getUrl())
-                        + " accepted=" + trustedOrigin);
-                boolean trustedCapability = ImagePackFolderPickerScript.matchesCapability(
-                        folderPickerCapability, capability);
+                        + " accepted=" + (trustedOrigin && trustedCapability));
                 if (!trustedOrigin || !trustedCapability) {
-                    Log.w(TAG, "REJECT folder request origin=" + trustedOrigin
-                            + " capability=" + trustedCapability);
                     access.rejectRequest(requestId,
                             trustedOrigin ? "NotAllowedError" : "SecurityError",
                             "The folder request was rejected by the native test bridge.");
@@ -211,29 +216,105 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
                         "Android could not start the system image-pack folder picker.");
             }
         }
-        @JavascriptInterface public String listImagePackDirectoryForRequest(String documentUri, String requestId) {
+
+        @JavascriptInterface public String listImagePackDirectoryForRequest(
+                String capability, String documentUri, String requestId) {
+            if (!hasCapability(capability)) return denied();
+            if (access == null) return "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}";
+            if (documentUri != null && documentUri.startsWith("__WAYWARD_DIR_START__:")) {
+                return access.startListDirectory(
+                        documentUri.substring("__WAYWARD_DIR_START__:".length()), requestId);
+            }
+            if (documentUri != null && documentUri.startsWith("__WAYWARD_DIR_ACK__:")) {
+                try {
+                    int batchIndex = Integer.parseInt(
+                            documentUri.substring("__WAYWARD_DIR_ACK__:".length()));
+                    if (batchIndex < 0) throw new NumberFormatException("negative batch index");
+                    return access.acknowledgeDirectoryBatch(requestId, batchIndex)
+                            ? "{\\"ok\\":true}"
+                            : "{\\"ok\\":false,\\"name\\":\\"AbortError\\",\\"message\\":\\"The SAF batch is no longer active.\\"}";
+                } catch (NumberFormatException invalidBatch) {
+                    return "{\\"ok\\":false,\\"name\\":\\"TypeError\\",\\"message\\":\\"The SAF batch index is invalid.\\"}";
+                }
+            }
+            if (documentUri != null && documentUri.startsWith("__WAYWARD_DIR_CANCEL__:")) {
+                boolean cancelled = access.cancelDirectoryList(requestId);
+                return "{\\"ok\\":true,\\"cancelled\\":" + cancelled + "}";
+            }
+            if (documentUri != null && documentUri.startsWith("__WAYWARD_DIR_RELEASE__:")) {
+                access.releaseDirectoryTreeForRequest(requestId);
+                return "{\\"ok\\":true}";
+            }
             return access.listDirectoryJson(documentUri, requestId);
         }
-        @JavascriptInterface public String readImagePackFileForRequest(String documentUri, String requestId) {
-            return access.readFileJson(documentUri, requestId);
+
+        @JavascriptInterface public String readImagePackFileForRequest(
+                String capability, String documentUri, String requestId) {
+            if (!hasCapability(capability)) return denied();
+            return access == null ? "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}"
+                    : access.readFileJson(documentUri, requestId);
         }
-        @JavascriptInterface public String createImagePackFile(String parentUri, String name, String mime, String requestId) {
-            return access.createFileJson(parentUri, name, mime, requestId);
+
+        @JavascriptInterface public String openImagePackFileStreamForRequest(
+                String capability, String documentUri, String start, String length, String requestId) {
+            if (!hasCapability(capability)) return denied();
+            return access == null ? "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}"
+                    : access.openFileStreamJson(documentUri, start, length, requestId);
         }
-        @JavascriptInterface public String writeImagePackFile(String documentUri, String mime, String data, String requestId) {
-            return access.writeFileJson(documentUri, mime, data, requestId);
+
+        @JavascriptInterface public String readImagePackFileStreamChunkForRequest(
+                String capability, String streamId, String maxBytes, String requestId) {
+            if (!hasCapability(capability)) return denied();
+            return access == null ? "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}"
+                    : access.readFileStreamChunkJson(streamId, maxBytes, requestId);
         }
-        @JavascriptInterface public String createImagePackDirectory(String parentUri, String name, String requestId) {
-            return access.createDirectoryJson(parentUri, name, requestId);
+
+        @JavascriptInterface public String closeImagePackFileStreamForRequest(
+                String capability, String streamId, String requestId) {
+            if (!hasCapability(capability)) return denied();
+            return access == null ? "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}"
+                    : access.closeFileStreamJson(streamId, requestId);
         }
-        @JavascriptInterface public String deleteImagePackEntry(String documentUri, String requestId) {
-            return access.deleteEntryJson(documentUri, requestId);
+
+        @JavascriptInterface public String createImagePackFile(
+                String capability, String parentUri, String name, String mime, String requestId) {
+            if (!hasCapability(capability)) return denied();
+            return access == null ? "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}"
+                    : access.createFileJson(parentUri, name, mime, requestId);
         }
-        @JavascriptInterface public String resolveImagePackEntry(String parentUri, String targetUri, String requestId) {
-            return access.resolveEntryJson(parentUri, targetUri, requestId);
+
+        @JavascriptInterface public String writeImagePackFile(
+                String capability, String documentUri, String mime, String data, String requestId) {
+            if (!hasCapability(capability)) return denied();
+            return access == null ? "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}"
+                    : access.writeFileJson(documentUri, mime, data, requestId);
         }
-        @JavascriptInterface public String getImagePackFolderInfo() {
-            return access.getFolderInfoJson();
+
+        @JavascriptInterface public String createImagePackDirectory(
+                String capability, String parentUri, String name, String requestId) {
+            if (!hasCapability(capability)) return denied();
+            return access == null ? "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}"
+                    : access.createDirectoryJson(parentUri, name, requestId);
+        }
+
+        @JavascriptInterface public String deleteImagePackEntry(
+                String capability, String documentUri, String requestId) {
+            if (!hasCapability(capability)) return denied();
+            return access == null ? "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}"
+                    : access.deleteEntryJson(documentUri, requestId);
+        }
+
+        @JavascriptInterface public String resolveImagePackEntry(
+                String capability, String parentUri, String targetUri, String requestId) {
+            if (!hasCapability(capability)) return denied();
+            return access == null ? "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}"
+                    : access.resolveEntryJson(parentUri, targetUri, requestId);
+        }
+
+        @JavascriptInterface public String getImagePackFolderInfo(String capability) {
+            if (!hasCapability(capability)) return denied();
+            return access == null ? "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}"
+                    : access.getFolderInfoJson();
         }
     }
 
