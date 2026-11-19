@@ -4,3 +4,4 @@ Validation rerun: corrected Maven Central/Google mirror priority after 502 diagn
 Validation rerun: OfficialUpdateManager JVM checksum, allowlist and stable-tag tests.
 Validation rerun: strict SemVer parser and regression tests.
 Validation rerun: embed pinned NovelAI backend and run full Android source contract suite before signed builds.
+Validation rerun: fix pinned NovelAI source URL expansion.
