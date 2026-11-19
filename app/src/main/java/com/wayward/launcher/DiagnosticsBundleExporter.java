@@ -188,7 +188,7 @@ final class DiagnosticsBundleExporter {
     private static String redactSecrets(String value) {
         if (value == null) return "";
         String safe = value.replaceAll("(?i)(Bearer\\s+)[A-Za-z0-9._~+/-]+=*", "$1[REDACTED]");
-        safe = safe.replaceAll("(?i)(\\b(?:NAI_TOKEN|API[_-]?KEY|ACCESS[_-]?TOKEN|REFRESH[_-]?TOKEN|AUTHORIZATION|PASSWORD|SECRET)\\b\\s*[=:]\\s*)[\\\"']?[^\\s,;\\\"']+", "$1[REDACTED]");
+        safe = safe.replaceAll("(?i)(\\b(?:NAI_TOKEN|TOKEN|API[_-]?KEY|APIKEY|ACCESS[_-]?TOKEN|REFRESH[_-]?TOKEN|AUTHORIZATION|PASSWORD|SECRET)\\b\\s*[=:]\\s*)[\\\"']?[^\\s,;\\\"']+", "$1[REDACTED]");
         safe = safe.replaceAll("(?i)(\\b(?:cookie|set-cookie)\\s*[:=]\\s*)[^\\r\\n]+", "$1[REDACTED]");
         return safe;
     }
