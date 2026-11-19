@@ -1,1 +1,1 @@
-Run signed build with normalized signing credentials exported to OpenSSL environment.
+Retry signing with both normalized and raw base64 candidates, validating the existing key/cert pair.
