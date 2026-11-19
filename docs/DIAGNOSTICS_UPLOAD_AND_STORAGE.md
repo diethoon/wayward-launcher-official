@@ -81,7 +81,7 @@ Cloudflare resources verified from the connected account:
 - R2 object key format:
   `reports/<install-id>/<YYYY-MM>/<submission-id>.zip`
 
-The D1 `submissions` row records submission ID, install ID, SHA-256, R2 object key, byte length, upload time, app version, and error count. It is an index/metadata record; the actual ZIP bytes are stored in R2.
+The D1 `submissions` row records submission ID, install ID, SHA-256, R2 object key, byte length, upload time, app version, and error count. It is an index/metadata record; the actual ZIP bytes are stored in R2. The current Android ZIP uploader does not send the Worker's optional `X-Wayward-error-count` header, so the Worker stores the default `error_count = 0`; do not interpret that field as proof that the bundle contains no errors.
 
 Verified lifecycle policy:
 
