@@ -212,6 +212,8 @@ def extract(archive: Path, output: Path) -> None:
             const rawMessage = error instanceof Error ? error.message : String(error)
             const safeMessage = rawMessage
               .split(config.naiToken).join('[REDACTED]')
+              .split(job.prompt).join('[PROMPT REDACTED]')
+              .split(job.negativePrompt || '__NO_NEGATIVE_PROMPT__').join('[PROMPT REDACTED]')
               .replace(/Bearer\\s+[A-Za-z0-9._~+/-]+=*/gi, 'Bearer [REDACTED]')
               .replace(/(NAI_TOKEN|API[_-]?KEY|AUTHORIZATION|PASSWORD|SECRET)\\s*[=:]\\s*[^\\s,;]+/gi, '$1=[REDACTED]')
               .slice(0, 500)
