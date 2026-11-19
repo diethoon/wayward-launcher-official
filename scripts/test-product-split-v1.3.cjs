@@ -44,6 +44,9 @@ assert.doesNotMatch(validationWorkflow,/.github\/workflows\/android-product-vali
 assert.match(main,/OfficialUpdateManager\.installPendingIfAllowed\(this\)/);
 assert.match(main,/OfficialUpdateManager\.checkForUpdate\(this/);
 assert.match(updater,/WAL-Official-Releases\/releases\?per_page=30/);
+assert.match(updater,/wayward-launcher-official\/releases\?per_page=30/);
+assert.match(updater,/findLatestFromApi/);
+assert.match(updater,/isAllowedReleaseUrl/);
 assert.match(updater,/optBoolean\("draft",\s*true\)\s*\|\|\s*release\.optBoolean\("prerelease",\s*true\)/);
 assert.match(updater,/STABLE_TAG/);
 assert.match(updater,/sha256:/);
