@@ -173,7 +173,6 @@ public class MainActivity extends Activity {
             }
         }
         if(BuildConfig.WAL_OFFICIAL){
-            OfficialUpdateManager.installPendingIfAllowed(this);
             if(home!=null&&home.getVisibility()==View.VISIBLE){
                 OfficialUpdateManager.checkForUpdate(this, update -> {
                     if(isFinishing()||isDestroyed())return;
