@@ -296,3 +296,71 @@ jobs:
         if: always()
         shell: bash
         run: rm -rf "$RUNNER_TEMP/wayward-release"
+
+  device-smoke:
+    name: Samsung SM-S938N install and launch smoke test
+    runs-on: [self-hosted, Windows, X64, wal-android]
+    needs: signed-wan-validation
+    if: \${{ needs.signed-wan-validation.result == 'success' }}
+    timeout-minutes: 25
+    steps:
+      - name: Download signed APKs from this run
+        uses: actions/download-artifact@v4
+        with:
+          name: WAL-Android-Launcher-WAN-signed-\${{ github.sha }}
+          path: dist
+
+      - name: Detect Samsung and install without touching app data
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $adb = Get-Command adb -ErrorAction SilentlyContinue
+          if ($null -eq $adb) {
+            $candidate = Join-Path $env:ANDROID_HOME "platform-tools/adb.exe"
+            if (-not (Test-Path $candidate)) { throw "ADB is unavailable on the Android runner." }
+            $adbPath = $candidate
+          } else { $adbPath = $adb.Source }
+          $listed = & $adbPath devices -l
+          $serials = @($listed | ForEach-Object {
+            if ($_ -match '^(\S+)\s+device(?:\s|$)') { $Matches[1] }
+          })
+          $serial = $null
+          foreach ($candidateSerial in $serials) {
+            $model = (& $adbPath -s $candidateSerial shell getprop ro.product.model 2>$null | Out-String).Trim()
+            if ($model -match 'SM.?S938N') { $serial = $candidateSerial; break }
+          }
+          if (-not $serial) {
+            "SM-S938N physical test: SKIPPED - no authorized matching device attached." | Tee-Object -FilePath $env:GITHUB_STEP_SUMMARY -Append
+            Write-Host "ADB_DEVICES_BEGIN"
+            $listed | ForEach-Object { Write-Host $_ }
+            Write-Host "ADB_DEVICES_END"
+            exit 0
+          }
+          Write-Host "TARGET_DEVICE=$serial MODEL=SM-S938N"
+          $official = "dist/official/WAL-Android-Launcher-$env:WAL_RELEASE_VERSION.apk"
+          $development = "dist/development/WAL-Android-Launcher-Development-1.0.9.apk"
+          foreach ($entry in @(
+            @{Package="com.wayward.launcher.official.wal"; VersionCode=1; Apk=$official},
+            @{Package="com.wayward.launcher.official"; VersionCode=109; Apk=$development}
+          )) {
+            if (-not (Test-Path $entry.Apk)) { throw "Missing APK: $($entry.Apk)" }
+            $installed = (& $adbPath -s $serial shell dumpsys package $entry.Package 2>$null | Out-String)
+            $versionMatch = [regex]::Match($installed, 'versionCode=(\d+)')
+            if ($versionMatch.Success -and [long]$versionMatch.Groups[1].Value -gt [long]$entry.VersionCode) {
+              Write-Host "KEEP_NEWER_INSTALLED_PACKAGE=$($entry.Package) CURRENT=$($versionMatch.Groups[1].Value) CANDIDATE=$($entry.VersionCode)"
+            } else {
+              & $adbPath -s $serial install -r $entry.Apk
+              if ($LASTEXITCODE -ne 0) { throw "Install failed for $($entry.Package)." }
+            }
+            $packagePath = (& $adbPath -s $serial shell pm path $entry.Package 2>$null | Out-String)
+            if ($packagePath -notmatch 'package:') { throw "Package manager cannot resolve $($entry.Package)." }
+            & $adbPath -s $serial shell monkey -p $entry.Package -c android.intent.category.LAUNCHER 1
+            if ($LASTEXITCODE -ne 0) { throw "Launcher activity dispatch failed for $($entry.Package)." }
+            Start-Sleep -Seconds 8
+            $pid = (& $adbPath -s $serial shell pidof $entry.Package 2>$null | Out-String).Trim()
+            if (-not $pid) { throw "Application process did not remain alive after launch: $($entry.Package)." }
+            Write-Host "DEVICE_LAUNCH_PASS PACKAGE=$($entry.Package) PID=$pid"
+          }
+          $crashes = (& $adbPath -s $serial logcat -d -t 2500 2>$null | Select-String 'FATAL EXCEPTION|Fatal signal' | Out-String)
+          if ($crashes -match 'com\.wayward\.launcher') { throw "AndroidRuntime fatal crash detected in the launcher logcat." }
+          "SM-S938N physical test: PASS - both package IDs installed/resolved and launcher processes remained alive; app data was not cleared." | Tee-Object -FilePath $env:GITHUB_STEP_SUMMARY -Append
