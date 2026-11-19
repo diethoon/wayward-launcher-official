@@ -6,6 +6,7 @@ def releaseSigningReady = [
     System.getenv('ANDROID_KEY_ALIAS')
 ].every { value -> value != null && !value.trim().isEmpty() }
 android {
+    buildFeatures { buildConfig true }
     namespace 'com.wayward.launcher'
     compileSdk 35
     buildToolsVersion '35.0.0'
@@ -33,10 +34,48 @@ android {
         }
     }
     buildTypes {
-        debug { applicationIdSuffix '.debug'; versionNameSuffix '-debug' }
+        debug {
+            applicationIdSuffix '.debug'
+            versionNameSuffix '-debug'
+            buildConfigField 'boolean', 'WAL_OFFICIAL', 'false'
+            manifestPlaceholders = [appLabel: 'WAL Development']
+        }
         release {
             minifyEnabled false
+            buildConfigField 'boolean', 'WAL_OFFICIAL', 'false'
+            manifestPlaceholders = [appLabel: 'WAL Development']
             if (releaseSigningReady) signingConfig signingConfigs.release
+        }
+        official {
+            initWith release
+            applicationIdSuffix '.wal'
+            buildConfigField 'boolean', 'WAL_OFFICIAL', 'true'
+            manifestPlaceholders = [appLabel: 'WAL Android Launcher']
+        }
+    }
+}
+def officialVersionName = (findProperty('walOfficialVersionName') ?: '1.0.0').toString()
+def officialVersionMatcher = officialVersionName =~ /^(\d+)\.(\d+)\.(\d+)$/
+if (!officialVersionMatcher.matches()) {
+    throw new GradleException("walOfficialVersionName must use MAJOR.MINOR.PATCH.")
+}
+def officialMajor = officialVersionMatcher[0][1].toLong()
+def officialMinor = officialVersionMatcher[0][2].toLong()
+def officialPatch = officialVersionMatcher[0][3].toLong()
+if (officialMajor < 1L || officialMinor >= 1000L || officialPatch >= 1000L) {
+    throw new GradleException("Official version must have MAJOR >= 1 and MINOR/PATCH < 1000.")
+}
+def officialVersionCodeLong = 1L + (officialMajor - 1L) * 1_000_000L + officialMinor * 1_000L + officialPatch
+if (officialVersionCodeLong > 2_100_000_000L) {
+    throw new GradleException("Official versionCode exceeds Android's supported range.")
+}
+def officialVersionCode = officialVersionCodeLong.toInteger()
+
+androidComponents {
+    onVariants(selector().withBuildType("official")) { variant ->
+        variant.outputs.each { output ->
+            output.versionCode.set(officialVersionCode)
+            output.versionName.set(officialVersionName)
         }
     }
 }
