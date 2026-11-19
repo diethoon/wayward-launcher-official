@@ -187,7 +187,7 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
         }
 
         private String denied() {
-            return "{\\"ok\\":false,\\"name\\":\\"SecurityError\\",\\"message\\":\\"The native folder bridge capability is invalid.\\"}";
+            return "{\"ok\":false,\"name\":\"SecurityError\",\"message\":\"The native folder bridge capability is invalid.\"}";
         }
 
         @JavascriptInterface public void chooseImagePackFolder(String requestId, String capability, String mode, String initialUri) {
@@ -220,7 +220,7 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
         @JavascriptInterface public String listImagePackDirectoryForRequest(
                 String capability, String documentUri, String requestId) {
             if (!hasCapability(capability)) return denied();
-            if (access == null) return "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}";
+            if (access == null) return "{\"ok\":false,\"name\":\"NotFoundError\"}";
             if (documentUri != null && documentUri.startsWith("__WAYWARD_DIR_START__:")) {
                 return access.startListDirectory(
                         documentUri.substring("__WAYWARD_DIR_START__:".length()), requestId);
@@ -231,19 +231,19 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
                             documentUri.substring("__WAYWARD_DIR_ACK__:".length()));
                     if (batchIndex < 0) throw new NumberFormatException("negative batch index");
                     return access.acknowledgeDirectoryBatch(requestId, batchIndex)
-                            ? "{\\"ok\\":true}"
-                            : "{\\"ok\\":false,\\"name\\":\\"AbortError\\",\\"message\\":\\"The SAF batch is no longer active.\\"}";
+                            ? "{\"ok\":true}"
+                            : "{\"ok\":false,\"name\":\"AbortError\",\"message\":\"The SAF batch is no longer active.\"}";
                 } catch (NumberFormatException invalidBatch) {
-                    return "{\\"ok\\":false,\\"name\\":\\"TypeError\\",\\"message\\":\\"The SAF batch index is invalid.\\"}";
+                    return "{\"ok\":false,\"name\":\"TypeError\",\"message\":\"The SAF batch index is invalid.\"}";
                 }
             }
             if (documentUri != null && documentUri.startsWith("__WAYWARD_DIR_CANCEL__:")) {
                 boolean cancelled = access.cancelDirectoryList(requestId);
-                return "{\\"ok\\":true,\\"cancelled\\":" + cancelled + "}";
+                return "{\"ok\":true,\"cancelled\":" + cancelled + "}";
             }
             if (documentUri != null && documentUri.startsWith("__WAYWARD_DIR_RELEASE__:")) {
                 access.releaseDirectoryTreeForRequest(requestId);
-                return "{\\"ok\\":true}";
+                return "{\"ok\":true}";
             }
             return access.listDirectoryJson(documentUri, requestId);
         }
@@ -251,69 +251,69 @@ public final class ImagePackPickerAcceptanceActivity extends Activity {
         @JavascriptInterface public String readImagePackFileForRequest(
                 String capability, String documentUri, String requestId) {
             if (!hasCapability(capability)) return denied();
-            return access == null ? "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}"
+            return access == null ? "{\"ok\":false,\"name\":\"NotFoundError\"}"
                     : access.readFileJson(documentUri, requestId);
         }
 
         @JavascriptInterface public String openImagePackFileStreamForRequest(
                 String capability, String documentUri, String start, String length, String requestId) {
             if (!hasCapability(capability)) return denied();
-            return access == null ? "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}"
+            return access == null ? "{\"ok\":false,\"name\":\"NotFoundError\"}"
                     : access.openFileStreamJson(documentUri, start, length, requestId);
         }
 
         @JavascriptInterface public String readImagePackFileStreamChunkForRequest(
                 String capability, String streamId, String maxBytes, String requestId) {
             if (!hasCapability(capability)) return denied();
-            return access == null ? "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}"
+            return access == null ? "{\"ok\":false,\"name\":\"NotFoundError\"}"
                     : access.readFileStreamChunkJson(streamId, maxBytes, requestId);
         }
 
         @JavascriptInterface public String closeImagePackFileStreamForRequest(
                 String capability, String streamId, String requestId) {
             if (!hasCapability(capability)) return denied();
-            return access == null ? "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}"
+            return access == null ? "{\"ok\":false,\"name\":\"NotFoundError\"}"
                     : access.closeFileStreamJson(streamId, requestId);
         }
 
         @JavascriptInterface public String createImagePackFile(
                 String capability, String parentUri, String name, String mime, String requestId) {
             if (!hasCapability(capability)) return denied();
-            return access == null ? "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}"
+            return access == null ? "{\"ok\":false,\"name\":\"NotFoundError\"}"
                     : access.createFileJson(parentUri, name, mime, requestId);
         }
 
         @JavascriptInterface public String writeImagePackFile(
                 String capability, String documentUri, String mime, String data, String requestId) {
             if (!hasCapability(capability)) return denied();
-            return access == null ? "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}"
+            return access == null ? "{\"ok\":false,\"name\":\"NotFoundError\"}"
                     : access.writeFileJson(documentUri, mime, data, requestId);
         }
 
         @JavascriptInterface public String createImagePackDirectory(
                 String capability, String parentUri, String name, String requestId) {
             if (!hasCapability(capability)) return denied();
-            return access == null ? "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}"
+            return access == null ? "{\"ok\":false,\"name\":\"NotFoundError\"}"
                     : access.createDirectoryJson(parentUri, name, requestId);
         }
 
         @JavascriptInterface public String deleteImagePackEntry(
                 String capability, String documentUri, String requestId) {
             if (!hasCapability(capability)) return denied();
-            return access == null ? "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}"
+            return access == null ? "{\"ok\":false,\"name\":\"NotFoundError\"}"
                     : access.deleteEntryJson(documentUri, requestId);
         }
 
         @JavascriptInterface public String resolveImagePackEntry(
                 String capability, String parentUri, String targetUri, String requestId) {
             if (!hasCapability(capability)) return denied();
-            return access == null ? "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}"
+            return access == null ? "{\"ok\":false,\"name\":\"NotFoundError\"}"
                     : access.resolveEntryJson(parentUri, targetUri, requestId);
         }
 
         @JavascriptInterface public String getImagePackFolderInfo(String capability) {
             if (!hasCapability(capability)) return denied();
-            return access == null ? "{\\"ok\\":false,\\"name\\":\\"NotFoundError\\"}"
+            return access == null ? "{\"ok\":false,\"name\":\"NotFoundError\"}"
                     : access.getFolderInfoJson();
         }
     }
