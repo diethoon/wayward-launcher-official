@@ -215,7 +215,7 @@ def extract(archive: Path, output: Path) -> None:
               .split(job.prompt).join('[PROMPT REDACTED]')
               .split(job.negativePrompt || '__NO_NEGATIVE_PROMPT__').join('[PROMPT REDACTED]')
               .replace(/Bearer\\s+[A-Za-z0-9._~+/-]+=*/gi, 'Bearer [REDACTED]')
-              .replace(/(NAI_TOKEN|API[_-]?KEY|AUTHORIZATION|PASSWORD|SECRET)\\s*[=:]\\s*[^\\s,;]+/gi, '$1=[REDACTED]')
+              .replace(/(NAI_TOKEN|TOKEN|API[_-]?KEY|APIKEY|AUTHORIZATION|PASSWORD|SECRET)\\s*[=:]\\s*[^\\s,;]+/gi, '$1=[REDACTED]')
               .slice(0, 500)
             const statusMatch = safeMessage.match(/NovelAI API\\s+(\\d{3})/i)
             console.error('[novelai] generation_failed', JSON.stringify({
