@@ -298,7 +298,7 @@ jobs:
             apk="app/build/outputs/apk/$variant/app-$variant.apk"
             test -s "$apk"
             "$aapt" dump badging "$apk" > "$RUNNER_TEMP/$variant-badging.txt"
-            grep -F "application-label:'WAL'" "$RUNNER_TEMP/$variant-badging.txt"
+            grep -F "application-label:'WAL Development'" "$RUNNER_TEMP/$variant-badging.txt"
             grep -F 'com.wayward.launcher.official' "$RUNNER_TEMP/$variant-badging.txt"
             "$aapt" dump --values resources "$apk" > "$RUNNER_TEMP/$variant-resources.txt"
             grep -F 'mipmap/ic_launcher' "$RUNNER_TEMP/$variant-resources.txt"
