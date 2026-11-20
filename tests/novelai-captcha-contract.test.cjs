@@ -1,0 +1,41 @@
+const fs = require('node:fs');
+const assert = require('node:assert/strict');
+
+const read = path => fs.readFileSync(path, 'utf8');
+const proxy = read('app/src/main/java/com/wayward/launcher/ImageGenProxy.java');
+const detector = read('app/src/main/java/com/wayward/launcher/NovelAiCaptchaErrorDetector.java');
+const monitor = read('app/src/main/java/com/wayward/launcher/NovelAiCaptchaJobMonitor.java');
+const activity = read('app/src/main/java/com/wayward/launcher/NovelAiCaptchaActivity.java');
+const embed = read('scripts/embed_imagegen_backend.py');
+const exporter = read('app/src/main/java/com/wayward/launcher/DiagnosticsBundleExporter.java');
+const docs = read('docs/DIAGNOSTICS_UPLOAD_AND_STORAGE.md');
+
+assert.match(proxy, /NovelAiCaptchaErrorDetector\.detect\(apiPath, responseBody\)/);
+assert.match(proxy, /NovelAiCaptchaJobMonitor\.startFromGenerateResponse\(appContext, web, responseBody, false\)/);
+assert.match(proxy, /NovelAiCaptchaJobMonitor\.noteClientPoll\(/);
+assert.match(proxy, /NovelAiCaptchaJobMonitor\.startFromGenerateResponse\(\s*appContext, web, remoteResponseBody, true\)/);
+assert.match(monitor, /RemoteGameImageApiClient\.execute\(context, "GET"/);
+assert.match(monitor, /isUuidPromptId/);
+assert.match(detector, /recaptcha token is required for trial generation/i);
+assert.match(detector, /novelai_trial_recaptcha_required/);
+assert.match(detector, /\/api\/image\/generate/);
+assert.match(detector, /\/api\/image\/status\//);
+assert.match(monitor, /if \(!"nai"\.equals\(workflow\)\) return/);
+assert.match(monitor, /MAX_POLLS = 120/);
+assert.match(monitor, /POLL_INTERVAL_MS = 2500L/);
+assert.match(monitor, /\/api\/image\/status\//);
+assert.doesNotMatch(monitor, /\/api\/image\/generate/);
+assert.match(activity, /boolean posted = source\.post\(/);
+assert.match(activity, /activity_launch_failed_webview_post_rejected/);
+assert.match(activity, /activity_launch_post_timeout/);
+assert.match(activity, /activity_launch_suppressed_duplicate/);
+assert.match(activity, /webview_page_load_finished/);
+assert.match(embed, /job\.errorType = 'novelai_trial_recaptcha_required'/);
+assert.match(embed, /if \(job\.errorType\) base\.errorType = job\.errorType/);
+assert.match(exporter, /imagegen\/startup\.log/);
+assert.match(exporter, /imagegen\/server\.log/);
+assert.match(exporter, /final int maxBytes = 128 \* 1024/);
+assert.match(docs, /startup\.log.*server\.log|startup\.log/);
+assert.match(docs, /no status GET|follow-up request/i);
+
+console.log('NovelAI CAPTCHA response path, bounded status monitor, Activity outcomes, structured backend error, and diagnostic ZIP contract: PASS');
