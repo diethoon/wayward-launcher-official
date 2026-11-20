@@ -167,7 +167,7 @@ final class ImageGenProxy {
                 if (responseStream != null) responseStream.close();
                 if ("GET".equals(safeMethod) && apiPath != null
                         && apiPath.startsWith("/api/image/status/")) {
-                    recordImageJobStatus(appContext, apiPath, responseBody, status,
+                    recordImageJobStatus(appContext, web, apiPath, responseBody, status,
                             System.currentTimeMillis() - startedAt);
                 }
 
@@ -189,7 +189,7 @@ final class ImageGenProxy {
         }, "wayward-imagegen-proxy").start();
     }
 
-    private static void recordImageJobStatus(android.content.Context context, String path,
+    private static void recordImageJobStatus(android.content.Context context, WebView sourceWeb, String path,
                                              byte[] responseBody, int httpStatus, long elapsedMs) {
         JSONObject diagnostic = new JSONObject();
         try {
@@ -212,6 +212,9 @@ final class ImageGenProxy {
             if (errorValue == null || errorValue == JSONObject.NULL) errorValue = response.opt("error");
             String error = errorValue == null || errorValue == JSONObject.NULL ? "" : String.valueOf(errorValue);
             error = redactDiagnosticError(error);
+            if (error.toLowerCase(Locale.ROOT).contains("recaptcha token is required for trial generation")) {
+                NovelAiCaptchaActivity.openFrom(sourceWeb);
+            }
             diagnostic.put("promptId", promptId);
             diagnostic.put("workflow", job.optString("workflow", response.optString("workflow", "")));
             diagnostic.put("provider", job.optString("provider", response.optString("provider", "")));
