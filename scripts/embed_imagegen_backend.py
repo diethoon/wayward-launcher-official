@@ -191,6 +191,11 @@ def extract(archive: Path, output: Path) -> None:
             "wayward-imagegen/src/comfy/jobRunner.ts",
             [
                 (
+                    "  error?: string\n  cancelRequested?: boolean",
+                    "  error?: string\n  errorType?: string\n  cancelRequested?: boolean",
+                    "add-structured-error-type-to-generation-job",
+                ),
+                (
                     "        if (!this.config.naiToken.trim()) throw new Error('NovelAI API 토큰을 이미지 생성 방식 설정에서 저장하세요.')",
                     "        if (this.config.imageProvider === 'nai' && !this.config.naiToken.trim()) throw new Error('NovelAI API 토큰을 이미지 생성 방식 설정에서 저장하세요.')",
                     "require-token-only-for-novelai-provider",
@@ -217,17 +222,32 @@ def extract(archive: Path, output: Path) -> None:
               .replace(/Bearer\\s+[A-Za-z0-9._~+/-]+=*/gi, 'Bearer [REDACTED]')
               .replace(/(NAI_TOKEN|TOKEN|API[_-]?KEY|APIKEY|AUTHORIZATION|PASSWORD|SECRET)\\s*[=:]\\s*[^\\s,;]+/gi, '$1=[REDACTED]')
               .slice(0, 500)
+            const trialRecaptchaRequired = /recaptcha token is required for trial generation/i.test(safeMessage)
             const statusMatch = safeMessage.match(/NovelAI API\\s+(\\d{3})/i)
             console.error('[novelai] generation_failed', JSON.stringify({
-              errorType: error instanceof Error ? error.name : 'UnknownError',
+              errorType: trialRecaptchaRequired ? 'novelai_trial_recaptcha_required' : error instanceof Error ? error.name : 'UnknownError',
               httpStatus: statusMatch ? Number(statusMatch[1]) : null,
               message: safeMessage,
               model: config.naiModel,
               elapsedMs: this.now() - naiStartedAt,
             }))
+            if (trialRecaptchaRequired) {
+              job.errorType = 'novelai_trial_recaptcha_required'
+            }
             job.status = 'error'; job.error = safeMessage; job.completedAt = this.now()
           }""",
                     "record-sanitized-novelai-upstream-failure",
+                ),
+            ],
+        )
+
+        patch_backend_text(
+            "wayward-imagegen/src/routes/image.ts",
+            [
+                (
+                    "  if (job.error) base.error = job.error\n",
+                    "  if (job.error) base.error = job.error\n  if (job.errorType) base.errorType = job.errorType\n",
+                    "expose-structured-novelai-error-type-in-image-api",
                 ),
             ],
         )
