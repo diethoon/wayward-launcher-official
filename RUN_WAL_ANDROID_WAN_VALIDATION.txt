@@ -1,3 +1,4 @@
 One-time NovelAI free-trial CAPTCHA display test; development source commit 9d4c802e2aea4aef9f4d498fd2d6cd011173daaa; isolated build branch only.
 
 CAPTCHA newline fix build 1795199493652
+Package Debug APK for CAPTCHA newline fix
