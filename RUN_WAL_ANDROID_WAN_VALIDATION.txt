@@ -1,3 +1,5 @@
 Run signed WAL Android diagnostic-only validation build.
 Development source commit: ba6ddd73117c1ea0fe4d42ad2a8a947e8850f5ea
 Scope: diagnostics strengthening only; preserve existing Official updater behavior.
+
+Manual update check UI build: cc43cfc206707840c4c079c154cac7a012c24c2d
