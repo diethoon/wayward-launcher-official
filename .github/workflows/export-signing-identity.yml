@@ -63,7 +63,7 @@ jobs:
           import hashlib, hmac, os, pathlib, sys
           payload = pathlib.Path(sys.argv[1]).read_bytes()
           digest = hmac.new(bytes.fromhex(os.environ["WAL_HMAC_KEY"]), payload, hashlib.sha256).hexdigest()
-          pathlib.Path(sys.argv[2]).write_text(digest + "\\n", encoding="ascii")
+          pathlib.Path(sys.argv[2]).write_text(digest + "\n", encoding="ascii")
           PY
           python3 - "$work/material.json" <<'PY'
           import json, os, pathlib, sys
