@@ -338,7 +338,7 @@ public class MainActivity extends Activity {
             if(!update.notes.trim().isEmpty()){
                 String notes=update.notes.trim();
                 if(notes.length()>600)notes=notes.substring(0,600)+"…";
-                message+="\\n\\n"+notes;
+                message+="\n\n"+notes;
             }
             new AlertDialog.Builder(this).setTitle("업데이트 확인").setMessage(message)
                     .setNegativeButton("나중에",null)
