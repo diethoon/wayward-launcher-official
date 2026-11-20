@@ -56,6 +56,36 @@ final class ImageGenProxy {
                     }
                     JSONObject envelope = RemoteGameImageApiClient.execute(
                             appContext, safeMethod, safePath, requestBody);
+                    int remoteStatus = envelope.optInt("status", 502);
+                    byte[] remoteResponseBody = new byte[0];
+                    try {
+                        String encoded = envelope.optString("bodyBase64", "");
+                        if (!encoded.isEmpty()) remoteResponseBody = Base64.decode(encoded, Base64.DEFAULT);
+                    } catch (Exception ignored) {}
+                    if ("GET".equals(safeMethod) && apiPath.startsWith("/api/image/status/")) {
+                        NovelAiCaptchaJobMonitor.noteClientPoll(
+                                apiPath.substring(apiPath.lastIndexOf('/') + 1), true);
+                    }
+                    if ("POST".equals(safeMethod) && "/api/image/generate".equals(apiPath)
+                            && remoteStatus >= 200 && remoteStatus < 300) {
+                        NovelAiCaptchaJobMonitor.startFromGenerateResponse(
+                                appContext, web, remoteResponseBody, true);
+                    }
+                    String remoteCaptchaSignal = NovelAiCaptchaErrorDetector.detect(
+                            apiPath, remoteResponseBody);
+                    if (remoteCaptchaSignal != null) {
+                        JSONObject captchaDiagnostic = new JSONObject();
+                        try {
+                            captchaDiagnostic.put("method", safeMethod);
+                            captchaDiagnostic.put("path", apiPath);
+                            captchaDiagnostic.put("httpStatus", remoteStatus);
+                            captchaDiagnostic.put("errorType", "novelai_trial_recaptcha_required");
+                            captchaDiagnostic.put("remoteMode", true);
+                        } catch (Exception ignored) {}
+                        DiagnosticsLogger.event(appContext, "WARN", "imagegen_proxy",
+                                "novelai_trial_captcha_detected", captchaDiagnostic);
+                        NovelAiCaptchaActivity.openFrom(web);
+                    }
                     deliver(web, requestId, envelope.toString());
                     JSONObject diagnostic = new JSONObject();
                     try {
@@ -167,7 +197,28 @@ final class ImageGenProxy {
                 if (responseStream != null) responseStream.close();
                 if ("GET".equals(safeMethod) && apiPath != null
                         && apiPath.startsWith("/api/image/status/")) {
-                    recordImageJobStatus(appContext, web, apiPath, responseBody, status,
+                    NovelAiCaptchaJobMonitor.noteClientPoll(apiPath.substring(apiPath.lastIndexOf('/') + 1), false);
+                }
+                if ("POST".equals(safeMethod) && "/api/image/generate".equals(apiPath)
+                        && status >= 200 && status < 300) {
+                    NovelAiCaptchaJobMonitor.startFromGenerateResponse(appContext, web, responseBody, false);
+                }
+                String captchaSignal = NovelAiCaptchaErrorDetector.detect(apiPath, responseBody);
+                if (captchaSignal != null) {
+                    JSONObject captchaDiagnostic = new JSONObject();
+                    try {
+                        captchaDiagnostic.put("method", safeMethod);
+                        captchaDiagnostic.put("path", apiPath);
+                        captchaDiagnostic.put("httpStatus", status);
+                        captchaDiagnostic.put("errorType", "novelai_trial_recaptcha_required");
+                    } catch (Exception ignored) {}
+                    DiagnosticsLogger.event(appContext, "WARN", "imagegen_proxy",
+                            "novelai_trial_captcha_detected", captchaDiagnostic);
+                    NovelAiCaptchaActivity.openFrom(web);
+                }
+                if ("GET".equals(safeMethod) && apiPath != null
+                        && apiPath.startsWith("/api/image/status/")) {
+                    recordImageJobStatus(appContext, apiPath, responseBody, status,
                             System.currentTimeMillis() - startedAt);
                 }
 
@@ -189,7 +240,7 @@ final class ImageGenProxy {
         }, "wayward-imagegen-proxy").start();
     }
 
-    private static void recordImageJobStatus(android.content.Context context, WebView sourceWeb, String path,
+    private static void recordImageJobStatus(android.content.Context context, String path,
                                              byte[] responseBody, int httpStatus, long elapsedMs) {
         JSONObject diagnostic = new JSONObject();
         try {
@@ -212,9 +263,6 @@ final class ImageGenProxy {
             if (errorValue == null || errorValue == JSONObject.NULL) errorValue = response.opt("error");
             String error = errorValue == null || errorValue == JSONObject.NULL ? "" : String.valueOf(errorValue);
             error = redactDiagnosticError(error);
-            if (error.toLowerCase(Locale.ROOT).contains("recaptcha token is required for trial generation")) {
-                NovelAiCaptchaActivity.openFrom(sourceWeb);
-            }
             diagnostic.put("promptId", promptId);
             diagnostic.put("workflow", job.optString("workflow", response.optString("workflow", "")));
             diagnostic.put("provider", job.optString("provider", response.optString("provider", "")));
