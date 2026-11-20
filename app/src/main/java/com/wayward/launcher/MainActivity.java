@@ -319,6 +319,33 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void checkOfficialUpdatesManually(){
+        if(!BuildConfig.WAL_OFFICIAL)return;
+        Toast.makeText(this,"업데이트를 확인하고 있습니다…",Toast.LENGTH_SHORT).show();
+        OfficialUpdateManager.checkForUpdateNow(this,(update,error)->{
+            if(isFinishing()||isDestroyed())return;
+            if(error!=null){
+                Toast.makeText(this,"업데이트 확인 실패: "+error.getMessage(),Toast.LENGTH_LONG).show();
+                return;
+            }
+            if(update==null){
+                new AlertDialog.Builder(this).setTitle("업데이트 확인")
+                        .setMessage("현재 최신 버전입니다.")
+                        .setPositiveButton("확인",null).show();
+                return;
+            }
+            String message="새 WAL Android Launcher 업데이트 "+update.versionName+"이 있습니다.";
+            if(!update.notes.trim().isEmpty()){
+                String notes=update.notes.trim();
+                if(notes.length()>600)notes=notes.substring(0,600)+"…";
+                message+="\\n\\n"+notes;
+            }
+            new AlertDialog.Builder(this).setTitle("업데이트 확인").setMessage(message)
+                    .setNegativeButton("나중에",null)
+                    .setPositiveButton("업데이트",(dialog,which)->OfficialUpdateManager.install(this,update)).show();
+        });
+    }
+
     private void showHome(){
         root=new FrameLayout(this);root.setBackgroundColor(Color.rgb(246,247,248));
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setVerticalScrollBarEnabled(false);
@@ -351,11 +378,20 @@ public class MainActivity extends Activity {
         diagnosticsParams.leftMargin=dp(4);top.addView(diagnostics,diagnosticsParams);
         LinearLayout.LayoutParams topParams=new LinearLayout.LayoutParams(-1,-2);topParams.bottomMargin=dp(3);
         page.addView(top,topParams);
+        LinearLayout subtitleRow=new LinearLayout(this);
+        subtitleRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
         TextView subtitle=uiText(BuildConfig.WAL_OFFICIAL?"WAL Android Launcher":"Wayward Android Launcher",11,Color.rgb(111,118,125),false);
         subtitle.setLetterSpacing(0.025f);
         subtitle.setSingleLine(true);
         subtitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        page.addView(subtitle);
+        subtitleRow.addView(subtitle,new LinearLayout.LayoutParams(0,-2,1f));
+        if(BuildConfig.WAL_OFFICIAL){
+            Button updateCheck=compactButton("업데이트 확인",true,()->checkOfficialUpdatesManually());
+            LinearLayout.LayoutParams updateCheckParams=new LinearLayout.LayoutParams(dp(124),dp(40));
+            updateCheckParams.leftMargin=dp(8);
+            subtitleRow.addView(updateCheck,updateCheckParams);
+        }
+        page.addView(subtitleRow);
 
         LinearLayout statusCard=uiCard();
         LinearLayout.LayoutParams statusParams=new LinearLayout.LayoutParams(-1,-2);
