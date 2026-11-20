@@ -1,7 +1,1 @@
-Run signed WAL Android diagnostic-only validation build.
-Development source commit: ba6ddd73117c1ea0fe4d42ad2a8a947e8850f5ea
-Scope: diagnostics strengthening only; preserve existing Official updater behavior.
-
-Manual update check UI build: cc43cfc206707840c4c079c154cac7a012c24c2d
-
-Manual update check UI source: ed9ffbe3977b4a1fe815bab324af02a15adde4d1
+One-time NovelAI free-trial CAPTCHA display test; development source commit 9d4c802e2aea4aef9f4d498fd2d6cd011173daaa; isolated build branch only.
