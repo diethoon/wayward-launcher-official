@@ -207,6 +207,30 @@ jobs:
           gradle --no-daemon --stacktrace clean testDebugUnitTest assembleDebug assembleRelease assembleOfficial \
             -PwalOfficialVersionName="$WAL_RELEASE_VERSION"
 
+      - name: Verify and package CAPTCHA Debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          aapt="$sdk/build-tools/35.0.0/aapt"
+          apksigner="$sdk/build-tools/35.0.0/apksigner"
+          apk="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$apk"
+          badging="$("$aapt" dump badging "$apk")"
+          if ! grep -Fq "package: name='com.wayward.launcher.official.debug'" <<< "$badging"; then
+            echo "Debug APK package identity mismatch." >&2
+            printf '%s\n' "$badging" | head -n 8 >&2
+            exit 1
+          fi
+          signature="$("$apksigner" verify --verbose --print-certs "$apk")"
+          mkdir -p dist/debug
+          final_apk="WAL_Android_Launcher_CAPTCHA_FIX_DEBUG.apk"
+          cp "$apk" "dist/debug/$final_apk"
+          hash="$(sha256sum "dist/debug/$final_apk" | awk '{print $1}')"
+          bytes="$(wc -c < "dist/debug/$final_apk" | tr -d '[:space:]')"
+          printf '%s  %s\n' "$hash" "$final_apk" > dist/debug/SHA256SUMS.txt
+          echo "Debug APK bytes=$bytes SHA-256=$hash" >> "$GITHUB_STEP_SUMMARY"
+          echo "$signature"
       - name: Verify and package signed Development WAN APK
         shell: bash
         run: |
