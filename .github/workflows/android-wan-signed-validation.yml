@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 75
     env:
       WAL_RELEASE_VERSION: 1.0.0
-      WAL_ANDROID_DEVELOPMENT_COMMIT: cc43cfc206707840c4c079c154cac7a012c24c2d
+      WAL_ANDROID_DEVELOPMENT_COMMIT: ed9ffbe3977b4a1fe815bab324af02a15adde4d1
 
     steps:
       - name: Checkout signed validation branch
