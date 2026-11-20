@@ -95,6 +95,30 @@ public final class OfficialUpdateManager {
         });
     }
 
+    public interface CheckListener { void onResult(Update update, Exception error); }
+
+    public static void checkForUpdateNow(Context context, CheckListener listener) {
+        if (context == null || !BuildConfig.WAL_OFFICIAL || !CHECKING.compareAndSet(false, true)) return;
+        Context app = context.getApplicationContext();
+        EXECUTOR.execute(() -> {
+            Update update = null;
+            Exception failure = null;
+            try {
+                update = findLatest(app);
+                app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                        .putLong(LAST_CHECK, System.currentTimeMillis()).apply();
+            } catch (Exception error) {
+                failure = error;
+                Log.w(TAG, "Manual stable update check failed", error);
+            } finally {
+                CHECKING.set(false);
+            }
+            final Update result = update;
+            final Exception error = failure;
+            if (listener != null) new Handler(Looper.getMainLooper()).post(() -> listener.onResult(result, error));
+        });
+    }
+
     private static Update findLatest(Context context) throws Exception {
         Exception primaryFailure = null;
         try {
