@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - work/wal-android-wan-signed-validation-20261120
+      - work/wal-android-diagnostics-signed-20261120
     paths:
       - RUN_WAL_ANDROID_WAN_VALIDATION.txt
 
@@ -61,7 +61,13 @@ jobs:
           curl --fail --location --silent --show-error \
             "https://raw.githubusercontent.com/diethoon/wayward/$source_commit/mods.zip" \
             -o "$RUNNER_TEMP/wayward-mods.zip"
+          python3 -m py_compile scripts/embed_imagegen_backend.py
           python3 scripts/embed_imagegen_backend.py "$RUNNER_TEMP/wayward-mods.zip"
+          backend="app/src/main/assets/imagegen-backend/wayward-imagegen/src/comfy/jobRunner.ts"
+          for marker in "[novelai] generation_failed" "errorType:" "httpStatus:" "model: config.naiModel" "elapsedMs:" "[PROMPT REDACTED]" "Bearer [REDACTED]"; do
+            grep -Fq "$marker" "$backend" || { echo "Missing NovelAI diagnostic marker: $marker" >&2; exit 1; }
+          done
+          echo "NovelAI diagnostic patch and secret/prompt redaction markers verified."
 
       - name: Run full Android source contract suite
         shell: bash

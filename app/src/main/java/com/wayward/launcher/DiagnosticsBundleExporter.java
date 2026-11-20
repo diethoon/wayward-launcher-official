@@ -47,13 +47,16 @@ final class DiagnosticsBundleExporter {
             putText(zip, "metadata.json", metadata.toString(2));
             putText(zip, "README.txt",
                     "Wayward Launcher diagnostic bundle.\n"
-                    + "Contains bounded launcher and image-pack event journals plus app/device metadata. "
+                    + "Contains bounded launcher and image-pack event journals, redacted ImageGen server log tails, and app/device metadata. "
                     + "It does not attach source game files, image files, or selected folder contents. "
                     + "Event details may contain diagnostic context; review before sharing.\n");
             addFile(zip, "launcher.ndjson", launcherActive);
             addFile(zip, "launcher.previous.ndjson", launcherPrevious);
             addFile(zip, "imagepack.ndjson", active);
             addFile(zip, "imagepack.previous.ndjson", previous);
+            File imageGenLogs = new File(activity.getFilesDir(), "imagegen");
+            addRedactedTail(zip, "imagegen/startup.log", new File(imageGenLogs, "startup.log"));
+            addRedactedTail(zip, "imagegen/server.log", new File(imageGenLogs, "server.log"));
             zip.finish();
         } catch (Exception error) {
             if (archive.exists()) archive.delete();
@@ -158,6 +161,42 @@ final class DiagnosticsBundleExporter {
             }
         }
         zip.closeEntry();
+    }
+
+    private static void addRedactedTail(ZipOutputStream zip, String entryName, File file) throws Exception {
+        final int maxBytes = 128 * 1024;
+        if (file == null || !file.isFile() || file.length() <= 0L) return;
+        long length = file.length();
+        long offset = Math.max(0L, length - maxBytes);
+        int count = (int) (length - offset);
+        byte[] bytes = new byte[count];
+        try (java.io.RandomAccessFile input = new java.io.RandomAccessFile(file, "r")) {
+            input.seek(offset);
+            input.readFully(bytes);
+        }
+        String content = new String(bytes, StandardCharsets.UTF_8);
+        if (offset > 0L) {
+            int newline = content.indexOf('\n');
+            if (newline >= 0) content = content.substring(newline + 1);
+        }
+        content = redactSecrets(content);
+        byte[] safeBytes = content.getBytes(StandardCharsets.UTF_8);
+        int safeStart = Math.max(0, safeBytes.length - maxBytes);
+        if (safeStart > 0) {
+            while (safeStart < safeBytes.length && safeBytes[safeStart] != '\n') safeStart++;
+            if (safeStart < safeBytes.length) safeStart++;
+        }
+        zip.putNextEntry(new ZipEntry(entryName));
+        zip.write(safeBytes, safeStart, safeBytes.length - safeStart);
+        zip.closeEntry();
+    }
+
+    private static String redactSecrets(String value) {
+        if (value == null) return "";
+        String safe = value.replaceAll("(?i)(Bearer\\s+)[A-Za-z0-9._~+/-]+=*", "$1[REDACTED]");
+        safe = safe.replaceAll("(?i)(\\b(?:NAI_TOKEN|TOKEN|API[_-]?KEY|APIKEY|ACCESS[_-]?TOKEN|REFRESH[_-]?TOKEN|AUTHORIZATION|PASSWORD|SECRET)\\b\\s*[=:]\\s*)[\\\"']?[^\\s,;\\\"']+", "$1[REDACTED]");
+        safe = safe.replaceAll("(?i)(\\b(?:cookie|set-cookie)\\s*[:=]\\s*)[^\\r\\n]+", "$1[REDACTED]");
+        return safe;
     }
 
     private static void prune(File directory) {

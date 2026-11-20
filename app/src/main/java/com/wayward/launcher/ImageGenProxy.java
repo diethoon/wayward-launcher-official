@@ -165,6 +165,11 @@ final class ImageGenProxy {
                 byte[] responseBody = responseStream == null ? new byte[0]
                         : readLimited(responseStream, MAX_RESPONSE_BYTES);
                 if (responseStream != null) responseStream.close();
+                if ("GET".equals(safeMethod) && apiPath != null
+                        && apiPath.startsWith("/api/image/status/")) {
+                    recordImageJobStatus(appContext, apiPath, responseBody, status,
+                            System.currentTimeMillis() - startedAt);
+                }
 
                 JSONObject payload = new JSONObject();
                 payload.put("status", status);
@@ -182,6 +187,56 @@ final class ImageGenProxy {
                 if (connection != null) connection.disconnect();
             }
         }, "wayward-imagegen-proxy").start();
+    }
+
+    private static void recordImageJobStatus(android.content.Context context, String path,
+                                             byte[] responseBody, int httpStatus, long elapsedMs) {
+        JSONObject diagnostic = new JSONObject();
+        try {
+            JSONObject response = new JSONObject(new String(responseBody, StandardCharsets.UTF_8));
+            JSONObject job = response.optJSONObject("job");
+            if (job == null) job = response;
+            String promptId = response.optString("promptId", "");
+            if (promptId.isEmpty()) promptId = job.optString("promptId", "");
+            if (promptId.isEmpty()) {
+                int slash = path.lastIndexOf('/');
+                promptId = slash >= 0 ? path.substring(slash + 1) : "";
+            }
+            String status = job.optString("status", response.optString("status", "unknown"))
+                    .toLowerCase(Locale.ROOT);
+            if (!("completed".equals(status) || "error".equals(status)
+                    || "queued".equals(status) || "processing".equals(status))) {
+                status = "unknown";
+            }
+            Object errorValue = job.opt("error");
+            if (errorValue == null || errorValue == JSONObject.NULL) errorValue = response.opt("error");
+            String error = errorValue == null || errorValue == JSONObject.NULL ? "" : String.valueOf(errorValue);
+            error = redactDiagnosticError(error);
+            diagnostic.put("promptId", promptId);
+            diagnostic.put("workflow", job.optString("workflow", response.optString("workflow", "")));
+            diagnostic.put("provider", job.optString("provider", response.optString("provider", "")));
+            diagnostic.put("status", status);
+            diagnostic.put("error", error.length() > 1024 ? error.substring(0, 1024) : error);
+            diagnostic.put("httpStatus", httpStatus);
+            diagnostic.put("elapsedMs", elapsedMs);
+        } catch (Exception parseError) {
+            try {
+                diagnostic.put("status", "unparseable");
+                diagnostic.put("httpStatus", httpStatus);
+                diagnostic.put("elapsedMs", elapsedMs);
+                diagnostic.put("parseError", parseError.getClass().getSimpleName());
+            } catch (Exception ignored) {}
+        }
+        String state = "error".equals(diagnostic.optString("status")) || httpStatus >= 400
+                ? "WARN" : "INFO";
+        DiagnosticsLogger.event(context, state, "imagegen_proxy", "image_job_status", diagnostic);
+    }
+
+    private static String redactDiagnosticError(String value) {
+        if (value == null) return "";
+        String safe = value.replaceAll("(?i)(Bearer\\s+)[A-Za-z0-9._~+/-]+=*", "$1[REDACTED]");
+        safe = safe.replaceAll("(?i)(\\b(?:NAI_TOKEN|TOKEN|API[_-]?KEY|APIKEY|ACCESS[_-]?TOKEN|REFRESH[_-]?TOKEN|AUTHORIZATION|PASSWORD|SECRET)\\b\\s*[=:]\\s*)[^\\s,;]+", "$1[REDACTED]");
+        return safe.replace('\r', ' ').replace('\n', ' ');
     }
 
     private static String validatePath(String raw) {
