@@ -1,0 +1,92 @@
+name: Export existing Android signing identity (encrypted one-time)
+
+run-name: Export signing identity ${{ inputs.request_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      recipient_public_key:
+        description: Ephemeral RSA public key (base64 PEM); never a private key
+        required: true
+        type: string
+      request_id:
+        description: One-time request identifier
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  encrypted-export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+    steps:
+      - name: Encrypt the existing signing identity for the requesting PC runner
+        shell: bash
+        env:
+          RECIPIENT_PUBLIC_KEY: ${{ inputs.recipient_public_key }}
+          REQUEST_ID: ${{ inputs.request_id }}
+        run: |
+          set -euo pipefail
+          [[ "$REQUEST_ID" =~ ^[a-f0-9]{32}$ ]] || { echo "Invalid one-time request id." >&2; exit 1; }
+          [[ -n "$KEYSTORE_BASE64" && -n "$KEYSTORE_PASSWORD" && -n "$KEY_ALIAS" ]] || {
+            echo "Existing signing secrets are not configured in this repository." >&2; exit 1;
+          }
+          work="$RUNNER_TEMP/signing-envelope"
+          mkdir -p "$work"
+          chmod 700 "$work"
+          printf '%s' "$RECIPIENT_PUBLIC_KEY" | base64 --decode > "$work/recipient.pem"
+          openssl pkey -pubin -in "$work/recipient.pem" -noout
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$work/existing.p12"
+          bytes="$(wc -c < "$work/existing.p12" | tr -d '[:space:]')"
+          [[ "$bytes" == "2858" ]] || { echo "Existing P12 size mismatch." >&2; exit 1; }
+          openssl pkcs12 -in "$work/existing.p12" -info -noout -passin env:KEYSTORE_PASSWORD >/dev/null 2>"$work/p12-check.log" || {
+            echo "Existing P12 password validation failed." >&2; exit 1;
+          }
+          openssl pkcs12 -in "$work/existing.p12" -clcerts -nokeys -passin env:KEYSTORE_PASSWORD -out "$work/cert.pem"
+          actual_sha1="$(openssl x509 -in "$work/cert.pem" -noout -fingerprint -sha1 | sed 's/.*=//' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+          [[ "$actual_sha1" == "D9BE7443EB247D27C958CC4250D7F5D1E078F740" ]] || {
+            echo "Existing Release certificate fingerprint mismatch." >&2; exit 1;
+          }
+          aes_key="$(openssl rand -hex 32)"
+          hmac_key="$(openssl rand -hex 32)"
+          export WAL_AES_KEY="$aes_key"
+          openssl enc -aes-256-cbc -salt -pbkdf2 -iter 600000 -in "$work/existing.p12" -out "$work/encrypted-keystore.bin" -pass env:WAL_AES_KEY
+          export WAL_HMAC_KEY="$hmac_key"
+          python3 - "$work/encrypted-keystore.bin" "$work/hmac.sha256" <<'PY'
+          import hashlib, hmac, os, pathlib, sys
+          payload = pathlib.Path(sys.argv[1]).read_bytes()
+          digest = hmac.new(bytes.fromhex(os.environ["WAL_HMAC_KEY"]), payload, hashlib.sha256).hexdigest()
+          pathlib.Path(sys.argv[2]).write_text(digest + "\\n", encoding="ascii")
+          PY
+          python3 - "$work/material.json" <<'PY'
+          import json, os, pathlib, sys
+          data = {
+              "aes_key_hex": os.environ["WAL_AES_KEY"],
+              "hmac_key_hex": os.environ["WAL_HMAC_KEY"],
+              "keystore_password": os.environ["KEYSTORE_PASSWORD"],
+              "key_alias": os.environ["KEY_ALIAS"],
+              "expected_sha1": "D9BE7443EB247D27C958CC4250D7F5D1E078F740"
+          }
+          pathlib.Path(sys.argv[1]).write_text(json.dumps(data, separators=(",", ":")), encoding="utf-8")
+          PY
+          openssl pkeyutl -encrypt -pubin -inkey "$work/recipient.pem" -in "$work/material.json" -out "$work/wrapped-key.bin" -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256
+          rm -f "$work/existing.p12" "$work/cert.pem" "$work/material.json" "$work/recipient.pem" "$work/p12-check.log"
+          chmod 600 "$work/encrypted-keystore.bin" "$work/wrapped-key.bin" "$work/hmac.sha256"
+          echo "Encrypted signing envelope created for request $REQUEST_ID; plaintext P12 and key material removed."
+      - name: Upload short-lived encrypted envelope
+        uses: actions/upload-artifact@v4
+        with:
+          name: wal-signing-envelope-${{ inputs.request_id }}
+          path: |
+            ${{ runner.temp }}/signing-envelope/encrypted-keystore.bin
+            ${{ runner.temp }}/signing-envelope/wrapped-key.bin
+            ${{ runner.temp }}/signing-envelope/hmac.sha256
+          if-no-files-found: error
+          retention-days: 1
