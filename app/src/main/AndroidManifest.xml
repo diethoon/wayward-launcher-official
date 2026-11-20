@@ -17,6 +17,8 @@
                 android:resource="@xml/diagnostics_file_paths"/>
         </provider>
         <activity android:name=".NovelAiSettingsActivity" android:exported="false"/>
+        <activity android:name=".NovelAiCaptchaActivity" android:exported="false"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|smallestScreenSize"/>
         <activity android:name=".RemotePairingActivity" android:exported="false"/>
         <activity android:name=".RemotePcFileManagerActivity" android:exported="false"/>
         <activity android:name=".MainActivity" android:exported="true"
