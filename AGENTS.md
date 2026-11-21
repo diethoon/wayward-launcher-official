@@ -94,3 +94,28 @@ Read all three documents before inspecting code, branches, services, CI, or star
 - Report exact changed files/functions, why each change was necessary, incremental and final test outcomes, and all unverified items. Never claim full completion when required verification is blocked.
 
 **REQUIRED ORDER:** evidence → minimum safe change → minimum implementation → immediate incremental test → regression/integration verification → final diff review → truthful report.
+
+
+---
+
+# ABSOLUTE CHIEF-OF-STAFF PRE-FLIGHT — READ FIRST, EVERY TASK
+
+**NON-NEGOTIABLE.** Before any code/configuration edit, implementation, build, test, deployment investigation, or task direction, read and obey:
+- `docs/ABSOLUTE_MINIMUM_CHANGE_IMPLEMENTATION_VERIFICATION.md`
+
+The required sequence is:
+1. Pin repository, branch, base commit, HEAD, working-tree state, PRs, and parallel work.
+2. Read prior handoffs, decisions, relevant project rules, previous diffs, and existing verified findings.
+3. Retrieve and inspect ALL relevant available logs and evidence first: app/service/device/runtime logs, crash reports, diagnostic bundles, stdout/stderr, CI/workflow/job logs, test reports, build artifacts, deployment status, issue/PR discussion, commit history, and exact failure/version/session context.
+4. Correlate evidence into a timeline. Separate facts, inferences, hypotheses, and unknowns. Do not mix unrelated builds, sessions, devices, or reports.
+5. Trace the complete relevant execution path and identify the confirmed root cause and every necessary correction. Do not guess or code before this understanding exists.
+6. Before editing, specify exact files/classes/functions/call paths, why each location must change, what must remain untouched, acceptance criteria, and produce a complete reviewable minimal diff. Explain every changed hunk.
+7. Implement only that minimum diff, using the fastest safe execution order. No speculative fixes, unrelated cleanup, broad refactors, or bonus features.
+8. Test incrementally: baseline first; immediately test after each logical change; verify each integration boundary; then run targeted regression, applicable full tests, build/package, and runtime/device checks.
+9. Inspect the final diff and actual test/log/artifact results. Report PASS / FAIL / BLOCKED / NOT RUN accurately. Never claim unrun checks passed.
+
+**Do not ask the user to retrieve logs, poll routine jobs, or repeat information that available tools can obtain.** If a source is inaccessible, state the exact blocker and continue all independent evidence collection and work.
+
+**Completion is forbidden** until relevant available evidence has been inspected, the minimal diff is justified, incremental tests have been checked, and final state is verified. If required evidence is unavailable, report PARTIALLY VERIFIED / BLOCKED.
+
+This is mandatory on every branch and for every contributor/agent. It supplements project-specific rules; preserve stricter platform, security, CI, and ownership constraints.
