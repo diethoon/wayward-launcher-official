@@ -78,3 +78,19 @@ Never describe a build, mock test, or source inspection as proof of real-device,
 - `docs/FORENSIC_AND_VERIFICATION_POLICY.md`
 
 Read all three documents before inspecting code, branches, services, CI, or starting implementation. If any is unavailable, restore it when authorized or stop product work and report the exact blocker. This requirement supplements all repository-specific instructions below; preserve their CI, build, ownership, and platform-specific rules. The global forensic, evidence-integrity, safety, and data-preservation rules cannot be weakened.
+
+
+# ABSOLUTE RULE — MINIMUM CHANGE / MINIMUM IMPLEMENTATION / INCREMENTAL TESTING
+
+**MANDATORY BEFORE EVERY TASK, ON EVERY BRANCH.** Read and obey `docs/ABSOLUTE_MINIMUM_CHANGE_IMPLEMENTATION_VERIFICATION.md` before investigation or implementation. This is a repository-wide, non-negotiable engineering invariant. It overrides conflicting workflow preferences unless the user explicitly authorizes a specific exception; safety, data integrity, and truthful reporting are never waived.
+
+- Make only the smallest evidence-backed change required by the request or confirmed defect.
+- Before editing, pin the repository, branch, base commit, working state, exact affected files/functions/call path, and evidence for the cause.
+- Implement only the required behavior. No speculative fixes, unrelated cleanup, broad refactors, rewrites, extra features, or unnecessary dependencies.
+- Preserve existing behavior, compatibility, data formats, IDs, settings, user data, and project-specific invariants.
+- Test incrementally: baseline before edits; the narrowest relevant check immediately after each logical change; integration checks at boundaries; then targeted regression, full applicable tests, build/package, and runtime/device verification.
+- Never stack unverified edits. On a failure, stop, inspect the actual evidence, isolate introduced vs pre-existing failures, and apply only the smallest correction.
+- Review the final diff and prove every changed line is necessary. A test not run is not passed; code inspection/build/mock is not proof of runtime or physical-device behavior.
+- Report exact changed files/functions, why each change was necessary, incremental and final test outcomes, and all unverified items. Never claim full completion when required verification is blocked.
+
+**REQUIRED ORDER:** evidence → minimum safe change → minimum implementation → immediate incremental test → regression/integration verification → final diff review → truthful report.
